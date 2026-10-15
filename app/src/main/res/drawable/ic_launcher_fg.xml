@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <!-- coroa caída, inclinada -->
+  <group android:pivotX="54" android:pivotY="54" android:rotation="-16" android:translateY="-4">
+    <path android:pathData="M34,58L30,36l10,9 8,-15 6,11 6,-11 8,15 10,-9 -4,22z">
+      <aapt:attr name="android:fillColor">
+        <gradient android:type="linear" android:startX="54" android:startY="30" android:endX="54" android:endY="58"
+            android:startColor="#FFE9A8" android:centerColor="#D9A21E" android:endColor="#6E4A0B"/>
+      </aapt:attr>
+    </path>
+    <path android:fillColor="#7A520E" android:pathData="M34,58h40v5h-40z"/>
+    <!-- rachadura -->
+    <path android:strokeColor="#1A0B22" android:strokeWidth="1.6" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000" android:pathData="M54,41l-3,6 4,4 -3,6 2,6"/>
+    <!-- joia apagada -->
+    <path android:fillColor="#8E1B3A" android:pathData="M54,52m-2.6,0a2.6,2.6 0,1 1,5.2 0a2.6,2.6 0,1 1,-5.2 0"/>
+  </group>
+  <!-- areia escorrendo da coroa -->
+  <path android:fillColor="#E0B43A" android:pathData="M58,70h2v3h-2zM59,76h1.6v2h-1.6zM58.5,81h1.4v1.6h-1.4z"/>
+  <path android:fillColor="#B8892A" android:pathData="M46,86c4,-3 12,-3 16,0z"/>
+</vector>
