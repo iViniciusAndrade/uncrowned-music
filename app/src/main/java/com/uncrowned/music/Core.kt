@@ -71,8 +71,10 @@ object Prefs {
     var seekStep: Int get() = sp.getInt("seekstep", 10); set(v) = pi("seekstep", v)
 
     // Reprodução
-    var speed: Float get() = sp.getFloat("speed", 1f); set(v) = pf("speed", v)
-    var pitch: Float get() = sp.getFloat("pitch", 1f); set(v) = pf("pitch", v)
+    // limitados a 0.5–2.0 e arredondados de 0.05 em 0.05 (valores quebrados travavam o áudio)
+    private fun safe(v: Float) = (Math.round(v.coerceIn(0.5f, 2f) * 20f) / 20f)
+    var speed: Float get() = safe(sp.getFloat("speed", 1f)); set(v) = pf("speed", safe(v))
+    var pitch: Float get() = safe(sp.getFloat("pitch", 1f)); set(v) = pf("pitch", safe(v))
     var skipSilence: Boolean get() = sp.getBoolean("skipsilence", false); set(v) = pb("skipsilence", v)
     var minDurationSec: Int get() = sp.getInt("mindur", 30); set(v) = pi("mindur", v)
 
