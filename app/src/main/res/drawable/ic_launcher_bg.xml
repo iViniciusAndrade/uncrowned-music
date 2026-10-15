@@ -2,10 +2,8 @@
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
   <path android:pathData="M0,0h108v108h-108z">
     <aapt:attr name="android:fillColor">
-      <gradient android:type="radial" android:centerX="54" android:centerY="44" android:gradientRadius="70"
-          android:startColor="#3A1F4D" android:centerColor="#16091F" android:endColor="#050207"/>
+      <gradient android:type="radial" android:centerX="54" android:centerY="46" android:gradientRadius="60"
+          android:startColor="#1E0709" android:centerColor="#070203" android:endColor="#000000"/>
     </aapt:attr>
   </path>
-  <!-- poeira/areia caindo -->
-  <path android:fillColor="#55C9A227" android:pathData="M30,22h1.6v1.6h-1.6zM78,18h1.2v1.2h-1.2zM84,40h1.6v1.6h-1.6zM22,48h1.2v1.2h-1.2zM70,30h1v1h-1zM36,34h1v1h-1z"/>
 </vector>
