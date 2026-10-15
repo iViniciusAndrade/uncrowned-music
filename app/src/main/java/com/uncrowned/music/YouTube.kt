@@ -62,17 +62,8 @@ object OtherApi {
         } finally { c.disconnect() }
     }
 
-    // A página de busca do SoundCloud traz uma versão em HTML puro (pra navegador sem JS) com os links das faixas
-    suspend fun soundcloud(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val html = http("https://soundcloud.com/search/sounds?q=${URLEncoder.encode(q, "UTF-8")}")
-            Regex("""<h2><a href="/([^"/]+)/([^"]+)">([^<]+)</a></h2>""").findAll(html).map { m ->
-                val (user, track, title) = m.destructured
-                YtVideo("$user/$track", HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), user, "", "sc")
-            }.filter { !it.id.contains("/sets/") }.distinctBy { it.id }.take(30).toList()
-                .ifEmpty { error("Nada encontrado (ou o SoundCloud mudou a página)") }
-        }
-    }
+    // SoundCloud: busca nova em SoundCloud.kt (api-v2 + reserva HTML)
+    suspend fun soundcloud(q: String): Result<List<YtVideo>> = SoundCloudApi.search(q)
 
     suspend fun vimeo(q: String, token: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
         runCatching {
