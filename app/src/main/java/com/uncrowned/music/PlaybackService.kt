@@ -30,7 +30,7 @@ class PlaybackService : MediaSessionService() {
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
         when {
             k == null -> {}
-            k == "speed" || k == "pitch" -> player.playbackParameters = PlaybackParameters(Prefs.speed, Prefs.pitch)
+            k == "speed" || k == "pitch" -> applyParams()
             k == "skipsilence" -> player.skipSilenceEnabled = Prefs.skipSilence
             k == "eq" || k == "bass" || k == "virt" || k.startsWith("eq_") -> Effects.apply()
             k == "nicon" -> { applyIcon(); refresh() }
@@ -53,6 +53,10 @@ class PlaybackService : MediaSessionService() {
         player.skipSilenceEnabled = Prefs.skipSilence
         player.playbackParameters = PlaybackParameters(Prefs.speed, Prefs.pitch)
         Sleep.player = player
+        player.addListener(object : Player.Listener {
+            // se o Android trocar a sessão de áudio, religa o equalizador nela
+            override fun onAudioSessionIdChanged(audioSessionId: Int) { Effects.attach(audioSessionId) }
+        })
 
         player.addListener(object : Player.Listener {
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refresh()
@@ -75,6 +79,20 @@ class PlaybackService : MediaSessionService() {
         refresh()
         Prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
     }
+
+    /* Velocidade/tom: aplica com atraso (junta várias mudanças seguidas) e depois "reinicia" o
+       processamento de áudio no mesmo ponto, o que evita o bug de ficar tudo mudo. */
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val applyRunnable = Runnable {
+        val p = PlaybackParameters(Prefs.speed, Prefs.pitch)
+        if (player.playbackParameters != p) {
+            val wasPlaying = player.playWhenReady
+            player.playbackParameters = p
+            player.seekTo(player.currentMediaItemIndex, player.currentPosition)
+            player.playWhenReady = wasPlaying
+        }
+    }
+    private fun applyParams() { handler.removeCallbacks(applyRunnable); handler.postDelayed(applyRunnable, 250) }
 
     private fun applyIcon() = notif.setSmallIcon(
         when (Prefs.notifIcon) { "note" -> R.drawable.ic_note; "disc" -> R.drawable.ic_disc; else -> R.drawable.ic_crown }
@@ -146,6 +164,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         Prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
+        handler.removeCallbacks(applyRunnable)
         Effects.release()
         Sleep.player = null
         session?.run { player.release(); release() }
