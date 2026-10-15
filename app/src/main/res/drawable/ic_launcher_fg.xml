@@ -1,21 +1,22 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-  <!-- coroa caída, inclinada -->
-  <group android:pivotX="54" android:pivotY="54" android:rotation="-16" android:translateY="-4">
-    <path android:pathData="M34,58L30,36l10,9 8,-15 6,11 6,-11 8,15 10,-9 -4,22z">
+  <!-- caveira com crânio rachado, inclinada e bem de perto -->
+  <group android:pivotX="54" android:pivotY="54" android:rotation="-16" android:scaleX="1.08" android:scaleY="1.08" android:translateY="4">
+    <path android:pathData="M54,17C35,17 25,30 25,46C25,52 26.5,56 28.5,59C30,61.5 31,63 31.5,66C32.5,70 36,71 38,72L39,79C39.5,82 41,84 44,84L64,84C67,84 68.5,82 69,79L70,72C72,71 75.5,70 76.5,66C77,63 78,61.5 79.5,59C81.5,56 83,52 83,46C83,30 73,17 54,17Z">
       <aapt:attr name="android:fillColor">
-        <gradient android:type="linear" android:startX="54" android:startY="30" android:endX="54" android:endY="58"
-            android:startColor="#FFE9A8" android:centerColor="#D9A21E" android:endColor="#6E4A0B"/>
+        <gradient android:type="radial" android:centerX="46" android:centerY="36" android:gradientRadius="52"
+            android:startColor="#EFE8D6" android:centerColor="#B5AB93" android:endColor="#3A342B"/>
       </aapt:attr>
     </path>
-    <path android:fillColor="#7A520E" android:pathData="M34,58h40v5h-40z"/>
-    <!-- rachadura -->
-    <path android:strokeColor="#1A0B22" android:strokeWidth="1.6" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:fillColor="#00000000" android:pathData="M54,41l-3,6 4,4 -3,6 2,6"/>
-    <!-- joia apagada -->
-    <path android:fillColor="#8E1B3A" android:pathData="M54,52m-2.6,0a2.6,2.6 0,1 1,5.2 0a2.6,2.6 0,1 1,-5.2 0"/>
+    <path android:fillColor="#000000" android:fillAlpha="0.35" android:pathData="M83,46C83,52 81.5,56 79.5,59C78,61.5 77,63 76.5,66C75.5,70 72,71 70,72L69,79C68.5,82 67,84 64,84L60,84C66,76 74,62 74,44C74,33 70,24 64,19C75,22 83,32 83,46Z"/>
+    <path android:fillColor="#030102" android:pathData="M33.5,50.5C33,45.5 37,42.5 42,42.5C47,42.5 50,45.5 50,50C50,55.5 46,59.5 41.5,59.5C37,59.5 34,56 33.5,50.5Z"/>
+    <path android:fillColor="#030102" android:pathData="M74.5,50.5C75,45.5 71,42.5 66,42.5C61,42.5 58,45.5 58,50C58,55.5 62,59.5 66.5,59.5C71,59.5 74,56 74.5,50.5Z"/>
+    <path android:fillColor="#030102" android:pathData="M54,60.5L50.8,68.5Q54,70.5 57.2,68.5Z"/>
+    <path android:fillColor="#030102" android:pathData="M57,17.2L53.5,23L56.5,24.5L52,31L57.5,35L51,42.5L53.5,35.5L48.5,31.5L52.5,24.8L49.5,22.8L52,17.1Z"/>
+    <path android:strokeColor="#030102" android:strokeWidth="1.1" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"
+        android:pathData="M57.5,35L64,37.5L67,42M52,31L45,30.5L41,33M64,37.5L68.5,34.5"/>
+    <path android:strokeColor="#2A241D" android:strokeWidth="1.3" android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M44.5,74.5V83.5M49.5,75V84M54,75.2V84M58.5,75V84M63.5,74.5V83.5M40,74.5Q54,77 68,74.5"/>
+    <path android:fillColor="#B3122A" android:fillAlpha="0.7" android:pathData="M42.3,51m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0M65.7,51m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0"/>
   </group>
-  <!-- areia escorrendo da coroa -->
-  <path android:fillColor="#E0B43A" android:pathData="M58,70h2v3h-2zM59,76h1.6v2h-1.6zM58.5,81h1.4v1.6h-1.4z"/>
-  <path android:fillColor="#B8892A" android:pathData="M46,86c4,-3 12,-3 16,0z"/>
 </vector>
