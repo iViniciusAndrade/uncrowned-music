@@ -1,0 +1,433 @@
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+
+package com.uncrowned.music
+
+import android.annotation.SuppressLint
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.text.HtmlCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+/* src: "yt" = YouTube, "sc" = SoundCloud (id = caminho artista/faixa), "vm" = Vimeo */
+data class YtVideo(val id: String, val title: String, val channel: String, val thumb: String, val src: String = "yt") {
+    fun json() = JSONObject().put("id", id).put("t", title).put("c", channel).put("th", thumb).put("s", src)
+    companion object { fun from(o: JSONObject) = YtVideo(o.getString("id"), o.getString("t"), o.getString("c"), o.getString("th"), o.optString("s", "yt")) }
+}
+
+/* ---------- SoundCloud (sem chave) e Vimeo (token grátis) ---------- */
+object OtherApi {
+    private fun http(u: String, headers: Map<String, String> = emptyMap()): String {
+        val c = URL(u).openConnection() as HttpURLConnection
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36")
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        c.connectTimeout = 10000; c.readTimeout = 10000
+        return try {
+            if (c.responseCode !in 200..299) error("Erro ${c.responseCode}")
+            c.inputStream.bufferedReader().readText()
+        } finally { c.disconnect() }
+    }
+
+    // A página de busca do SoundCloud traz uma versão em HTML puro (pra navegador sem JS) com os links das faixas
+    suspend fun soundcloud(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val html = http("https://soundcloud.com/search/sounds?q=${URLEncoder.encode(q, "UTF-8")}")
+            Regex("""<h2><a href="/([^"/]+)/([^"]+)">([^<]+)</a></h2>""").findAll(html).map { m ->
+                val (user, track, title) = m.destructured
+                YtVideo("$user/$track", HtmlCompat.fromHtml(title, HtmlCompat.FROM_HTML_MODE_LEGACY).toString(), user, "", "sc")
+            }.filter { !it.id.contains("/sets/") }.distinctBy { it.id }.take(30).toList()
+                .ifEmpty { error("Nada encontrado (ou o SoundCloud mudou a página)") }
+        }
+    }
+
+    suspend fun vimeo(q: String, token: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (token.isBlank()) error("Coloque o token do Vimeo em Ajustes > Online")
+            val body = http("https://api.vimeo.com/videos?per_page=25&fields=uri,name,user.name,pictures.base_link&query=${URLEncoder.encode(q, "UTF-8")}",
+                mapOf("Authorization" to "bearer $token", "Accept" to "application/vnd.vimeo.*+json;version=3.4"))
+            val a = JSONObject(body).getJSONArray("data")
+            List(a.length()) { i ->
+                val o = a.getJSONObject(i)
+                YtVideo(o.getString("uri").substringAfterLast('/'), o.optString("name"), o.optJSONObject("user")?.optString("name") ?: "",
+                    o.optJSONObject("pictures")?.optString("base_link")?.let { "${it}_640x360" } ?: "", "vm")
+            }
+        }
+    }
+}
+
+/* ---------- Busca (YouTube Data API v3 oficial, chave grátis) ---------- */
+object YtApi {
+    /* Sem chave: lê os resultados da página de busca do YouTube (ytInitialData). Com chave: usa a API oficial. */
+    suspend fun search(q: String, key: String): Result<List<YtVideo>> =
+        if (key.isBlank()) scrape(q) else api(q, key).recoverCatching { scrape(q).getOrThrow() }
+
+    private suspend fun scrape(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val c = URL("https://www.youtube.com/results?search_query=${URLEncoder.encode(q, "UTF-8")}&sp=EgIQAQ%253D%253D&hl=pt-BR")
+                .openConnection() as HttpURLConnection
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36")
+            c.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9")
+            c.setRequestProperty("Cookie", "CONSENT=YES+1")
+            c.connectTimeout = 10000; c.readTimeout = 10000
+            val html = try { c.inputStream.bufferedReader().readText() } finally { c.disconnect() }
+            val start = html.indexOf("ytInitialData").let { if (it < 0) error("YouTube mudou a página") else html.indexOf('{', it) }
+            val data = JSONObject(jsonAt(html, start))
+            val out = ArrayList<YtVideo>()
+            fun walk(x: Any?) {
+                when (x) {
+                    is JSONObject -> {
+                        val v = x.optJSONObject("videoRenderer")
+                        if (v != null) {
+                            fun txt(o: JSONObject?) = o?.optString("simpleText")?.takeIf { it.isNotBlank() }
+                                ?: o?.optJSONArray("runs")?.let { r -> (0 until r.length()).joinToString("") { r.getJSONObject(it).optString("text") } } ?: ""
+                            val thumbs = v.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                            val th = thumbs?.let { it.getJSONObject(it.length() - 1).optString("url") } ?: ""
+                            out += YtVideo(v.getString("videoId"), txt(v.optJSONObject("title")), txt(v.optJSONObject("ownerText")), th)
+                        } else x.keys().forEach { walk(x.get(it)) }
+                    }
+                    is JSONArray -> for (i in 0 until x.length()) walk(x.get(i))
+                }
+            }
+            walk(data)
+            out.distinctBy { it.id }.take(30)
+        }
+    }
+
+    // recorta o objeto JSON que começa em "start", respeitando strings
+    private fun jsonAt(s: String, start: Int): String {
+        var depth = 0; var inStr = false; var esc = false
+        for (i in start until s.length) {
+            val ch = s[i]
+            if (inStr) { if (esc) esc = false else if (ch == '\\') esc = true else if (ch == '"') inStr = false; continue }
+            when (ch) { '"' -> inStr = true; '{' -> depth++; '}' -> { depth--; if (depth == 0) return s.substring(start, i + 1) } }
+        }
+        error("JSON incompleto")
+    }
+
+    private suspend fun api(q: String, key: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val u = URL("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=25" +
+                "&videoCategoryId=10&q=${URLEncoder.encode(q, "UTF-8")}&key=$key")
+            val c = u.openConnection() as HttpURLConnection
+            try {
+                val body = (if (c.responseCode == 200) c.inputStream else c.errorStream).bufferedReader().readText()
+                if (c.responseCode != 200) error(JSONObject(body).optJSONObject("error")?.optString("message") ?: "Erro ${c.responseCode}")
+                val items = JSONObject(body).getJSONArray("items")
+                List(items.length()) { i ->
+                    val it = items.getJSONObject(i); val sn = it.getJSONObject("snippet")
+                    fun dec(s: String) = HtmlCompat.fromHtml(s, HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+                    YtVideo(it.getJSONObject("id").getString("videoId"), dec(sn.getString("title")), dec(sn.getString("channelTitle")),
+                        sn.getJSONObject("thumbnails").let { t -> (t.optJSONObject("high") ?: t.getJSONObject("default")).getString("url") })
+                }
+            } finally { c.disconnect() }
+        }
+    }
+}
+
+/* ---------- Favoritos e histórico do YouTube ---------- */
+object YtStore {
+    private fun list(k: String): List<YtVideo> = JSONArray(Prefs.sp.getString(k, "[]")).let { a -> List(a.length()) { YtVideo.from(a.getJSONObject(it)) } }
+    private fun save(k: String, l: List<YtVideo>) = Prefs.sp.edit().putString(k, JSONArray(l.map { it.json() }).toString()).apply()
+    fun favs() = list("ytfavs")
+    fun history() = list("ythist")
+    fun isFav(id: String) = favs().any { it.id == id }
+    fun toggleFav(v: YtVideo) { val f = favs(); save("ytfavs", if (f.any { it.id == v.id }) f.filter { it.id != v.id } else listOf(v) + f) }
+    fun addHistory(v: YtVideo) { save("ythist", (listOf(v) + history().filter { it.id != v.id }).take(50)) }
+    var apiKey: String get() = Prefs.sp.getString("ytkey", "") ?: ""; set(v) = Prefs.sp.edit().putString("ytkey", v.trim()).apply()
+    var autoNext: Boolean get() = Prefs.sp.getBoolean("ytauto", true); set(v) = Prefs.sp.edit().putBoolean("ytauto", v).apply()
+    var vimeoToken: String get() = Prefs.sp.getString("vmtoken", "") ?: ""; set(v) = Prefs.sp.edit().putString("vmtoken", v.trim()).apply()
+    var source: String get() = Prefs.sp.getString("osrc", "yt") ?: "yt"; set(v) = Prefs.sp.edit().putString("osrc", v).apply()
+    var showVideo: Boolean get() = Prefs.sp.getBoolean("ytvideo", true); set(v) = Prefs.sp.edit().putBoolean("ytvideo", v).apply()
+}
+
+/* ---------- Estado do player do YouTube ---------- */
+object YtPlayer {
+    var queue by mutableStateOf<List<YtVideo>>(emptyList())
+    var index by mutableIntStateOf(-1)
+    var playing by mutableStateOf(false)
+    var time by mutableFloatStateOf(0f)
+    var duration by mutableFloatStateOf(0f)
+    var web: WebView? = null
+    val current get() = queue.getOrNull(index)
+
+    private var loadedSrc: String? = null
+    fun play(list: List<YtVideo>, i: Int) {
+        queue = list; index = i
+        val v = current ?: return
+        YtStore.addHistory(v)
+        val w = web
+        if (w != null && loadedSrc != v.src) load(w, v) else js("player.loadVideoById('${v.id}')")
+    }
+    fun load(w: WebView, v: YtVideo?) {
+        loadedSrc = v?.src ?: "yt"; time = 0f; duration = 0f
+        when (v?.src) {
+            "sc" -> w.loadDataWithBaseURL("https://w.soundcloud.com", SC_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
+            "vm" -> w.loadDataWithBaseURL("https://uncrowned.app", VM_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
+            else -> w.loadDataWithBaseURL("https://www.youtube.com", HTML, "text/html", "utf-8", null)
+        }
+    }
+    fun next() { if (index < queue.size - 1) play(queue, index + 1) }
+    fun prev() { if (time > 5) seek(0f) else if (index > 0) play(queue, index - 1) }
+    fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
+    fun seek(s: Float) = js("player.seekTo($s, true)")
+    fun js(code: String) { web?.evaluateJavascript("if(window.player&&player.loadVideoById){$code}", null) }
+
+    private val h = Handler(Looper.getMainLooper())
+    class Bridge {
+        @JavascriptInterface fun state(s: Int) = h.post {
+            playing = s == 1
+            if (s == 0 && YtStore.autoNext) next()
+        }.let {}
+        @JavascriptInterface fun time(t: Float, d: Float) = h.post { time = t; duration = d }.let {}
+        @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
+    }
+
+    const val HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100%;height:100%}</style></head>
+<body><div id="p"></div><script src="https://www.youtube.com/iframe_api"></script><script>
+var player;
+function onYouTubeIframeAPIReady(){player=new YT.Player('p',{width:'100%',height:'100%',
+playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1},
+events:{onReady:function(){Android.ready()},onStateChange:function(e){Android.state(e.data)}}});}
+setInterval(function(){if(player&&player.getCurrentTime){Android.time(player.getCurrentTime()||0,player.getDuration()||0)}},500);
+</script></body></html>"""
+
+    // SoundCloud: player oficial (Widget API); "player" imita a interface do YouTube pra reaproveitar os controles
+    const val SC_HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{border:0;width:100%;height:100%}</style></head><body>
+<iframe id="sc" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/__ID__&auto_play=true&visual=true&show_comments=false"></iframe>
+<script src="https://w.soundcloud.com/player/api.js"></script><script>
+var w=SC.Widget('sc');
+var player={playVideo:function(){w.play()},pauseVideo:function(){w.pause()},seekTo:function(s){w.seekTo(s*1000)},
+loadVideoById:function(id){w.load('https://soundcloud.com/'+id,{auto_play:true,visual:true,show_comments:false})}};
+w.bind(SC.Widget.Events.PLAY,function(){Android.state(1)});
+w.bind(SC.Widget.Events.PAUSE,function(){Android.state(2)});
+w.bind(SC.Widget.Events.FINISH,function(){Android.state(0)});
+setInterval(function(){w.getPosition(function(p){w.getDuration(function(d){Android.time(p/1000,d/1000)})})},500);
+</script></body></html>"""
+
+    // Vimeo: player oficial (Player.js)
+    const val VM_HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{border:0;width:100%;height:100%}</style></head><body>
+<iframe id="v" allow="autoplay; fullscreen" src="https://player.vimeo.com/video/__ID__?autoplay=1"></iframe>
+<script src="https://player.vimeo.com/api/player.js"></script><script>
+var vp=new Vimeo.Player(document.getElementById('v'));
+var player={playVideo:function(){vp.play()},pauseVideo:function(){vp.pause()},seekTo:function(s){vp.setCurrentTime(s)},
+loadVideoById:function(id){vp.loadVideo(id).then(function(){vp.play()})}};
+vp.on('play',function(){Android.state(1)});vp.on('pause',function(){Android.state(2)});vp.on('ended',function(){Android.state(0)});
+vp.on('timeupdate',function(d){Android.time(d.seconds,d.duration)});
+</script></body></html>"""
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun YtWebPlayer(modifier: Modifier) {
+    AndroidView(modifier = modifier, factory = { ctx ->
+        (YtPlayer.web ?: WebView(ctx).apply {
+            settings.javaScriptEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.domStorageEnabled = true
+            webChromeClient = WebChromeClient()
+            setBackgroundColor(android.graphics.Color.BLACK)
+            addJavascriptInterface(YtPlayer.Bridge(), "Android")
+            YtPlayer.web = this
+            YtPlayer.load(this, YtPlayer.current)
+        }).also { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+    })
+}
+
+/* ---------- Aba YouTube ---------- */
+@Composable
+fun YouTubeTab(ui: PlayerUi) {
+    Prefs.version.intValue
+    val scope = rememberCoroutineScope()
+    var q by rememberSaveableString()
+    var results by remember { mutableStateOf<List<YtVideo>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var downloadable by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var view by remember { mutableStateOf("busca") }
+    var keyDraft by remember { mutableStateOf(YtStore.apiKey) }
+
+    fun doSearch() {
+        if (q.isBlank()) return
+        loading = true; error = null; view = "busca"
+        scope.launch {
+            // busca em todos ao mesmo tempo e intercala os resultados
+            val yt = async { YtApi.search(q, YtStore.apiKey).getOrDefault(emptyList()) }
+            val sc = async { OtherApi.soundcloud(q).getOrDefault(emptyList()) }
+            val vm = async { if (YtStore.vimeoToken.isBlank()) emptyList() else OtherApi.vimeo(q, YtStore.vimeoToken).getOrDefault(emptyList()) }
+            val au = async { Audius.search(q).getOrDefault(emptyList()) }
+            val ia = async { Archive.search(q).getOrDefault(emptyList()) }
+            val lists = listOf(yt.await(), sc.await(), vm.await())
+            results = (0 until (lists.maxOfOrNull { it.size } ?: 0)).flatMap { i -> lists.mapNotNull { it.getOrNull(i) } }
+            downloadable = au.await().filter { it.downloadable } + ia.await()
+            if (results.isEmpty() && downloadable.isEmpty()) error = "Nada encontrado"
+            loading = false
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Header("Online")
+        OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            placeholder = { Text("Buscar em YouTube, SoundCloud, Vimeo e Audius") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true,
+            shape = MaterialTheme.shapes.large, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { doSearch() }))
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(view == "busca", { view = "busca" }, { Text("Resultados") })
+            FilterChip(view == "favs", { view = "favs" }, { Text("Favoritos") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(16.dp)) })
+            FilterChip(view == "hist", { view = "hist" }, { Text("Histórico") })
+            FilterChip(YtPlayer.queue.isNotEmpty() && view == "fila", { view = "fila" }, { Text("Fila") })
+        }
+        val list = when (view) { "favs" -> YtStore.favs(); "hist" -> YtStore.history(); "fila" -> YtPlayer.queue; else -> results }
+        when {
+            loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+            error != null && view == "busca" -> Text("Erro: $error", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error)
+            list.isEmpty() && downloadable.isEmpty() -> Text("Nada aqui ainda.", Modifier.fillMaxWidth().padding(32.dp), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else -> LazyColumn(Modifier.fillMaxSize()) {
+                if (view == "busca" && downloadable.isNotEmpty()) {
+                    item { Section("PRA BAIXAR (${downloadable.size})") }
+                    itemsIndexed(downloadable.take(15), key = { _, t -> "dl" + t.id }) { i, t -> TrackRow(ui, t) { ui.playOnline(downloadable, i) } }
+                    item { Section("ONLINE") }
+                }
+                itemsIndexed(list, key = { i, v -> "$i${v.src}${v.id}" }) { i, v -> YtRow(v) { ui.controller?.pause(); YtPlayer.play(list, i) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberSaveableString() = androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+
+@Composable
+fun YtRow(v: YtVideo, onClick: () -> Unit) {
+    Prefs.version.intValue
+    val cur = YtPlayer.current?.id == v.id
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick)
+        .background(if (cur) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent)
+        .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Art(v.thumb, Modifier.width(96.dp).aspectRatio(16f / 9f))
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold,
+                color = if (cur) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+            Text(mapOf("yt" to "YouTube", "sc" to "SoundCloud", "vm" to "Vimeo")[v.src].orEmpty() + " • " + v.channel, maxLines = 1,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = { YtStore.toggleFav(v) }) {
+            Icon(if (YtStore.isFav(v.id)) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null,
+                tint = if (YtStore.isFav(v.id)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        IconButton(onClick = {
+            val link = when (v.src) { "sc" -> "https://soundcloud.com/${v.id}"; "vm" -> "https://vimeo.com/${v.id}"; else -> "https://youtu.be/${v.id}" }
+            ctx.startActivity(android.content.Intent.createChooser(android.content.Intent(android.content.Intent.ACTION_SEND)
+                .setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, "${v.title} — $link"), "Compartilhar"))
+        }) { Icon(Icons.Rounded.Share, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+/* ---------- Player do YouTube (fica sempre montado; expande/recolhe) ---------- */
+@Composable
+fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
+    Prefs.version.intValue
+    val v = YtPlayer.current ?: return
+    val accent = MaterialTheme.colorScheme.primary
+    Surface(
+        Modifier.fillMaxWidth().then(if (expanded) Modifier.fillMaxHeight() else Modifier),
+        color = if (expanded) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.secondaryContainer,
+        shape = if (expanded) MaterialTheme.shapes.extraSmall else MaterialTheme.shapes.large
+    ) {
+        Column(if (expanded) Modifier.statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp) else Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            if (expanded) Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onExpand(false) }) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
+                Text(mapOf("yt" to "YOUTUBE", "sc" to "SOUNDCLOUD", "vm" to "VIMEO")[v.src] ?: "", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
+                IconButton(onClick = { YtStore.showVideo = !YtStore.showVideo }) {
+                    Icon(if (YtStore.showVideo) Icons.Rounded.Videocam else Icons.Rounded.VideocamOff, null)
+                }
+            }
+            // O player oficial precisa ficar visível na tela (regra do YouTube)
+            val showVid = expanded && YtStore.showVideo
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                YtWebPlayer(
+                    if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp)
+                    else Modifier.width(if (expanded) 1.dp else 78.dp).aspectRatio(16f / 9f)
+                )
+                if (!expanded) {
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp).clickable { onExpand(true) }) {
+                        Text(v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(v.channel, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                    }
+                    IconButton(onClick = { YtPlayer.toggle() }) { Icon(if (YtPlayer.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null) }
+                    IconButton(onClick = { YtPlayer.next() }) { Icon(Icons.Rounded.SkipNext, null) }
+                }
+            }
+            if (expanded) {
+                if (!showVid) Art(v.thumb, Modifier.fillMaxWidth(Prefs.artSize).aspectRatio(1f).padding(vertical = 16.dp), MaterialTheme.shapes.extraLarge)
+                Spacer(Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(v.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
+                        Text(v.channel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { YtStore.toggleFav(v) }) {
+                        Icon(if (YtStore.isFav(v.id)) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = accent)
+                    }
+                }
+                val d = YtPlayer.duration.coerceAtLeast(1f)
+                var drag by remember { mutableStateOf<Float?>(null) }
+                Slider(drag ?: (YtPlayer.time / d).coerceIn(0f, 1f), { drag = it }, onValueChangeFinished = { drag?.let { YtPlayer.seek(it * d) }; drag = null })
+                Row(Modifier.fillMaxWidth()) {
+                    Text(fmt((YtPlayer.time * 1000).toLong())); Spacer(Modifier.weight(1f)); Text(fmt((YtPlayer.duration * 1000).toLong()))
+                }
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { YtPlayer.seek((YtPlayer.time - Prefs.seekStep).coerceAtLeast(0f)) }) { Icon(Icons.Rounded.Replay10, null) }
+                    IconButton(onClick = { YtPlayer.prev() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
+                    FilledIconButton(onClick = { YtPlayer.toggle() }, Modifier.size(76.dp), shape = MaterialTheme.shapes.extraLarge) {
+                        Icon(if (YtPlayer.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(42.dp))
+                    }
+                    IconButton(onClick = { YtPlayer.next() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
+                    IconButton(onClick = { YtPlayer.seek(YtPlayer.time + Prefs.seekStep) }) { Icon(Icons.Rounded.Forward10, null) }
+                }
+                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tocar a próxima sozinho"); Spacer(Modifier.width(8.dp))
+                    Switch(YtStore.autoNext, { YtStore.autoNext = it })
+                }
+            }
+        }
+    }
+}
