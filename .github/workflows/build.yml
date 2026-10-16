@@ -2,6 +2,8 @@ name: Gerar APK
 on:
   push:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,7 +17,16 @@ jobs:
         with:
           gradle-version: "8.11.1"
       - run: gradle assembleRelease --no-daemon
+      - run: cp app/build/outputs/apk/release/app-release.apk UncrownedMusic.apk
       - uses: actions/upload-artifact@v4
         with:
           name: UncrownedMusic-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: UncrownedMusic.apk
+      - name: Publicar na página de Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Uncrowned Music (build ${{ github.run_number }})
+          body: "Baixe o UncrownedMusic.apk abaixo e instale no celular."
+          make_latest: true
+          files: UncrownedMusic.apk
