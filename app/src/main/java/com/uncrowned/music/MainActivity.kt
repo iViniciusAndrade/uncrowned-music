@@ -135,16 +135,19 @@ fun UncrownedTheme(content: @Composable () -> Unit) {
         primary = accent, onPrimary = onAccent, secondary = accent, tertiary = accent,
         primaryContainer = accent.copy(alpha = 0.3f).compositeOver(Color(0xFF151518)),
         secondaryContainer = accent.copy(alpha = 0.22f).compositeOver(Color(0xFF151518)),
-        background = Color(0xFF0E0E10), surface = Color(0xFF0E0E10),
-        surfaceContainer = Color(0xFF1A1A1E), surfaceContainerHigh = Color(0xFF222227)
+        background = Color(0xFF000000), surface = Color(0xFF000000), onSurfaceVariant = Color(0xFF8E8E93),
+        surfaceContainer = Color(0xFF1C1C1E), surfaceContainerHigh = Color(0xFF2C2C2E), surfaceContainerLow = Color(0xFF0E0E0F),
+        outlineVariant = Color(0xFF38383A)
     ) else lightColorScheme(
         primary = accent, onPrimary = onAccent, secondary = accent, tertiary = accent,
         primaryContainer = accent.copy(alpha = 0.2f).compositeOver(Color.White),
-        secondaryContainer = accent.copy(alpha = 0.16f).compositeOver(Color.White)
+        secondaryContainer = accent.copy(alpha = 0.16f).compositeOver(Color.White),
+        background = Color(0xFFF2F2F7), surface = Color(0xFFF2F2F7), onSurfaceVariant = Color(0xFF8E8E93),
+        surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFE5E5EA), outlineVariant = Color(0xFFC6C6C8)
     )
     if (mode == "amoled") scheme = scheme.copy(
         background = Color.Black, surface = Color.Black,
-        surfaceContainer = Color(0xFF0B0B0B), surfaceContainerHigh = Color(0xFF141414), surfaceContainerLow = Color(0xFF050505)
+        surfaceContainer = Color(0xFF141414), surfaceContainerHigh = Color(0xFF222224), surfaceContainerLow = Color(0xFF050505)
     )
     val r = Prefs.corner.dp
     val d = LocalDensity.current

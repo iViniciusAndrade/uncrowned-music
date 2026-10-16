@@ -44,7 +44,7 @@ object Prefs {
 
     // Aparência
     var themeMode: String get() = s("theme", "amoled"); set(v) = ps("theme", v)          // system/light/dark/amoled
-    var accent: Int get() = sp.getInt("accent", 0xFF9D4EDD.toInt()); set(v) = pi("accent", v)
+    var accent: Int get() = sp.getInt("accent", 0xFFFA2D48.toInt()); set(v) = pi("accent", v)
     var dynamicColor: Boolean get() = sp.getBoolean("dynamic", false); set(v) = pb("dynamic", v)
     var corner: Float get() = sp.getFloat("corner", 16f); set(v) = pf("corner", v)
     var fontScale: Float get() = sp.getFloat("fontscale", 1f); set(v) = pf("fontscale", v)
@@ -60,7 +60,12 @@ object Prefs {
     var miniStyle: String get() = s("ministyle", "card"); set(v) = ps("ministyle", v)    // card/flat/floating
     var showProgressMini: Boolean get() = sp.getBoolean("miniprog", true); set(v) = pb("miniprog", v)
 
+    // Biblioteca: esconder áudios que não são música (WhatsApp, gravações, Telegram...)
+    var hideVoice: Boolean get() = sp.getBoolean("hidevoice", true); set(v) = pb("hidevoice", v)
+    var artPulse: Boolean get() = sp.getBoolean("artpulse", true); set(v) = pb("artpulse", v)
+
     // Letras
+    var lyricsSource: String get() = s("lyricsrc", "letras"); set(v) = ps("lyricsrc", v)   // letras/synced
     var lyricsSize: Float get() = sp.getFloat("lyricsize", 22f); set(v) = pf("lyricsize", v)
     var lyricsAlign: String get() = s("lyricsalign", "center"); set(v) = ps("lyricsalign", v)
 
@@ -117,7 +122,7 @@ object Prefs {
 /* ---------------- Biblioteca de músicas ---------------- */
 data class Song(
     val id: Long, val title: String, val artist: String, val album: String,
-    val albumId: Long, val duration: Long, val uri: Uri, val dateAdded: Long
+    val albumId: Long, val duration: Long, val uri: Uri, val dateAdded: Long, val year: Int = 0
 ) {
     val art: Uri get() = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
     fun toItem(): MediaItem = MediaItem.Builder()
@@ -131,6 +136,8 @@ data class Song(
 }
 
 object Library {
+    // pastas de áudio que não são música: WhatsApp (notas de voz e áudios), gravações, Telegram, chamadas...
+    private val VOICE = Regex("(?i)(whatsapp|telegram|recordings?|grava[cç][oõ]es|call|chamada|voice|voz|notes|ptt|signal|messenger|instagram|ringtones|notifications|alarms)")
     val songs = mutableStateListOf<Song>()
     fun byId(id: String) = songs.firstOrNull { it.id.toString() == id }
 
@@ -139,21 +146,24 @@ object Library {
         val proj = arrayOf(
             MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATE_ADDED
+            MediaStore.Audio.Media.DATE_ADDED, MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.YEAR
         )
         val minMs = Prefs.minDurationSec * 1000L
         c.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, proj,
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.IS_RINGTONE} = 0 AND " +
+                "${MediaStore.Audio.Media.IS_NOTIFICATION} = 0 AND ${MediaStore.Audio.Media.IS_ALARM} = 0 AND ${MediaStore.Audio.Media.IS_PODCAST} = 0", null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
         )?.use { cur ->
             while (cur.moveToNext()) {
                 val id = cur.getLong(0); val dur = cur.getLong(5)
                 if (dur < minMs) continue
+                val path = cur.getString(7) ?: ""
+                if (Prefs.hideVoice && VOICE.containsMatchIn(path.substringBeforeLast('/', ""))) continue
                 out += Song(
                     id, cur.getString(1) ?: "Sem título",
                     (cur.getString(2) ?: "").let { if (it == "<unknown>" || it.isBlank()) "Artista desconhecido" else it },
                     cur.getString(3) ?: "Álbum", cur.getLong(4), dur,
-                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id), cur.getLong(6)
+                    ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id), cur.getLong(6), cur.getInt(8)
                 )
             }
         }
@@ -212,16 +222,17 @@ object Sleep {
 }
 
 /* ---------------- Letras (lrclib.net, grátis) ---------------- */
-data class Lyrics(val synced: List<Pair<Long, String>>?, val plain: String?)
+data class Lyrics(val synced: List<Pair<Long, String>>?, val plain: String?, val source: String = "")
 
 object LyricsApi {
     private val cache = HashMap<String, Lyrics>()
     private val lrc = Regex("""\[(\d+):(\d+)(?:[.:](\d+))?](.*)""")
 
     suspend fun get(artist: String, title: String, durationMs: Long): Lyrics = withContext(Dispatchers.IO) {
-        val key = "$artist|$title"
+        val key = "$artist|$title|${Prefs.lyricsSource}"
         cache[key]?.let { return@withContext it }
-        val res = try {
+        val letras = if (Prefs.lyricsSource == "letras") letrasMus(artist, title) else null
+        val res = if (letras != null) Lyrics(null, letras, "Letras.mus.br") else try {
             fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
             val url = URL("https://lrclib.net/api/get?artist_name=${enc(artist)}&track_name=${enc(title)}&duration=${durationMs / 1000}")
             var json = fetch(url)
@@ -237,16 +248,48 @@ object LyricsApi {
                         (m.toLong() * 60_000 + s.toLong() * 1000 + frac) to t.trim()
                     }
                 }
-                Lyrics(synced, o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" })
+                Lyrics(synced, o.optString("plainLyrics").takeIf { it.isNotBlank() && it != "null" }, "LRCLIB")
             }
-        } catch (_: Throwable) { Lyrics(null, null) }
+        } catch (_: Throwable) { Lyrics(null, null) }.let { l ->
+            // se a fonte sincronizada não achou, tenta o Letras.mus.br
+            if (l.synced == null && l.plain == null && Prefs.lyricsSource != "letras") letrasMus(artist, title)?.let { Lyrics(null, it, "Letras.mus.br") } ?: l else l
+        }
         cache[key] = res
         res
     }
 
+    /* Letras.mus.br: usa a busca do próprio site pra achar o endereço da música e lê a letra da página */
+    private fun clean(s: String) = s.replace(Regex("(?i)\\s*[\\(\\[].*?(official|oficial|video|v[ií]deo|lyric|audio|áudio|visualizer|prod|ft\\.|feat).*?[\\)\\]]"), "")
+        .replace(Regex("(?i)\\s*-\\s*topic$"), "").trim()
+    private fun slug(s: String) = java.text.Normalizer.normalize(s.lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}"), "").replace("&", "e").replace(Regex("[^a-z0-9]+"), "-").trim('-')
+    private fun lyricFromPage(url: String): String? {
+        val html = fetch(URL(url)) ?: return null
+        val i = html.indexOf("lyric-original").takeIf { it >= 0 } ?: return null
+        val start = html.indexOf('>', i) + 1
+        val end = html.indexOf("</div>", start).takeIf { it > start } ?: return null
+        val txt = androidx.core.text.HtmlCompat.fromHtml(html.substring(start, end), androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+        return txt.takeIf { it.length > 20 }
+    }
+    private fun letrasMus(artistRaw: String, titleRaw: String): String? = runCatching {
+        var artist = clean(artistRaw); var title = clean(titleRaw)
+        if (title.contains(" - ")) { val p = title.split(" - ", limit = 2); if (artist.isBlank() || artist.equals("YouTube", true)) artist = p[0]; title = p[1] }
+        val q = URLEncoder.encode("$artist $title", "UTF-8")
+        val body = fetch(URL("https://solr.sscdn.co/letras/m1/?q=$q&wt=json&callback=LetrasSug"))
+        if (body != null && body.contains('{')) {
+            val docs = JSONObject(body.substring(body.indexOf('{'), body.lastIndexOf('}') + 1)).getJSONObject("response").getJSONArray("docs")
+            for (k in 0 until docs.length()) {
+                val d = docs.getJSONObject(k)
+                val dns = d.optString("dns"); val u = d.optString("url")
+                if (dns.isNotBlank() && u.isNotBlank()) lyricFromPage("https://www.letras.mus.br/$dns/$u/")?.let { return@runCatching it }
+            }
+        }
+        lyricFromPage("https://www.letras.mus.br/${slug(artist)}/${slug(title)}/")
+    }.getOrNull()
+
     private fun fetch(u: URL): String? {
         val c = u.openConnection() as HttpURLConnection
-        c.setRequestProperty("User-Agent", "UncrownedMusic/1.0")
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) UncrownedMusic/1.0")
         c.connectTimeout = 8000; c.readTimeout = 8000
         return try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
     }

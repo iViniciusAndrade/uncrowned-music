@@ -78,18 +78,37 @@ class PlaybackService : MediaSessionService() {
             .build()
         refresh()
         Prefs.sp.registerOnSharedPreferenceChangeListener(prefListener)
+        handler.postDelayed(watchdog, 1000)
     }
 
     /* Velocidade/tom: aplica com atraso (junta várias mudanças seguidas) e depois "reinicia" o
        processamento de áudio no mesmo ponto, o que evita o bug de ficar tudo mudo. */
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    // reconstrói todo o caminho do áudio (para, aplica, prepara de novo no mesmo ponto) — é o que acaba com o "mudo"
+    private fun rebuild(p: PlaybackParameters) {
+        if (player.mediaItemCount == 0) { player.playbackParameters = p; return }
+        val idx = player.currentMediaItemIndex; val pos = player.currentPosition; val pwr = player.playWhenReady
+        player.stop()
+        player.playbackParameters = p
+        player.prepare()
+        player.seekTo(idx, pos)
+        player.playWhenReady = pwr
+    }
     private val applyRunnable = Runnable {
         val p = PlaybackParameters(Prefs.speed, Prefs.pitch)
-        if (player.playbackParameters != p) {
-            val wasPlaying = player.playWhenReady
-            player.playbackParameters = p
-            player.seekTo(player.currentMediaItemIndex, player.currentPosition)
-            player.playWhenReady = wasPlaying
+        if (player.playbackParameters != p) rebuild(p)
+    }
+    // vigia: se está "tocando" mas o tempo não anda por ~3s, reconstrói o áudio sozinho
+    private var lastPos = -1L; private var stuck = 0
+    private val watchdog = object : Runnable {
+        override fun run() {
+            if (player.isPlaying) {
+                val pos = player.currentPosition
+                stuck = if (pos == lastPos) stuck + 1 else 0
+                lastPos = pos
+                if (stuck >= 3) { stuck = 0; rebuild(player.playbackParameters) }
+            } else stuck = 0
+            handler.postDelayed(this, 1000)
         }
     }
     private fun applyParams() { handler.removeCallbacks(applyRunnable); handler.postDelayed(applyRunnable, 250) }
@@ -165,6 +184,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         Prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         handler.removeCallbacks(applyRunnable)
+        handler.removeCallbacks(watchdog)
         Effects.release()
         Sleep.player = null
         session?.run { player.release(); release() }
