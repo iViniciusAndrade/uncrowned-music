@@ -19,13 +19,20 @@
 
 <!-- Tocando agora (tela cheia) -->
 <section id="np" class="hidden">
-  <div id="npBg"></div><div id="npShade"></div>
-  <button id="npClose" class="icon" title="Fechar (Esc)"><svg viewBox="0 0 24 24"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg></button>
+  <div id="npBg"></div><div id="npAurora"><i></i><i></i><i></i></div><div id="npShade"></div><div id="npGrain"></div>
+  <button id="npClose" title="Fechar (Esc)"><svg viewBox="0 0 24 24"><path d="M18.3 5.71a.996.996 0 0 0-1.41 0L12 10.59 7.11 5.7A.996.996 0 1 0 5.7 7.11L10.59 12 5.7 16.89a.996.996 0 1 0 1.41 1.41L12 13.41l4.89 4.89a.996.996 0 1 0 1.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z"/></svg><span>Fechar</span><kbd>Esc</kbd></button>
   <div id="npLeft">
-    <div id="npArtWrap"><img id="npArt" alt=""><div id="npVideoSlot"></div></div>
-    <div id="npMeta"><div><div id="npTitle"></div><div id="npArtist"></div></div><button id="npFav" class="icon round"></button></div>
+    <div id="npArtWrap">
+      <div id="npCase">
+        <div class="caseTop"><span class="caseBrand">UNCROWNED</span><span class="caseNum"></span></div>
+        <div class="caseArt"><img id="npArt" alt=""><div class="caseStrip"><span>UNCROWNED&nbsp;&nbsp;MUSIC</span></div><div class="caseGlare"></div></div>
+        <div class="caseFoot"><span class="caseRating">L</span><span class="caseLabel"></span></div>
+      </div>
+      <div id="npVideoSlot"></div>
+    </div>
+    <div id="npMeta"><div style="min-width:0"><div id="npSrc"></div><div id="npTitle"></div><div id="npArtist"></div></div><button id="npFav" class="icon round"></button></div>
   </div>
-  <div id="npRight"><div id="lyrics"></div><div id="lyricsSrc"></div></div>
+  <div id="npRight"><div id="lyrics"></div><div id="lyricsSrc"></div><div id="npNext"></div></div>
 </section>
 
 <!-- players oficiais (YouTube / SoundCloud / Vimeo) ficam aqui, sempre montados -->

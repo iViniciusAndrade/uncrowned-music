@@ -45,7 +45,7 @@ const DEF = {
   theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, showVideo: true, videoSize: 360,
-  adblock: true, eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
+  adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], weekly: null, lastQueue: null };
 const S = () => D.settings;
@@ -355,6 +355,16 @@ function updateNowPlaying() {
   $('#npArt').src = art || 'logo.png'; $('#npArt').onerror = function () { this.src = 'logo.png'; };
   $('#npBg').style.backgroundImage = art ? `url("${art}")` : 'none';
   $('#npTitle').textContent = t.title; $('#npArtist').textContent = t.artist;
+  // moldura da capa (sorteada por música, sempre a mesma pra mesma faixa)
+  const k = keyOf(t); let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const cs = S().artShape === 'disc' || S().artShape === 'circle' ? 'none' : S().caseStyle === 'random' ? 'c' + (1 + h % 5) : S().caseStyle;
+  $('#npCase').className = cs;
+  $('#npCase .caseNum').textContent = { c2: '2', c3: '3', c4: '4', c5: '5' }[cs] || '';
+  $('#npCase .caseLabel').textContent = SRCNAME[t.src].toUpperCase();
+  $('#npSrc').innerHTML = `<i></i>${SRCNAME[t.src]}${t.year ? ' · ' + t.year : ''}${t.genre ? ' · ' + esc(t.genre) : ''}`;
+  const nx = st.queue[st.idx + 1];
+  $('#npNext').innerHTML = nx ? `<img src="${esc(artOf(nx))}" onerror="this.src='logo.png'"><div style="min-width:0"><small>A seguir</small><b>${esc(nx.title)} — ${esc(nx.artist)}</b></div>` : '';
+  artColor(art);
   $('#npFav').innerHTML = ico(isFav(t) ? 'heart' : 'heartO');
   document.title = `${t.title} — ${t.artist}`;
   const np = $('#np');
@@ -370,6 +380,24 @@ function updateNowPlaying() {
   layoutEmbed(); markCurrent();
   if (!$('#panel').classList.contains('hidden') && $('#panel').dataset.kind === 'queue') openQueue();
 }
+const SRCNAME = { local: 'No seu PC', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Internet Archive' };
+/* cor dominante da capa pro fundo animado */
+let colorKey = '';
+function artColor(url) {
+  if (!url || url === colorKey) return; colorKey = url;
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 24; const x = c.getContext('2d');
+      x.drawImage(img, 0, 0, 24, 24); const d = x.getImageData(0, 0, 24, 24).data;
+      let r = 0, g = 0, b = 0, w = 0;
+      for (let i = 0; i < d.length; i += 4) { const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); const s = mx - mn + 8; r += d[i] * s; g += d[i + 1] * s; b += d[i + 2] * s; w += s; }
+      $('#np').style.setProperty('--npc', `rgb(${r / w | 0},${g / w | 0},${b / w | 0})`);
+    } catch { $('#np').style.removeProperty('--npc'); }
+  };
+  img.src = url.startsWith('/') ? url : `/proxy?u=${encodeURIComponent(url)}`;
+}
+$('#npNext').onclick = () => next();
 function tick() {
   const p = st.dur ? Math.min(1, st.time / st.dur) : 0;
   if (!seeking) { $('#seekFill').style.width = (p * 100) + '%'; $('#seekKnob').style.left = (p * 100) + '%'; $('#tCur').textContent = fmt(st.time); }
@@ -409,11 +437,34 @@ let LY = null, lyKey = '', lyLines = [], lyCur = -1;
 async function loadLyrics() {
   const t = cur(); if (!t) return;
   const k = keyOf(t) + S().lyricsSource; if (k === lyKey) return; lyKey = k;
-  const box = $('#lyrics'); box.innerHTML = '<div class="plain" style="text-align:center">Procurando a letra…</div>'; $('#lyricsSrc').textContent = '';
+  const box = $('#lyrics'); $('#lyricsSrc').textContent = 'Procurando a letra…';
+  box.innerHTML = `<div class="lyLoad">${[82, 64, 90, 48, 72, 58, 86].map(w => `<i style="width:${w}%"></i>`).join('')}</div>`;
   LY = await U.lyrics(t.artist, t.title, t.duration || st.dur, S().lyricsSource);
   if (keyOf(cur()) + S().lyricsSource !== k) return;
   lyLines = []; lyCur = -1;
-  if (!LY) { box.innerHTML = '<div class="plain" style="text-align:center;opacity:.6">Letra não encontrada</div>'; return; }
+  if (!LY) { noLyrics(t); return; }
+  showLyrics(LY);
+}
+function noLyrics(t) {
+  const box = $('#lyrics'); $('#lyricsSrc').textContent = '';
+  const other = S().lyricsSource === 'letras' ? ['synced', 'LRCLIB'] : ['letras', 'Letras.mus.br'];
+  const notes = ['♪', '♫', '♬', '♩', '♪', '♫'].map((n, i) => `<span class="note" style="left:${10 + i * 15}%;bottom:${10 + (i % 3) * 8}%;animation-delay:${i * 1.1}s">${n}</span>`).join('');
+  box.innerHTML = `<div class="noLy">${notes}
+    <div class="eqv"><b></b><b></b><b></b><b></b><b></b></div>
+    <h3>Sem letra por aqui</h3>
+    <p>Não conseguimos carregar a letra de <b>${esc(t.title)}</b>. Pode ser instrumental, muito nova ou ainda não ter letra publicada.</p>
+    <div class="acts"><button id="lyOther">Tentar no ${other[1]}</button><button id="lyRetry">Tentar de novo</button><button id="lyWeb">Procurar na internet</button></div></div>`;
+  $('#lyOther').onclick = async () => {
+    box.innerHTML = `<div class="lyLoad">${[70, 52, 84, 60].map(w => `<i style="width:${w}%"></i>`).join('')}</div>`;
+    const r = await U.lyrics(t.artist, t.title, t.duration || st.dur, other[0]);
+    if (keyOf(cur()) !== keyOf(t)) return;
+    if (r) showLyrics(r); else { noLyrics(t); toast(`Também não achei no ${other[1]}`); }
+  };
+  $('#lyRetry').onclick = () => { lyKey = ''; loadLyrics(); };
+  $('#lyWeb').onclick = () => U.openUrl(`https://www.google.com/search?q=${encodeURIComponent(t.artist + ' ' + t.title + ' letra')}`);
+}
+function showLyrics(LY) {
+  const box = $('#lyrics'); lyLines = []; lyCur = -1;
   if (LY.synced) {
     lyLines = LY.synced.split('\n').map(l => { const m = /\[(\d+):(\d+)(?:[.:](\d+))?](.*)/.exec(l); return m ? { t: (+m[1]) * 60000 + (+m[2]) * 1000 + (m[3] ? +(m[3] + '00').slice(0, 3) : 0), s: m[4].trim() } : null; }).filter(Boolean);
     box.innerHTML = lyLines.map((l, i) => `<p data-i="${i}">${esc(l.s || '♪')}</p>`).join('');
@@ -674,6 +725,7 @@ views.settings = () => {
   </div>
   <div class="gtitle">Tocando agora</div><div class="group">
     ${opt('Capa', seg('artShape', [['square', 'Quadrada'], ['rounded', 'Arredondada'], ['circle', 'Círculo'], ['disc', 'Disco girando']]))}
+    ${opt('Moldura da capa', seg('caseStyle', [['random', 'Aleatória'], ['c1', 'CD clássico'], ['c2', 'Preta faixa azul'], ['c3', 'Preta prata'], ['c4', 'Azul'], ['c5', 'Branca'], ['none', 'Sem moldura']]), 'Caixinhas no estilo dos jogos de console antigos')}
     ${opt('Fundo', seg('npBg', [['blur', 'Capa desfocada'], ['gradient', 'Degradê'], ['solid', 'Sólido']]))}
     ${opt('Desfoque', rng('blur', 10, 140, 5))}
     ${opt('Capa encolhe ao pausar', sw('artPulse'), 'Igual ao Apple Music')}
@@ -714,7 +766,7 @@ views.settings = () => {
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
-  <div class="gfoot">A busca procura no seu PC, SoundCloud, YouTube, Vimeo, Audius e Internet Archive — nessa ordem.</div>
+  <div class="gfoot">A busca procura no seu PC, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
   <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC 1.0</div>`;
   const v = $('#view');
   v.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => { const k = b.parentElement.dataset.k; S()[k] = b.dataset.v; changed(k); });

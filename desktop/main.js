@@ -333,7 +333,7 @@ async function searchAll(q) {
   const s = (store.data && store.data.settings) || {};
   const safe = p => p.catch(() => []);
   const [sc, yt, vm, au, ia] = await Promise.all([safe(soundcloud(q)), safe(youtube(q)), safe(vimeo(q, s.vimeoToken)), safe(audiusSearch(q)), safe(archive(q))]);
-  return { stream: [...sc.slice(0, 20), ...yt.slice(0, 20), ...vm.slice(0, 10)], downloadable: [...au.filter(t => t.download), ...ia].slice(0, 15), audius: au };
+  return { stream: [...yt.slice(0, 25), ...sc.slice(0, 20), ...vm.slice(0, 10)], downloadable: [...au.filter(t => t.download), ...ia].slice(0, 15), audius: au };
 }
 
 /* ---------------- letras ---------------- */
