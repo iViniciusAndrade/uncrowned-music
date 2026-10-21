@@ -20,10 +20,36 @@
   "build": {
     "appId": "com.uncrowned.music.desktop",
     "productName": "Uncrowned Music",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "renderer/**", "build/icon.png"],
-    "win": { "icon": "build/icon.png", "target": ["nsis", "portable"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "Uncrowned Music", "artifactName": "UncrownedMusic-Setup.exe" },
-    "portable": { "artifactName": "UncrownedMusic-Portable.exe" }
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**",
+      "build/icon.png",
+      "build/icon.ico"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Uncrowned Music",
+      "artifactName": "UncrownedMusic-Setup.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "UncrownedMusic-Portable.exe"
+    }
   }
 }

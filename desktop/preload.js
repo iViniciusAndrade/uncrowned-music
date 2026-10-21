@@ -15,5 +15,8 @@ contextBridge.exposeInMainWorld('U', {
   download: (u, n) => ipcRenderer.invoke('download', u, n),
   openPath: p => ipcRenderer.invoke('open-path', p),
   openUrl: u => ipcRenderer.invoke('open-url', u),
-  titleColor: c => ipcRenderer.invoke('title-color', c)
+  titleColor: c => ipcRenderer.invoke('title-color', c),
+  ytLogin: () => ipcRenderer.invoke('yt-login'),
+  ytLogged: () => ipcRenderer.invoke('yt-logged'),
+  ytLogout: () => ipcRenderer.invoke('yt-logout')
 });

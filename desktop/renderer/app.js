@@ -104,13 +104,21 @@ function applyEq() {
   bassF.gain.value = s.eqOn ? s.bass : 0;
   gainN.gain.value = Math.pow(10, (s.eqOn ? s.gainBoost : 0) / 20);
 }
-function applyRate() {
+/* velocidade: no arquivo/stream muda de verdade (com ou sem o tom junto = slowed/nightcore).
+   YouTube só aceita alguns valores e mantém o tom; SoundCloud não deixa mudar. */
+let rateWarned = '';
+function applyRate(user) {
   const s = S();
-  audio.preservesPitch = !s.pitchWithSpeed;
-  audio.playbackRate = s.speed;
-  if (st.kind === 'yt' && yt.player && yt.player.setPlaybackRate) yt.player.setPlaybackRate(s.speed);
+  const keep = !s.pitchWithSpeed;
+  audio.preservesPitch = keep; audio.mozPreservesPitch = keep; audio.webkitPreservesPitch = keep;
+  audio.defaultPlaybackRate = s.speed;
+  if (audio.playbackRate !== s.speed) audio.playbackRate = s.speed;
+  if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.playbackRate=${s.speed};v.preservesPitch=${!s.pitchWithSpeed}}})(${V})`);
   if (st.kind === 'vm' && vm.player) vm.player.setPlaybackRate(s.speed).catch(() => {});
+  if (user && st.kind === 'sc' && s.speed !== 1 && rateWarned !== 'sc') { rateWarned = 'sc'; toast('O SoundCloud não deixa mudar a velocidade. Nas músicas do PC, Audius e Archive funciona.'); }
 }
+audio.addEventListener('loadedmetadata', () => applyRate());
+audio.addEventListener('playing', () => { if (audio.playbackRate !== S().speed) applyRate(); });
 audio.addEventListener('timeupdate', () => { if (st.kind === 'audio') { st.time = audio.currentTime * 1000; st.dur = (audio.duration || 0) * 1000; tick(); } });
 audio.addEventListener('play', () => setPlaying(true));
 audio.addEventListener('pause', () => setPlaying(false));
@@ -128,34 +136,73 @@ setInterval(() => {
 
 /* ---------------- players oficiais: YouTube / SoundCloud / Vimeo ---------------- */
 const loadScript = src => new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
-const yt = { player: null, ready: null }, sc = { w: null }, vm = { player: null };
+const yt = { wv: null }, sc = { w: null }, vm = { player: null };
 let pollT = null;
 function startPoll(fn) { clearInterval(pollT); pollT = setInterval(fn, 400); }
 function stopEmbeds(except) {
-  if (except !== 'yt' && yt.player && yt.player.pauseVideo) try { yt.player.pauseVideo(); } catch {}
+  if (except !== 'yt' && yt.wv) ytExec(`${V}&&${V}.pause()`);
   if (except !== 'sc' && sc.w) try { sc.w.pause(); } catch {}
   if (except !== 'vm' && vm.player) vm.player.pause().catch(() => {});
 }
 function embedHost(kind) {
   const inner = $('#embedInner');
-  if (inner.dataset.kind !== kind) { inner.innerHTML = '<div id="embedTarget"></div>'; inner.dataset.kind = kind; yt.player = null; sc.w = null; vm.player = null; }
+  if (inner.dataset.kind !== kind) { inner.innerHTML = '<div id="embedTarget"></div>'; inner.dataset.kind = kind; yt.wv = null; yt.ready = false; sc.w = null; vm.player = null; }
+  $('#embed').classList.remove('hidden');
+  layoutEmbed();
+}
+/* YouTube: página oficial do YouTube dentro do app, mostrando só o player.
+   Toca tudo que toca no site (com login, inclusive vídeo +18) e aceita velocidade/tom. */
+const YT_CSS = `html,body{overflow:hidden!important;background:#000!important}
+#masthead-container,ytd-masthead,#secondary,#below,#comments,#related,ytd-watch-metadata,#chat,tp-yt-app-drawer,ytd-mini-guide-renderer,#guide,ytd-popup-container,tp-yt-iron-overlay-backdrop,ytd-consent-bump-v2-lightbox{display:none!important}
+#movie_player,.html5-video-player{position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}
+video.html5-main-video{width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain!important}
+.ytp-chrome-top,.ytp-pause-overlay,.ytp-ce-element,.ytp-endscreen-content,.ytp-autonav-endscreen,.ytp-paid-content-overlay{display:none!important}`;
+const ytExec = code => { try { return yt.wv && yt.ready ? yt.wv.executeJavaScript(code).catch(() => null) : Promise.resolve(null); } catch { return Promise.resolve(null); } };
+const V = `(document.querySelector('video.html5-main-video')||document.querySelector('video'))`;
+let ytEnded = false, ytWarned = '';
+function ytWebview() {
+  const inner = $('#embedInner');
+  if (inner.dataset.kind !== 'yt') {
+    inner.innerHTML = '<webview id="ytw" partition="persist:youtube" webpreferences="autoplayPolicy=no-user-gesture-required,backgroundThrottling=no" src="about:blank"></webview>';
+    inner.dataset.kind = 'yt'; sc.w = null; vm.player = null;
+    yt.wv = $('#ytw');
+    yt.ready = false;
+    yt.wv.addEventListener('dom-ready', () => { yt.ready = true; yt.wv.insertCSS(YT_CSS); yt.wv.setAudioMuted(false); ytExec("window.dispatchEvent(new Event('resize'))"); });
+  }
   $('#embed').classList.remove('hidden');
   layoutEmbed();
 }
 async function playYT(t) {
-  embedHost('yt');
-  if (!window.YT || !YT.Player) {
-    await new Promise(ok => { window.onYouTubeIframeAPIReady = ok; loadScript('https://www.youtube.com/iframe_api'); });
-  }
-  if (yt.player && yt.player.loadVideoById) { yt.player.loadVideoById(t.id); }
-  else await new Promise(ok => {
-    yt.player = new YT.Player('embedTarget', { width: '100%', height: '100%', videoId: t.id,
-      playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1 },
-      events: { onReady: e => { e.target.playVideo(); applyRate(); e.target.setVolume(S().volume * 100); ok(); },
-        onStateChange: e => { if (e.data === 1) setPlaying(true); else if (e.data === 2) setPlaying(false); else if (e.data === 0) ended(); },
-        onError: () => { toast('Esse vídeo não pode ser tocado fora do YouTube. Pulando…'); setTimeout(next, 800); } } });
+  ytWebview();
+  ytEnded = false; ytWarned = '';
+  const url = `https://www.youtube.com/watch?v=${t.id}`;
+  try { if (yt.ready) yt.wv.loadURL(url).catch(() => {}); else yt.wv.src = url; } catch { yt.wv.src = url; }
+  startPoll(async () => {
+    if (st.kind !== 'yt') return;
+    const s = S();
+    const r = await ytExec(`(()=>{const v=${V};
+      const err=document.querySelector('.ytp-error, yt-playability-error-supported-renderers, #player-error-message-container');
+      const errTxt=err&&err.offsetParent!==null?err.innerText.slice(0,160):'';
+      if(!v)return {none:1,err:errTxt};
+      const ad=!!document.querySelector('.ad-showing');
+      const skip=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern'); if(skip) skip.click();
+      if(!ad){ if(Math.abs(v.playbackRate-${s.speed})>0.01) v.playbackRate=${s.speed}; v.preservesPitch=${!s.pitchWithSpeed}; }
+      if(Math.abs(v.volume-${S().volume})>0.02) v.volume=${S().volume};
+      return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,err:errTxt,id:new URLSearchParams(location.search).get('v')};})()`);
+    if (!r) return;
+    if (r.err && ytWarned !== r.err) {
+      ytWarned = r.err;
+      const age = /idade|age|sign in|faça login|inapropriado|inappropriate/i.test(r.err);
+      toast(age ? 'Vídeo +18: entre na sua conta do YouTube em Ajustes → YouTube pra liberar' : 'O YouTube não liberou esse vídeo. Pulando…');
+      if (!age) setTimeout(next, 1500);
+      return;
+    }
+    if (r.none) return;
+    if (r.id && r.id !== t.id && !ytEnded) { ytEnded = true; return ended(); }   // o YouTube tentou pular sozinho
+    if (!r.ad) { st.time = r.t * 1000; st.dur = r.d * 1000; tick(); }
+    if (st.playing === r.p) setPlaying(!r.p);
+    if (r.e && !ytEnded) { ytEnded = true; ended(); }
   });
-  startPoll(() => { if (yt.player && yt.player.getCurrentTime) { st.time = yt.player.getCurrentTime() * 1000; st.dur = (yt.player.getDuration() || 0) * 1000; tick(); } });
 }
 async function playSC(t) {
   embedHost('sc');
@@ -213,14 +260,14 @@ function toggle() {
   if (!cur()) return;
   if (!st.kind) return playAt(st.idx);
   if (st.kind === 'audio') audio.paused ? audio.play() : audio.pause();
-  else if (st.kind === 'yt' && yt.player) st.playing ? yt.player.pauseVideo() : yt.player.playVideo();
+  else if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.paused?v.play():v.pause()}})(${V})`).then(() => setPlaying(!st.playing));
   else if (st.kind === 'sc' && sc.w) sc.w.toggle();
   else if (st.kind === 'vm' && vm.player) st.playing ? vm.player.pause() : vm.player.play();
 }
 function pause() { if (st.playing) toggle(); }
 function seek(ms) {
   if (st.kind === 'audio') audio.currentTime = ms / 1000;
-  else if (st.kind === 'yt' && yt.player) yt.player.seekTo(ms / 1000, true);
+  else if (st.kind === 'yt' && yt.wv) ytExec(`${V}&&(${V}.currentTime=${ms / 1000})`);
   else if (st.kind === 'sc' && sc.w) sc.w.seekTo(ms);
   else if (st.kind === 'vm' && vm.player) vm.player.setCurrentTime(ms / 1000);
   st.time = ms; tick();
@@ -236,7 +283,7 @@ function ended() {
 function setVolume(v) {
   S().volume = v; save();
   audio.volume = v;
-  if (yt.player && yt.player.setVolume) yt.player.setVolume(v * 100);
+  if (yt.wv) ytExec(`${V}&&(${V}.volume=${v})`);
   if (sc.w) sc.w.setVolume(v * 100);
   if (vm.player) vm.player.setVolume(v).catch(() => {});
   $('#vol').value = v; $('#bVol').innerHTML = ico(v === 0 ? 'mute' : 'vol');
@@ -369,7 +416,7 @@ function rows(list, ctxName, opts = {}) {
   if (!list.length) return `<div class="empty">${opts.empty || 'Nada por aqui ainda.'}</div>`;
   return `<div class="list">${list.map((t, i) => `
     <div class="row" data-ctx="${ctxName}" data-i="${i}" data-k="${esc(keyOf(t))}">
-      <span class="n">${i + 1}</span>
+      <span class="n"><b>${i + 1}</b>${ico('play', 'pl')}</span>
       ${artOf(t) ? `<img loading="lazy" src="${esc(artOf(t))}" onerror="this.outerHTML='<div class=ph></div>'">` : '<div class="ph"></div>'}
       <span class="t">${t.src !== 'local' ? `<span class="badge ${t.src}">${{ yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE' }[t.src]}</span>` : ''}${esc(t.title)}</span>
       <span class="a">${esc(t.artist)}</span>
@@ -383,7 +430,8 @@ function rows(list, ctxName, opts = {}) {
     </div>`).join('')}</div>`;
 }
 function markCurrent() { const k = keyOf(cur()); document.querySelectorAll('.row').forEach(r => r.classList.toggle('cur', r.dataset.k === k)); }
-document.addEventListener('dblclick', e => { const r = e.target.closest('.row'); if (r) play(rowsCtx[r.dataset.ctx], +r.dataset.i); });
+document.addEventListener('dblclick', e => { const r = e.target.closest('.row'); if (r && !e.target.closest('[data-act]')) play(rowsCtx[r.dataset.ctx], +r.dataset.i); });
+document.addEventListener('click', e => { const c = e.target.closest('.row .n, .row img, .row .ph'); if (c) { const r = c.closest('.row'); play(rowsCtx[r.dataset.ctx], +r.dataset.i); } });
 document.addEventListener('click', async e => {
   const b = e.target.closest('.row [data-act]'); if (!b) return;
   e.stopPropagation();
@@ -494,17 +542,33 @@ views.playlist = () => {
 
 /* busca única: no PC + online (SoundCloud → YouTube → Vimeo) + pra baixar */
 let searchQ = '', searchRes = null, searchT;
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchT); e.target.dispatchEvent(new Event('input')); } });
+$('#q').addEventListener('paste', () => setTimeout(() => { clearTimeout(searchT); $('#q').dispatchEvent(new Event('input')); }, 0));
 $('#q').addEventListener('input', e => {
   searchQ = e.target.value.trim();
   clearTimeout(searchT);
   if (!searchQ) { if (view.name === 'search') go({ name: S().startView }); return; }
   if (view.name !== 'search') { view = { name: 'search' }; openNp(false); renderNav(); }
   searchRes = null; render();
-  searchT = setTimeout(async () => { const q = searchQ; const r = await U.search(q); if (q === searchQ) { searchRes = r; render(); } }, 600);
+  const isLink = /^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(searchQ);
+  searchT = setTimeout(async () => { const q = searchQ; const r = await U.search(q); if (q === searchQ) { searchRes = r; render(); } }, isLink ? 50 : 600);
 });
 views.search = () => {
   const q = searchQ.toLowerCase();
-  const local = q ? LIB.filter(t => (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).slice(0, 40) : [];
+  const local = q && !/^(https?:|www\.)/.test(q) ? LIB.filter(t => (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).slice(0, 40) : [];
+  if (searchRes && searchRes.link) {
+    const t = searchRes.stream[0]; rowsCtx.link = searchRes.stream;
+    $('#view').innerHTML = `<h1>Do link</h1>
+      <div style="display:flex;gap:24px;align-items:flex-end;margin-bottom:22px">
+        <img src="${esc(t.art)}" onerror="this.src='logo.png'" style="width:${t.src === 'sc' ? 220 : 360}px;aspect-ratio:${t.src === 'sc' ? '1' : '16/9'};object-fit:cover;border-radius:var(--r);box-shadow:0 20px 40px rgba(0,0,0,.5)">
+        <div><div class="badge ${t.src}" style="display:inline-block;margin-bottom:8px">${{ yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO' }[t.src]}</div>
+          <div style="font-size:24px;font-weight:700">${esc(t.title)}</div><div style="color:var(--dim);margin:4px 0 16px">${esc(t.artist)}</div>
+          <div class="btns" style="margin:0"><button class="btn fill" data-play="link">${ico('play')} Tocar</button><button class="btn" id="lnkAdd">${ico('plus')} Adicionar à fila</button><button class="btn" id="lnkMore">${ico('more')}</button></div></div>
+      </div>`;
+    $('#lnkAdd').onclick = () => { st.queue.push(t); toast('Adicionado à fila'); if (st.idx < 0) playAt(0); };
+    $('#lnkMore').onclick = () => menu(t, searchRes.stream, 0, 'link');
+    return;
+  }
   $('#view').innerHTML = `<h1>Resultados</h1>
     ${local.length ? `<h2>No seu PC</h2>${rows(local, 'sLocal')}` : ''}
     <h2>Online ${searchRes ? '' : '<span class="spinner"></span>'}</h2>
@@ -621,6 +685,9 @@ views.settings = () => {
     ${opt('Graves extra', rng('bass', 0, 15, 1, v => v + ' dB'))}
     ${opt('Volume extra', rng('gainBoost', 0, 9, 1, v => '+' + v + ' dB'))}
   </div>
+  <div class="gtitle">YouTube</div><div class="group">
+    ${opt('Conta do YouTube', `<span id="ytAcc"><span class="spinner"></span></span>`, 'Entre pra tocar vídeos +18 e ter suas preferências. O login fica só neste PC.')}
+  </div>
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
@@ -637,9 +704,16 @@ views.settings = () => {
   $('#addF').onclick = async () => { const f = await U.pickFolder(); if (f.length) { D.folders = [...new Set([...D.folders, ...f])]; save(); rescan(); render(); } };
   v.querySelectorAll('[data-rmf]').forEach(a => a.onclick = () => { D.folders = D.folders.filter(f => f !== a.dataset.rmf); save(); rescan(); render(); });
   $('#rescan').onclick = () => rescan();
+  const ytAcc = async () => {
+    const logged = await U.ytLogged(); if (!$('#ytAcc')) return;
+    $('#ytAcc').innerHTML = logged ? '<span style="color:#34c759;margin-right:10px">Conectado</span><button class="btn" id="ytOut">Sair</button>' : '<button class="btn fill" id="ytIn">Entrar no YouTube</button>';
+    if ($('#ytIn')) $('#ytIn').onclick = async () => { const ok = await U.ytLogin(); toast(ok ? 'YouTube conectado' : 'Login não concluído'); ytAcc(); };
+    if ($('#ytOut')) $('#ytOut').onclick = async () => { await U.ytLogout(); toast('Saiu da conta do YouTube'); ytAcc(); };
+  };
+  ytAcc();
   $('#vmTok').onchange = e => { S().vimeoToken = e.target.value.trim(); save(); };
 };
-function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'videoSize'].includes(k)) applyLook(); if (k === 'speed') applyRate(); if (['bass', 'gainBoost'].includes(k)) applyEq(); if (k === 'videoSize') layoutEmbed(); }
+function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'videoSize'].includes(k)) applyLook(); if (k === 'speed') applyRate(true); if (['bass', 'gainBoost'].includes(k)) applyEq(); if (k === 'videoSize') layoutEmbed(); }
 function changed(k, keepView) {
   save(); applyLook(); applyRate(); applyEq(); updateNowPlaying(); layoutEmbed();
   if (['hideVoice', 'minDur'].includes(k)) rescan();
@@ -666,9 +740,13 @@ $('#bSpeed').onclick = () => {
     <div class="opt" style="padding:10px 4px"><div class="l">Mudar o tom junto<small>slowed / nightcore</small></div>${sw('pitchWithSpeed')}</div>
     <div class="chips">${[['Slowed', 0.85, true], ['Normal', 1, false], ['Nightcore', 1.25, true], ['Sped up', 1.2, false], ['Lento', 0.75, false]].map(([n, v, p]) => `<button class="chip" data-sp="${v}" data-pp="${p}">${n}</button>`).join('')}</div>`)) return;
   const p = $('#panel');
-  $('#spR').oninput = e => { S().speed = +e.target.value; $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(); save(); updateModeBtns(); };
-  p.querySelector('[data-sw]').onclick = e => { S().pitchWithSpeed = !S().pitchWithSpeed; e.target.classList.toggle('on', S().pitchWithSpeed); applyRate(); save(); };
-  p.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => { S().speed = +b.dataset.sp; S().pitchWithSpeed = b.dataset.pp === 'true'; applyRate(); save(); updateModeBtns(); $('#panel').classList.add('hidden'); $('#bSpeed').click(); });
+  $('#spR').oninput = e => { S().speed = +e.target.value; $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(true); save(); updateModeBtns(); };
+  p.querySelector('[data-sw]').onclick = e => { S().pitchWithSpeed = !S().pitchWithSpeed; e.target.classList.toggle('on', S().pitchWithSpeed); applyRate(true); save(); };
+  p.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => {
+    S().speed = +b.dataset.sp; S().pitchWithSpeed = b.dataset.pp === 'true'; rateWarned = ''; applyRate(true); save(); updateModeBtns();
+    $('#spR').value = S().speed; $('#spV').textContent = S().speed.toFixed(2) + 'x'; p.querySelector('[data-sw]').classList.toggle('on', S().pitchWithSpeed);
+    p.querySelectorAll('[data-sp]').forEach(x => x.classList.toggle('on', x === b)); toast(b.textContent + ' ativado');
+  });
 };
 $('#bTimer').onclick = () => {
   if (!panel('timer', `<h3>Timer pra parar a música</h3><div style="color:var(--dim);margin:0 4px 12px">${st.sleepAt ? 'Para em ' + fmt(st.sleepAt - Date.now()) : 'A música pausa sozinha depois do tempo escolhido.'}</div>

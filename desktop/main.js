@@ -1,5 +1,5 @@
 // Uncrowned Music — processo principal (janela, arquivos, busca online, letras, downloads)
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -24,7 +24,7 @@ function saveStore() {
 }
 
 /* ---------------- HTTP helpers ---------------- */
-function request(url, { headers = {}, method = 'GET', redirects = 5 } = {}) {
+function request(url, { headers = {}, method = 'GET', redirects = 5, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'http:' ? http : https;
@@ -37,11 +37,12 @@ function request(url, { headers = {}, method = 'GET', redirects = 5 } = {}) {
     });
     req.on('timeout', () => req.destroy(new Error('timeout')));
     req.on('error', reject);
+    if (body) req.write(body);
     req.end();
   });
 }
-async function getText(url, headers) {
-  const res = await request(url, { headers });
+async function getText(url, headers, opts = {}) {
+  const res = await request(url, { headers, ...opts });
   const chunks = [];
   for await (const c of res) chunks.push(c);
   const body = Buffer.concat(chunks).toString('utf8');
@@ -177,25 +178,66 @@ function jsonAt(s, start) {
   throw new Error('json');
 }
 
-async function youtube(q) {
-  const html = await getText(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%253D%253D&hl=pt-BR`, { Cookie: 'CONSENT=YES+1' });
-  const i = html.indexOf('ytInitialData');
-  if (i < 0) return [];
-  const data = JSON.parse(jsonAt(html, html.indexOf('{', i)));
+/* YouTube: usa a mesma API interna que o site usa pra buscar (mais estável); se falhar, lê a página */
+const txtYT = o => o ? (o.simpleText || (o.runs || []).map(r => r.text).join('')) : '';
+function ytVideos(data) {
   const out = [];
-  const txt = o => o ? (o.simpleText || (o.runs || []).map(r => r.text).join('')) : '';
   (function walkJ(x) {
     if (Array.isArray(x)) return x.forEach(walkJ);
     if (x && typeof x === 'object') {
       if (x.videoRenderer) {
         const v = x.videoRenderer; const th = (v.thumbnail && v.thumbnail.thumbnails) || [];
-        const len = txt(v.lengthText);
+        const len = txtYT(v.lengthText);
         const secs = len ? len.split(':').reduce((a, b) => a * 60 + (+b), 0) : 0;
-        out.push({ src: 'yt', id: v.videoId, title: txt(v.title), artist: txt(v.ownerText), art: th.length ? th[th.length - 1].url : '', duration: secs * 1000 });
+        out.push({ src: 'yt', id: v.videoId, title: txtYT(v.title), artist: txtYT(v.ownerText || v.longBylineText), art: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`, duration: secs * 1000 });
       } else Object.values(x).forEach(walkJ);
     }
   })(data);
-  return out.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i).slice(0, 25);
+  return out.filter((v, i, a) => v.id && a.findIndex(w => w.id === v.id) === i).slice(0, 25);
+}
+async function youtube(q) {
+  try {
+    const body = JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20250101.00.00', hl: 'pt', gl: 'BR' } }, query: q, params: 'EgIQAQ%3D%3D' });
+    const j = JSON.parse(await getText('https://www.youtube.com/youtubei/v1/search?prettyPrint=false', { 'Content-Type': 'application/json', Origin: 'https://www.youtube.com', 'X-Youtube-Client-Name': '1', 'X-Youtube-Client-Version': '2.20250101.00.00' }, { method: 'POST', body }));
+    const r = ytVideos(j);
+    if (r.length) return r;
+  } catch {}
+  return youtubeHtml(q);
+}
+async function youtubeHtml(q) {
+  const html = await getText(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%253D%253D&hl=pt-BR`, { Cookie: 'CONSENT=YES+1' });
+  const i = html.indexOf('ytInitialData');
+  if (i < 0) return [];
+  return ytVideos(JSON.parse(jsonAt(html, html.indexOf('{', i))));
+}
+
+/* links colados na busca: YouTube, SoundCloud e Vimeo (via oEmbed oficial) */
+function ytIdFrom(u) {
+  const m = /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/|v\/))([A-Za-z0-9_-]{11})/.exec(u);
+  return m ? m[1] : null;
+}
+async function resolveLink(raw) {
+  const u = raw.trim();
+  const id = ytIdFrom(u);
+  if (id) {
+    let meta = {};
+    try { meta = await getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}&format=json`); } catch {}
+    const list = /[?&]list=([A-Za-z0-9_-]+)/.exec(u);
+    return [{ src: 'yt', id, title: meta.title || 'Vídeo do YouTube', artist: meta.author_name || 'YouTube', art: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: 0, list: list ? list[1] : null }];
+  }
+  if (/soundcloud\.com\//i.test(u)) {
+    const clean = u.split('?')[0].replace(/^https?:\/\/(m\.|www\.)?soundcloud\.com\//i, '').replace(/\/$/, '');
+    let meta = {};
+    try { meta = await getJSON(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent('https://soundcloud.com/' + clean)}`); } catch {}
+    return [{ src: 'sc', id: clean, url: 'https://soundcloud.com/' + clean, title: (meta.title || clean).replace(/ by .*$/, ''), artist: meta.author_name || clean.split('/')[0], art: meta.thumbnail_url || '', duration: 0 }];
+  }
+  const vmM = /vimeo\.com\/(?:video\/)?(\d+)/i.exec(u);
+  if (vmM) {
+    let meta = {};
+    try { meta = await getJSON(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent('https://vimeo.com/' + vmM[1])}`); } catch {}
+    return [{ src: 'vm', id: vmM[1], title: meta.title || 'Vídeo do Vimeo', artist: meta.author_name || 'Vimeo', art: meta.thumbnail_url || '', duration: (meta.duration || 0) * 1000 }];
+  }
+  return null;
 }
 
 let scId = null;
@@ -267,7 +309,11 @@ async function archive(q) {
 }
 
 async function searchAll(q) {
-  const s = store.settings || {};
+  if (/^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(q.trim())) {
+    const r = await resolveLink(q).catch(() => null);
+    if (r) return { stream: r, downloadable: [], link: true };
+  }
+  const s = (store.data && store.data.settings) || {};
   const safe = p => p.catch(() => []);
   const [sc, yt, vm, au, ia] = await Promise.all([safe(soundcloud(q)), safe(youtube(q)), safe(vimeo(q, s.vimeoToken)), safe(audiusSearch(q)), safe(archive(q))]);
   return { stream: [...sc.slice(0, 20), ...yt.slice(0, 20), ...vm.slice(0, 10)], downloadable: [...au.filter(t => t.download), ...ia].slice(0, 15), audius: au };
@@ -345,9 +391,10 @@ function createWindow() {
   const s = store.win || {};
   win = new BrowserWindow({
     width: s.w || 1280, height: s.h || 800, minWidth: 960, minHeight: 620, x: s.x, y: s.y,
-    backgroundColor: '#000000', title: 'Uncrowned Music', icon: path.join(__dirname, 'build', 'icon.png'),
+    backgroundColor: '#000000', title: 'Uncrowned Music',
+    icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: '#ffffff', height: 40 },
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false, autoplayPolicy: 'no-user-gesture-required' }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false, autoplayPolicy: 'no-user-gesture-required', webviewTag: true, backgroundThrottling: false }
   });
   if (s.max) win.maximize();
   win.loadURL(`http://127.0.0.1:${PORT}/`);
@@ -355,6 +402,30 @@ function createWindow() {
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) { const b = win.getBounds(); store.win = { w: b.width, h: b.height, x: b.x, y: b.y, max: false }; } else store.win = { ...(store.win || {}), max: win.isMaximized() }; saveStore(); };
   win.on('resize', keep); win.on('move', keep);
 }
+
+/* YouTube de verdade (página oficial dentro do app), com login opcional pra liberar vídeos +18 */
+function ytSession() {
+  const s = session.fromPartition('persist:youtube');
+  s.setUserAgent(UA);
+  return s;
+}
+ipcMain.handle('yt-login', () => new Promise(resolve => {
+  const w = new BrowserWindow({ parent: win, modal: false, width: 520, height: 760, title: 'Entrar no YouTube', autoHideMenuBar: true,
+    webPreferences: { partition: 'persist:youtube' } });
+  w.webContents.setUserAgent(UA);
+  w.loadURL('https://accounts.google.com/ServiceLogin?service=youtube&hl=pt-BR&continue=https%3A%2F%2Fwww.youtube.com%2F');
+  w.webContents.on('did-navigate', (_, url) => { if (/^https:\/\/(www|m)\.youtube\.com\/?(\?|$)/.test(url)) w.close(); });
+  w.on('closed', async () => { const c = await ytSession().cookies.get({ domain: '.youtube.com', name: 'SAPISID' }).catch(() => []); resolve(c.length > 0); });
+}));
+ipcMain.handle('yt-logged', async () => (await ytSession().cookies.get({ domain: '.youtube.com', name: 'SAPISID' }).catch(() => [])).length > 0);
+ipcMain.handle('yt-logout', async () => { await ytSession().clearStorageData(); return true; });
+app.on('web-contents-created', (_, wc) => {
+  if (wc.getType() === 'webview') {
+    wc.setUserAgent(UA);
+    wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+    wc.setBackgroundThrottling(false);
+  }
+});
 
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
@@ -372,9 +443,11 @@ ipcMain.handle('open-url', (_, u) => shell.openExternal(u));
 ipcMain.handle('port', () => PORT);
 ipcMain.handle('title-color', (_, c) => { try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: c, height: 40 }); } catch {} });
 
+app.setAppUserModelId('com.uncrowned.music.desktop');
 app.whenReady().then(async () => {
   loadStore();
   nativeTheme.themeSource = 'dark';
+  ytSession();
   await startServer();
   createWindow();
 });
