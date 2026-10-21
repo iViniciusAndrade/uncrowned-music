@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('U', {
   ytLogin: () => ipcRenderer.invoke('yt-login'),
   ytLogged: () => ipcRenderer.invoke('yt-logged'),
   ytLogout: () => ipcRenderer.invoke('yt-logout'),
+  recommend: o => ipcRenderer.invoke('recommend', o),
+  radio: t => ipcRenderer.invoke('radio', t),
   frameEq: code => ipcRenderer.invoke('frame-eq', code),
   // libera memória (cache de imagens + coleta de lixo) quando o app vai pro fundo
   trim: () => { try { webFrame.clearCache(); } catch {} try { if (global.gc) global.gc(); } catch {} }

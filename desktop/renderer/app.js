@@ -44,10 +44,10 @@ const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="$
 const DEF = {
   theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
-  hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, showVideo: true, videoSize: 360,
+  hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
   adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
 };
-let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], weekly: null, lastQueue: null };
+let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
 const S = () => D.settings;
 let saveT;
 function save() { clearTimeout(saveT); saveT = setTimeout(() => U.storeSet(D), 400); }
@@ -340,7 +340,18 @@ function ended() {
   if (st.repeat === 2) return playAt(st.idx);
   const online = ['yt', 'sc', 'vm'].includes(st.kind);
   if (online && !S().autoNext) return setPlaying(false);
-  if (st.idx < st.queue.length - 1 || st.repeat === 1) next(); else setPlaying(false);
+  if (st.idx < st.queue.length - 1 || st.repeat === 1) next();
+  else if (S().radio && st.queue[st.idx]) startRadio(st.queue[st.idx], true);
+  else setPlaying(false);
+}
+/* rádio: músicas parecidas com a atual (Mix do YouTube) */
+async function startRadio(t, append) {
+  if (!append) toast('Montando rádio de ' + (t.artist || t.title) + '…');
+  const recent = new Set(st.queue.slice(-60).map(keyOf));
+  const l = (await U.radio({ src: t.src, id: t.id, title: t.title, artist: t.artist })).filter(x => !recent.has(keyOf(x))).slice(0, 25);
+  if (!l.length) { if (append) setPlaying(false); else toast('Não achei músicas parecidas agora'); return; }
+  if (append) { st.queue.push(...l); next(); toast('Fila acabou: tocando parecidas'); }
+  else { st.queue.splice(st.idx + 1, 0, ...l); toast(`Rádio: ${l.length} músicas parecidas na fila`); if (st.idx < 0) playAt(0); }
 }
 function setVolume(v) {
   S().volume = v; save();
@@ -361,15 +372,27 @@ function setPlaying(p) {
 /* ---------------- gosto musical ---------------- */
 let startedAt = 0, lastKey = null, lastMeta = null;
 function bump(map, k, v) { if (!k) return; map[k] = (map[k] || 0) + v; }
+// contagem por música (as mais tocadas viram ponto de partida das recomendações)
+function bumpPlay(t, v) {
+  D.plays = D.plays || {}; const k = keyOf(t); if (!k) return;
+  const p = D.plays[k] || (D.plays[k] = { t: { src: t.src, id: t.id, title: t.title, artist: t.artist, art: t.art, duration: t.duration, path: t.path, stream: t.stream, url: t.url, genre: t.genre }, n: 0 });
+  p.n += v; p.last = Date.now();
+  const ks = Object.keys(D.plays); if (ks.length > 600) { ks.sort((a, b) => D.plays[a].n - D.plays[b].n).slice(0, 100).forEach(x => delete D.plays[x]); }
+}
 function tasteDecay() {
   const w = weekKey();
   if (D.tasteWeek && D.tasteWeek !== w) for (const m of [D.taste.g, D.taste.a]) for (const k in m) m[k] *= 0.9;
   D.tasteWeek = w;
 }
 function onTrackChange(t) {
-  if (lastKey && Date.now() - startedAt < 30000 && lastMeta) { bump(D.taste.g, lastMeta.genre, -0.5); bump(D.taste.a, lastMeta.artist, -1); }
+  // quanto da música anterior você ouviu: pulou rápido = não curtiu; ouviu quase inteira = curtiu
+  if (lastKey && lastMeta) {
+    const el = Date.now() - startedAt, dur = lastMeta.duration || 0;
+    if (el < 30000) { bump(D.taste.g, lastMeta.genre, -0.5); bump(D.taste.a, lastMeta.artist, -1); }
+    else if (dur && el > dur * 0.8) { bump(D.taste.g, lastMeta.genre, 0.5); bump(D.taste.a, lastMeta.artist, 1); bumpPlay(lastMeta, 1); }
+  }
   tasteDecay();
-  bump(D.taste.g, t.genre, 1); bump(D.taste.a, t.artist, 1);
+  bump(D.taste.g, t.genre, 1); bump(D.taste.a, t.artist, 1); bumpPlay(t, 1);
   const k = keyOf(t); if (!D.heard.includes(k)) { D.heard.push(k); if (D.heard.length > 3000) D.heard.shift(); }
   if (t.src !== 'local') { D.history = [t, ...D.history.filter(x => keyOf(x) !== k)].slice(0, 80); }
   lastKey = k; lastMeta = t; startedAt = Date.now();
@@ -559,6 +582,7 @@ function menu(t, list, i, ctxName) {
     <div class="group">
       <div class="opt" data-m="next" style="cursor:pointer">Tocar a seguir</div>
       <div class="opt" data-m="queue" style="cursor:pointer">Adicionar à fila</div>
+      <div class="opt" data-m="radio" style="cursor:pointer">Tocar parecidas (rádio)</div>
       <div class="opt" data-m="info" style="cursor:pointer">Informações</div>
       ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div>' : ''}
       ${t.url || ['yt', 'vm'].includes(t.src) ? '<div class="opt" data-m="web" style="cursor:pointer">Abrir no navegador</div>' : ''}
@@ -573,6 +597,7 @@ function menu(t, list, i, ctxName) {
     if (o.dataset.pl) { addToPl(o.dataset.pl, t); }
     if (m === 'next') { st.queue.splice(st.idx + 1, 0, t); toast('Vai tocar a seguir'); }
     if (m === 'queue') { st.queue.push(t); toast('Adicionada à fila'); }
+    if (m === 'radio') startRadio(t, false);
     if (m === 'info') return showInfo(t);
     if (m === 'show') U.openPath(t.path);
     if (m === 'web') U.openUrl(t.url || (t.src === 'yt' ? `https://youtu.be/${t.id}` : `https://vimeo.com/${t.id}`));
@@ -581,7 +606,7 @@ function menu(t, list, i, ctxName) {
     closeModal();
   };
 }
-function addToPl(name, t) { const l = D.playlists[name] || (D.playlists[name] = []); if (!l.some(x => keyOf(x) === keyOf(t))) l.push(t); save(); toast(`Adicionada em "${name}"`); }
+function addToPl(name, t) { const l = D.playlists[name] || (D.playlists[name] = []); if (!l.some(x => keyOf(x) === keyOf(t))) { l.push(t); bump(D.taste.g, t.genre, 2); bump(D.taste.a, t.artist, 2); bumpPlay(t, 2); } save(); toast(`Adicionada em "${name}"`); }
 function modal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); $('#modalBox').onclick = null; }
 $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
@@ -692,9 +717,7 @@ views.search = () => {
 /* descobrir: gosto musical + descobertas da semana + em alta */
 const GENRES = ['Electronic', 'Hip-Hop/Rap', 'Pop', 'R&B/Soul', 'Rock', 'Alternative', 'Latin', 'Lo-Fi', 'House', 'Trap', 'Deep House', 'Techno', 'Dubstep', 'Jazz', 'Acoustic', 'Funk', 'Reggae', 'Metal', 'Ambient', 'Soundtrack'];
 let trendGenre = null, trendList = null;
-async function weekly(force) {
-  const w = weekKey();
-  if (!force && D.weekly && D.weekly.w === w) return D.weekly.t;
+async function weeklyOld(w) {
   const gs = topOf(D.taste.g, 3).map(e => e[0]); const genres = gs.length ? gs : ['Pop', 'Electronic', 'Hip-Hop/Rap'];
   const artists = topOf(D.taste.a, 4).map(e => e[0]);
   let pool = [];
@@ -704,9 +727,25 @@ async function weekly(force) {
   let seed = w; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   pool = pool.filter((t, i, a) => a.findIndex(x => x.id === t.id) === i && !D.heard.includes(keyOf(t)));
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  const per = {}; const out = pool.filter(t => (per[t.artist] = (per[t.artist] || 0) + 1) <= 2).slice(0, 30);
-  D.weekly = { w, t: out }; save();
-  return out;
+  const per = {}; return pool.filter(t => (per[t.artist] = (per[t.artist] || 0) + 1) <= 2).slice(0, 30);
+}
+/* Descobertas da Semana v2: parte dos artistas que você mais ouve/curte/pula e procura artistas
+   parecidos que você ainda não conhece, mais o Mix do YouTube das suas mais tocadas */
+async function weekly(force) {
+  const w = weekKey();
+  if (!force && D.weekly && D.weekly.w === w && D.weekly.v === 2) return D.weekly.t;
+  const seeds = topOf(D.taste.a, 8);
+  const known = Object.entries(D.taste.a).filter(e => e[1] >= 2).map(e => e[0]);
+  const plays = Object.values(D.plays || {}).sort((a, b) => b.n - a.n);
+  const mixSeeds = plays.filter(p => p.t.src === 'yt').slice(0, 6).map(p => p.t.id);
+  // sem muita coisa do YouTube ainda: usa as mais tocadas de qualquer lugar como ponto de partida (o app acha no YouTube)
+  const salt = force ? Math.floor(Math.random() * 1e4) : 0;
+  let r = { tracks: [], artists: [] };
+  if (seeds.length) r = await U.recommend({ seeds, known, heard: D.heard.slice(-2000), mixSeeds, week: w + salt });
+  let t = r.tracks || [];
+  if (t.length < 10) t = [...t, ...(await weeklyOld(w + salt))].slice(0, 30);
+  D.weekly = { w, v: 2, t, artists: r.artists || [] }; save();
+  return t;
 }
 views.discover = async () => {
   if (!topOf(D.taste.g, 1).length && !D.pickedGenres) {
@@ -722,6 +761,7 @@ views.discover = async () => {
     <div class="hero" id="wkPlay"><b>Descobertas da Semana</b><span id="wkSub">Montando sua lista…</span></div>
     <div class="btns"><button class="btn" id="wkNew">Gerar de novo</button><button class="btn" id="wkShuf">${ico('shuffle')} Aleatório</button><button class="btn" id="tasteReset">Ajustar gosto</button></div>
     <div class="hscroll" id="wkRow"></div>
+    <div id="wkArt"></div>
     <h2>Seu gosto musical</h2><div class="bars">${g.map(([n, v]) => `<div class="b"><span>${esc(n)}</span><i style="width:${Math.max(4, v / max * 100)}%"></i></div>`).join('') || 'Ouça umas músicas que aparece aqui.'}
       ${a.length ? `<div style="color:var(--dim);font-size:13px;margin-top:10px">Mais ouvidos: ${a.map(x => esc(x[0])).join(', ')}</div>` : ''}</div>
     <h2>Em alta na semana</h2>
@@ -734,6 +774,9 @@ views.discover = async () => {
     $('#wkSub').textContent = `${l.length} músicas novas pra você · renova toda semana`;
     $('#wkRow').innerHTML = l.map((t, i) => `<div class="tile" data-wi="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('');
     $('#wkRow').querySelectorAll('[data-wi]').forEach(d => d.onclick = () => play(l, +d.dataset.wi));
+    const ar = (D.weekly && D.weekly.artists) || [];
+    $('#wkArt').innerHTML = ar.length ? `<h2>Artistas pra você conhecer</h2><div class="hscroll">${ar.map((a, i) => `<div class="tile round" data-ar="${i}"><img loading="lazy" src="${esc(a.pic || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.name)}</div><div class="ta">${a.because && a.because.length ? 'Porque você ouve ' + esc(a.because[0]) : ''}</div></div>`).join('')}</div>` : '';
+    $('#wkArt').querySelectorAll('[data-ar]').forEach(d => d.onclick = () => { const q = $('#q'); q.value = ar[+d.dataset.ar].name; q.dispatchEvent(new Event('input')); });
   };
   $('#wkPlay').onclick = () => rowsCtx.weekly && rowsCtx.weekly.length && play(rowsCtx.weekly, 0);
   $('#wkShuf').onclick = () => rowsCtx.weekly && (st.queue = shuffleArr(rowsCtx.weekly.slice()), playAt(0));
@@ -780,6 +823,7 @@ views.settings = () => {
     ${opt('Mostrar vídeo flutuante', sw('showVideo'), 'Quando o "Tocando agora" está fechado')}
     ${opt('Tamanho do vídeo flutuante', rng('videoSize', 240, 640, 20))}
     ${opt('Tocar o próximo sozinho', sw('autoNext'))}
+    ${opt('Quando a fila acabar, tocar parecidas', sw('radio'), 'Igual o rádio do Spotify: continua com músicas no mesmo estilo')}
   </div>
   <div class="gtitle">Biblioteca</div><div class="group">
     ${opt('Pastas de música', `<button class="btn" id="addF">Adicionar pasta</button>`, D.folders.map(f => `${esc(f)} <a data-rmf="${esc(f)}" style="color:#ff453a;cursor:pointer">remover</a>`).join('<br>') || 'Nenhuma pasta')}

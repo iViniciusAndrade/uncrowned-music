@@ -188,7 +188,7 @@ object YtPlayer {
         when (v?.src) {
             "sc" -> w.loadDataWithBaseURL("https://w.soundcloud.com", SC_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
             "vm" -> w.loadDataWithBaseURL("https://uncrowned.app", VM_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
-            else -> w.loadDataWithBaseURL("https://www.youtube.com", HTML, "text/html", "utf-8", null)
+            else -> w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
     fun next() { if (index < queue.size - 1) play(queue, index + 1) }
@@ -253,6 +253,7 @@ fun YtWebPlayer(modifier: Modifier) {
             settings.mediaPlaybackRequiresUserGesture = false
             settings.domStorageEnabled = true
             webChromeClient = WebChromeClient()
+            webViewClient = AdBlockClient()
             setBackgroundColor(android.graphics.Color.BLACK)
             addJavascriptInterface(YtPlayer.Bridge(), "Android")
             YtPlayer.web = this

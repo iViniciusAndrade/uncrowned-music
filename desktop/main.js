@@ -499,6 +499,94 @@ ipcMain.handle('frame-eq', async (_, code) => {
   return n;
 });
 
+/* ---------------- recomendações (motor v2) ----------------
+   Deezer (grátis, sem chave) diz quais artistas são parecidos com os que você ouve;
+   o "Mix" do próprio YouTube completa; tudo vira faixa tocável do YouTube. */
+const dz = p => getJSON('https://api.deezer.com' + p);
+const dzArtistCache = new Map();
+async function dzArtist(name) {
+  const k = name.toLowerCase(); if (dzArtistCache.has(k)) return dzArtistCache.get(k);
+  const j = await dz(`/search/artist?q=${encodeURIComponent(name)}&limit=3`).catch(() => ({}));
+  const a = (j.data || []).find(x => x.name.toLowerCase() === k) || (j.data || [])[0] || null;
+  dzArtistCache.set(k, a); return a;
+}
+async function dzRelated(name) {
+  const a = await dzArtist(name); if (!a) return [];
+  const j = await dz(`/artist/${a.id}/related?limit=15`).catch(() => ({}));
+  return (j.data || []).map(x => ({ id: x.id, name: x.name, pic: x.picture_medium || x.picture, fans: x.nb_fan || 0 }));
+}
+async function dzTop(id, n = 6) {
+  const j = await dz(`/artist/${id}/top?limit=${n}`).catch(() => ({}));
+  return (j.data || []).map(x => ({ title: x.title_short || x.title, artist: (x.artist && x.artist.name) || '', dur: (x.duration || 0) * 1000, art: x.album && (x.album.cover_xl || x.album.cover_big) }));
+}
+const norm = x => (x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+async function toYT(t) {
+  const r = await youtube(`${t.artist} ${t.title}`).catch(() => []);
+  const okDur = v => !t.dur || !v.duration || Math.abs(v.duration - t.dur) < 25000;
+  const hit = r.find(v => okDur(v) && norm(v.title).includes(norm(t.title).split(' ').slice(0, 3).join(' '))) || r.find(okDur);
+  return hit ? { ...hit, title: t.title, artist: t.artist, ytTitle: hit.title } : null;
+}
+async function ytMix(videoId) {
+  const body = JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20250101.00.00', hl: 'pt', gl: 'BR' } }, videoId, playlistId: 'RD' + videoId });
+  const j = JSON.parse(await getText('https://www.youtube.com/youtubei/v1/next?prettyPrint=false', { 'Content-Type': 'application/json', Origin: 'https://www.youtube.com', 'X-Youtube-Client-Name': '1', 'X-Youtube-Client-Version': '2.20250101.00.00' }, { method: 'POST', body }));
+  const out = [];
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (x && typeof x === 'object') {
+      if (x.playlistPanelVideoRenderer) {
+        const v = x.playlistPanelVideoRenderer; const len = txtYT(v.lengthText);
+        out.push({ src: 'yt', id: v.videoId, title: txtYT(v.title), artist: txtYT(v.longBylineText || v.shortBylineText).replace(/ - Topic$/, ''), art: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`, duration: len ? len.split(':').reduce((a, b) => a * 60 + (+b), 0) * 1000 : 0 });
+      } else Object.values(x).forEach(walk);
+    }
+  })(j);
+  return out.filter((v, i, a) => v.id && a.findIndex(w => w.id === v.id) === i);
+}
+async function pool(items, n, fn) { const out = []; let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]).catch(() => null); } })); return out; }
+
+/* Descobertas da Semana: artistas parecidos com os seus (que você ainda não ouve) + mixes do YouTube das suas mais tocadas */
+async function recommend({ seeds = [], known = [], heard = [], mixSeeds = [], week = 0, size = 30 }) {
+  const knownSet = new Set(known.map(norm)), heardSet = new Set(heard);
+  let seed = week || 1; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  // 1) artistas candidatos, pontuados por quantos dos seus artistas apontam pra eles
+  const cand = new Map();
+  const rel = await pool(seeds.slice(0, 8), 4, ([name]) => dzRelated(name));
+  rel.forEach((list, si) => (list || []).forEach((a, r) => {
+    if (knownSet.has(norm(a.name))) return;
+    const c = cand.get(a.id) || { ...a, score: 0, because: [] };
+    c.score += seeds[si][1] * (1 - r / 16); if (c.because.length < 2) c.because.push(seeds[si][0]);
+    cand.set(a.id, c);
+  }));
+  const artists = [...cand.values()].map(c => ({ ...c, score: c.score * (0.75 + rnd() * 0.5) })).sort((a, b) => b.score - a.score).slice(0, 14);
+  // 2) duas músicas de cada artista novo, achadas no YouTube
+  const tops = await pool(artists, 4, a => dzTop(a.id, 4));
+  const wanted = [];
+  artists.forEach((a, i) => (tops[i] || []).sort(() => rnd() - 0.5).slice(0, 2).forEach(t => wanted.push({ ...t, because: a.because })));
+  const fromArtists = (await pool(wanted, 5, toYT)).map((t, i) => t && { ...t, art: wanted[i].art || t.art, because: wanted[i].because }).filter(Boolean);
+  // 3) mixes do YouTube a partir das suas mais tocadas
+  const mixes = await pool(mixSeeds.slice(0, 4), 2, ytMix);
+  const fromMix = mixes.flat().filter(t => t && !knownSet.has(norm(t.artist)));
+  // junta, tira repetidas e já ouvidas, no máximo 2 por artista
+  const out = [], per = {};
+  const all = []; const a1 = fromArtists, a2 = fromMix.sort(() => rnd() - 0.5);
+  for (let i = 0; i < Math.max(a1.length, a2.length); i++) { if (a1[i]) all.push(a1[i]); if (i % 2 === 0 && a2[i / 2]) all.push(a2[i / 2]); }
+  for (const t of all) {
+    const k = `${t.src}:${t.id}`, ak = norm(t.artist);
+    if (heardSet.has(k) || out.some(x => x.id === t.id)) continue;
+    if ((per[ak] = (per[ak] || 0) + 1) > 2) continue;
+    out.push(t); if (out.length >= size) break;
+  }
+  return { tracks: out, artists: artists.slice(0, 10).map(a => ({ name: a.name, pic: a.pic, because: a.because })) };
+}
+/* rádio: quando a fila acaba, continua com músicas parecidas com a última */
+async function radio(t) {
+  let id = t.src === 'yt' ? t.id : null;
+  if (!id) { const r = await youtube(`${t.artist} ${t.title}`).catch(() => []); id = r[0] && r[0].id; }
+  if (!id) return [];
+  return (await ytMix(id)).filter(x => x.id !== id);
+}
+ipcMain.handle('recommend', (_, o) => recommend(o || {}).catch(e => ({ tracks: [], artists: [], err: String(e) })));
+ipcMain.handle('radio', (_, t) => radio(t).catch(() => []));
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });
