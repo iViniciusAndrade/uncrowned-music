@@ -240,3 +240,32 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .noLy .acts button:hover{background:rgba(255,255,255,.24)}
 .noLy .note{position:absolute;font-size:28px;opacity:0;color:#fff;animation:flt 7s linear infinite}
 @keyframes flt{0%{transform:translateY(60px) rotate(-10deg);opacity:0}15%{opacity:.5}80%{opacity:.25}100%{transform:translateY(-260px) rotate(15deg);opacity:0}}
+
+/* ===== faixas das caixinhas: ícone do app no lugar do logo + UNCROWNED ===== */
+#npCase{--caseFont:Bahnschrift,"DIN Alternate","Segoe UI",sans-serif}
+#npCase .caseTop{font-family:var(--caseFont);gap:0!important;justify-content:flex-start!important;padding:0 12px!important;position:relative}
+#npCase .caseIcon{height:72%;aspect-ratio:1;border-radius:4px;object-fit:cover;margin-right:10px;flex:none}
+#npCase .caseBrand{font-stretch:expanded;white-space:nowrap}
+#npCase .caseNum{margin-left:.35em}
+/* 1: faixa lateral preta com o ícone em cima e o nome em pé */
+#npCase.c1 .caseStrip{flex-direction:column;justify-content:flex-start;padding-top:8px;gap:10px}
+#npCase.c1 .caseStrip .caseIcon{width:72%;height:auto;margin:0;border-radius:3px}
+#npCase.c1 .caseStrip span{font-family:var(--caseFont);font-style:italic;font-weight:700;letter-spacing:3px;font-size:clamp(9px,1.5vh,15px)}
+/* 2: preta, letras finas e espaçadas em azul */
+#npCase.c2 .caseTop{background:linear-gradient(#000,#0a0a0a)!important}
+#npCase.c2 .caseBrand{font-weight:300;letter-spacing:.42em;color:#4a86ff;font-size:clamp(11px,1.8vh,17px)}
+#npCase.c2 .caseNum{font-weight:300;color:#4a86ff;font-size:clamp(12px,2vh,19px)}
+/* 3: faixa metálica, letras finas bem espaçadas */
+#npCase.c3 .caseBrand{font-weight:200;letter-spacing:.55em;color:#0d0d0d;font-size:clamp(11px,1.8vh,17px)}
+#npCase.c3 .caseNum{font-weight:200;color:#0d0d0d;font-size:clamp(12px,2vh,19px)}
+#npCase.c3 .caseIcon{filter:grayscale(.3) contrast(1.1)}
+/* 4: azul, letras brancas médias */
+#npCase.c4 .caseBrand{font-weight:500;letter-spacing:.18em;color:#fff;font-size:clamp(11px,1.8vh,17px)}
+#npCase.c4 .caseNum{font-weight:500;color:#fff;font-size:clamp(12px,2vh,19px)}
+/* 5: branca, letras pretas, limpo */
+#npCase.c5 .caseTop{justify-content:center!important}
+#npCase.c5 .caseBrand{font-weight:600;letter-spacing:.32em;color:#000;font-size:clamp(11px,1.8vh,17px)}
+#npCase.c5 .caseNum{font-weight:600;color:#000;font-size:clamp(12px,2vh,19px)}
+#npCase .caseTop{height:clamp(26px,4.2vh,40px)!important;min-height:0!important;box-sizing:border-box}
+#npCase .caseTop .caseIcon{height:70%;width:auto;max-width:none}
+#npCase.c3 .caseBrand,#npCase.c3 .caseNum{font-weight:400;color:#000;text-shadow:0 1px 0 rgba(255,255,255,.6)}
