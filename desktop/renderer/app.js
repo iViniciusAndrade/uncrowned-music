@@ -45,7 +45,7 @@ const DEF = {
   theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, showVideo: true, videoSize: 360,
-  eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
+  adblock: true, eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], weekly: null, lastQueue: null };
 const S = () => D.settings;
@@ -186,6 +186,9 @@ async function playYT(t) {
       if(!v)return {none:1,err:errTxt};
       const ad=!!document.querySelector('.ad-showing');
       const skip=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern'); if(skip) skip.click();
+      if(${S().adblock} && ad){ v.muted=true; window.__uncAdMuted=true; if(isFinite(v.duration)&&v.duration>0) v.currentTime=Math.max(0,v.duration-0.05); try{v.playbackRate=16}catch(e){} }
+      else if(window.__uncAdMuted){ v.muted=false; window.__uncAdMuted=false; }
+      document.querySelectorAll('ytd-enforcement-message-view-model,tp-yt-paper-dialog:has(#dismiss-button)').forEach(d=>{const b=d.querySelector('#dismiss-button button,button');if(b)b.click();});
       if(!ad){ if(Math.abs(v.playbackRate-${s.speed})>0.01) v.playbackRate=${s.speed}; v.preservesPitch=${!s.pitchWithSpeed}; }
       if(Math.abs(v.volume-${S().volume})>0.02) v.volume=${S().volume};
       return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,err:errTxt,id:new URLSearchParams(location.search).get('v')};})()`);
@@ -705,6 +708,7 @@ views.settings = () => {
     ${opt('Volume extra', rng('gainBoost', 0, 9, 1, v => '+' + v + ' dB'))}
   </div>
   <div class="gtitle">YouTube</div><div class="group">
+    ${opt('Bloquear anúncios', sw('adblock'), 'Bloqueador com as listas do uBlock Origin + pula automaticamente o que passar')}
     ${opt('Conta do YouTube', `<span id="ytAcc"><span class="spinner"></span></span>`, 'Entre pra tocar vídeos +18 e ter suas preferências. O login fica só neste PC.')}
   </div>
   <div class="gtitle">Online</div><div class="group">
@@ -736,6 +740,7 @@ function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'vi
 function changed(k, keepView) {
   save(); applyLook(); applyRate(); applyEq(); updateNowPlaying(); layoutEmbed();
   if (['hideVoice', 'minDur'].includes(k)) rescan();
+  if (k === 'adblock') U.setAdblock(S().adblock).then(on => toast(S().adblock ? (on ? 'Bloqueador de anúncios ligado' : 'Bloqueador ligado (lista carrega na próxima abertura)') : 'Bloqueador de anúncios desligado'));
   if (k === 'lyricsSource') { lyKey = ''; }
   if (!keepView) render();
 }

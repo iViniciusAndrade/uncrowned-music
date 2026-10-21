@@ -420,6 +420,23 @@ function createWindow() {
   win.on('resize', keep); win.on('move', keep);
 }
 
+/* Bloqueador de anúncios (motor do Ghostery, mesmas listas do uBlock Origin / Brave) na sessão do YouTube */
+let blocker = null, blockerOn = false;
+async function setupAdblock(on) {
+  const ses = ytSession();
+  try {
+    if (on && !blocker) {
+      const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+      const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
+      blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, { path: cache, read: fs.promises.readFile, write: fs.promises.writeFile });
+    }
+    if (on && blocker && !blockerOn) { blocker.enableBlockingInSession(ses); blockerOn = true; }
+    if (!on && blocker && blockerOn) { blocker.disableBlockingInSession(ses); blockerOn = false; }
+  } catch (e) { console.error('adblock', e); }
+  return blockerOn;
+}
+ipcMain.handle('adblock', (_, on) => setupAdblock(!!on));
+
 /* YouTube de verdade (página oficial dentro do app), com login opcional pra liberar vídeos +18 */
 function ytSession() {
   const s = session.fromPartition('persist:youtube');
@@ -484,6 +501,8 @@ app.whenReady().then(async () => {
   loadStore();
   nativeTheme.themeSource = 'dark';
   ytSession();
+  const s0 = (store.data && store.data.settings) || {};
+  setupAdblock(s0.adblock !== false);
   await startServer();
   createWindow();
 });

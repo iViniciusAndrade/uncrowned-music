@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('U', {
   openUrl: u => ipcRenderer.invoke('open-url', u),
   titleColor: c => ipcRenderer.invoke('title-color', c),
   scRate: (r, k) => ipcRenderer.invoke('sc-rate', r, k),
+  setAdblock: on => ipcRenderer.invoke('adblock', on),
   ytLogin: () => ipcRenderer.invoke('yt-login'),
   ytLogged: () => ipcRenderer.invoke('yt-logged'),
   ytLogout: () => ipcRenderer.invoke('yt-logout')
