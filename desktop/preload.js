@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('U', {
   storeGet: () => ipcRenderer.invoke('store-get'),
@@ -21,5 +21,8 @@ contextBridge.exposeInMainWorld('U', {
   setAdblock: on => ipcRenderer.invoke('adblock', on),
   ytLogin: () => ipcRenderer.invoke('yt-login'),
   ytLogged: () => ipcRenderer.invoke('yt-logged'),
-  ytLogout: () => ipcRenderer.invoke('yt-logout')
+  ytLogout: () => ipcRenderer.invoke('yt-logout'),
+  frameEq: code => ipcRenderer.invoke('frame-eq', code),
+  // libera memória (cache de imagens + coleta de lixo) quando o app vai pro fundo
+  trim: () => { try { webFrame.clearCache(); } catch {} try { if (global.gc) global.gc(); } catch {} }
 });

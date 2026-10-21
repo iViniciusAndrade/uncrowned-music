@@ -411,8 +411,10 @@ function createWindow() {
     backgroundColor: '#000000', title: 'Uncrowned Music',
     icon: path.join(__dirname, 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: '#ffffff', height: 40 },
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false, autoplayPolicy: 'no-user-gesture-required', webviewTag: true, backgroundThrottling: false }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false, autoplayPolicy: 'no-user-gesture-required', webviewTag: true, backgroundThrottling: false, spellcheck: false }
   });
+  // o player do YouTube recebe um script que tira os anúncios da resposta do próprio YouTube antes de tocar
+  win.webContents.on('will-attach-webview', (_, wp) => { wp.preload = path.join(__dirname, 'yt-preload.js'); wp.spellcheck = false; delete wp.preloadURL; });
   if (s.max) win.maximize();
   win.loadURL(`http://127.0.0.1:${PORT}/`);
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
@@ -428,13 +430,23 @@ async function setupAdblock(on) {
     if (on && !blocker) {
       const { ElectronBlocker } = require('@ghostery/adblocker-electron');
       const cache = path.join(app.getPath('userData'), 'adblock-engine.bin');
-      blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, { path: cache, read: fs.promises.readFile, write: fs.promises.writeFile });
+      // a lista se renova sozinha: se a cópia salva tiver mais de 1 dia, baixa a versão nova
+      try { if (Date.now() - fs.statSync(cache).mtimeMs > 24 * 3600e3) fs.unlinkSync(cache); } catch {}
+      blocker = await ElectronBlocker.fromPrebuiltAdsOnly(fetch, { path: cache, read: fs.promises.readFile, write: fs.promises.writeFile });
     }
     if (on && blocker && !blockerOn) { blocker.enableBlockingInSession(ses); blockerOn = true; }
     if (!on && blocker && blockerOn) { blocker.disableBlockingInSession(ses); blockerOn = false; }
   } catch (e) { console.error('adblock', e); }
   return blockerOn;
 }
+// renova a lista uma vez por dia mesmo com o app aberto direto
+setInterval(async () => {
+  if (!blockerOn) return;
+  try { blocker.disableBlockingInSession(ytSession()); } catch {}
+  blocker = null; blockerOn = false;
+  try { fs.unlinkSync(path.join(app.getPath('userData'), 'adblock-engine.bin')); } catch {}
+  setupAdblock(true);
+}, 24 * 3600e3);
 ipcMain.handle('adblock', (_, on) => setupAdblock(!!on));
 
 /* YouTube de verdade (página oficial dentro do app), com login opcional pra liberar vídeos +18 */
@@ -466,7 +478,7 @@ ipcMain.handle('sc-rate', async (_, rate, keepPitch) => {
   if (!win) return 0;
   const code = `(()=>{window.__uncRate=${Number(rate) || 1};window.__uncKeep=${!!keepPitch};
     const apply=a=>{try{a.preservesPitch=window.__uncKeep;a.webkitPreservesPitch=window.__uncKeep;if(Math.abs(a.playbackRate-window.__uncRate)>0.001)a.playbackRate=window.__uncRate;}catch(e){}};
-    if(!window.__uncPatched){window.__uncPatched=true;window.__uncEls=new Set();
+    if(!window.__uncPatched){window.__uncPatched=true;window.__uncEls=window.__uncEls||new Set();
       const op=HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play=function(){window.__uncEls.add(this);apply(this);return op.apply(this,arguments);};
       setInterval(()=>{document.querySelectorAll('audio,video').forEach(a=>window.__uncEls.add(a));window.__uncEls.forEach(apply);},300);}
@@ -475,6 +487,14 @@ ipcMain.handle('sc-rate', async (_, rate, keepPitch) => {
   let n = 0;
   for (const f of win.webContents.mainFrame.framesInSubtree) {
     if (/w\.soundcloud\.com\/player/.test(f.url)) { try { n += await f.executeJavaScript(code); } catch {} }
+  }
+  return n;
+});
+
+ipcMain.handle('frame-eq', async (_, code) => {
+  if (!win) return 0; let n = 0;
+  for (const f of win.webContents.mainFrame.framesInSubtree) {
+    if (/w\.soundcloud\.com\/player/.test(f.url)) { try { n += (await f.executeJavaScript(code)) || 0; } catch {} }
   }
   return n;
 });
@@ -496,6 +516,9 @@ ipcMain.handle('open-url', (_, u) => shell.openExternal(u));
 ipcMain.handle('port', () => PORT);
 ipcMain.handle('title-color', (_, c) => { try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: c, height: 40 }); } catch {} });
 
+/* menos RAM: sem processo reserva ocioso, sem Cast, e coleta de lixo liberada pra quando o app vai pro fundo */
+app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess,MediaRouter,DialMediaRouteProvider,AutofillServerCommunication');
+app.commandLine.appendSwitch('js-flags', '--expose-gc');
 app.setAppUserModelId('com.uncrowned.music.desktop');
 app.whenReady().then(async () => {
   loadStore();

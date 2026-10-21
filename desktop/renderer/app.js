@@ -97,7 +97,30 @@ function buildGraph() {
   n.connect(ctx.destination);
   applyEq();
 }
+/* equalizador também no YouTube e no SoundCloud: liga os mesmos filtros dentro do player deles */
+const EQ_JS = () => { const s = S(); const cfg = JSON.stringify({ on: !!s.eqOn, g: s.eq, b: s.bass, k: s.gainBoost }); return `(()=>{const C=${cfg};
+  window.__uncEls=window.__uncEls||new Set();
+  if(!window.__uncEqPatched){window.__uncEqPatched=true;const op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{window.__uncEls.add(this)}catch(e){}return op.apply(this,arguments)};}
+  const F=[31,62,125,250,500,1000,2000,4000,8000,16000];
+  const els=new Set([...document.querySelectorAll('video,audio'),...(window.__uncEls||[])]); let n=0;
+  els.forEach(m=>{
+    if(!m.__uncEq){ if(!C.on) return; const src=m.currentSrc||m.src||''; if(!src.startsWith('blob:')) return;
+      try{const c=window.__uncAC||(window.__uncAC=new AudioContext());const sr=c.createMediaElementSource(m);
+        const fs=F.map((f,i)=>{const x=c.createBiquadFilter();x.type=i==0?'lowshelf':i==9?'highshelf':'peaking';x.frequency.value=f;x.Q.value=1.1;return x});
+        const bf=c.createBiquadFilter();bf.type='lowshelf';bf.frequency.value=90;const gn=c.createGain();
+        let x=sr;for(const y of [...fs,bf,gn]){x.connect(y);x=y}x.connect(c.destination);m.__uncEq={fs,bf,gn};}catch(e){m.__uncEq={err:1};return}}
+    const q=m.__uncEq; if(q.err) return; n++;
+    q.fs.forEach((f,i)=>f.gain.value=C.on?(C.g[i]||0):0); q.bf.gain.value=C.on?C.b:0; q.gn.gain.value=Math.pow(10,(C.on?C.k:0)/20);
+  });
+  if(window.__uncAC&&window.__uncAC.state==='suspended')window.__uncAC.resume();
+  return n;})()`; };
+function embedEq() {
+  if (st.kind === 'yt' && yt.wv) ytExec(EQ_JS());
+  else if (st.kind === 'sc') U.frameEq(EQ_JS()).catch(() => {});
+}
+let eqTick = 0;
 function applyEq() {
+  try { embedEq(); } catch {}
   if (!ctx || !filters.length) return;
   const s = S();
   filters.forEach((f, i) => f.gain.value = s.eqOn ? s.eq[i] : 0);
@@ -140,7 +163,15 @@ const yt = { wv: null }, sc = { w: null }, vm = { player: null };
 let pollT = null;
 function startPoll(fn) { clearInterval(pollT); pollT = setInterval(fn, 400); }
 function stopEmbeds(except) {
-  if (except !== 'yt' && yt.wv) ytExec(`${V}&&${V}.pause()`);
+  clearTimeout(yt.dropT);
+  if (except !== 'yt' && yt.wv) {
+    ytExec(`${V}&&${V}.pause()`);
+    // sem usar o YouTube por 30 s: fecha o player dele inteiro pra liberar memória
+    yt.dropT = setTimeout(() => {
+      const inner = $('#embedInner');
+      if (st.kind !== 'yt' && yt.wv && inner.dataset.kind === 'yt') { inner.innerHTML = ''; inner.dataset.kind = ''; yt.wv = null; yt.ready = false; setTimeout(() => U.trim(), 2000); }
+    }, 30000);
+  }
   if (except !== 'sc' && sc.w) try { sc.w.pause(); } catch {}
   if (except !== 'vm' && vm.player) vm.player.pause().catch(() => {});
 }
@@ -180,19 +211,28 @@ async function playYT(t) {
   startPoll(async () => {
     if (st.kind !== 'yt') return;
     const s = S();
+    if (s.eqOn && ++eqTick % 5 === 0) embedEq();
     const r = await ytExec(`(()=>{const v=${V};
       const err=document.querySelector('.ytp-error, yt-playability-error-supported-renderers, #player-error-message-container');
       const errTxt=err&&err.offsetParent!==null?err.innerText.slice(0,160):'';
       if(!v)return {none:1,err:errTxt};
       const ad=!!document.querySelector('.ad-showing');
-      const skip=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern'); if(skip) skip.click();
-      if(${S().adblock} && ad){ v.muted=true; window.__uncAdMuted=true; if(isFinite(v.duration)&&v.duration>0) v.currentTime=Math.max(0,v.duration-0.05); try{v.playbackRate=16}catch(e){} }
+      let skipAt=null;
+      if(${S().adblock}){ const sk=[...document.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button,[id^="skip-button"] button,#movie_player button')]
+          .find(b=>b.offsetParent!==null&&(/skip-ad|ad-skip/i.test(b.className)||/^\s*(pular|skip)/i.test(b.innerText||'')));
+        if(sk){ try{sk.click()}catch(e){} const rc=sk.getBoundingClientRect(); if(rc.width) skipAt=[rc.left+rc.width/2,rc.top+rc.height/2]; } }
+      if(${S().adblock} && ad){ v.muted=true; window.__uncAdMuted=true; if(isFinite(v.duration)&&v.duration>0&&v.duration<=180) v.currentTime=Math.max(0,v.duration-0.05); try{v.playbackRate=16}catch(e){} }
       else if(window.__uncAdMuted){ v.muted=false; window.__uncAdMuted=false; }
       document.querySelectorAll('ytd-enforcement-message-view-model,tp-yt-paper-dialog:has(#dismiss-button)').forEach(d=>{const b=d.querySelector('#dismiss-button button,button');if(b)b.click();});
       if(!ad){ if(Math.abs(v.playbackRate-${s.speed})>0.01) v.playbackRate=${s.speed}; v.preservesPitch=${!s.pitchWithSpeed}; }
       if(Math.abs(v.volume-${S().volume})>0.02) v.volume=${S().volume};
-      return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,err:errTxt,id:new URLSearchParams(location.search).get('v')};})()`);
+      return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,skipAt,err:errTxt,id:new URLSearchParams(location.search).get('v')};})()`);
     if (!r) return;
+    // clique de verdade no "Pular" (o YouTube ignora clique simulado por script em alguns anúncios)
+    if (r.skipAt && Date.now() - (yt.skipT || 0) > 1200) {
+      yt.skipT = Date.now(); const [x, y] = r.skipAt.map(Math.round);
+      try { yt.wv.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 }); yt.wv.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 }); } catch {}
+    }
     if (r.err && ytWarned !== r.err) {
       ytWarned = r.err;
       const age = /idade|age|sign in|faça login|inapropriado|inappropriate/i.test(r.err);
@@ -224,7 +264,7 @@ async function playSC(t) {
     sc.w.bind(SC.Widget.Events.FINISH, () => ended());
     sc.w.bind(SC.Widget.Events.READY, () => sc.w.setVolume(S().volume * 100));
   }
-  startPoll(() => sc.w && sc.w.getPosition(p => sc.w.getDuration(d => { st.time = p; st.dur = d; tick(); })));
+  startPoll(() => { if (S().eqOn && ++eqTick % 5 === 0) embedEq(); if (sc.w) sc.w.getPosition(p => sc.w.getDuration(d => { st.time = p; st.dur = d; tick(); })); });
 }
 let scRetry = 0;
 async function scApplyRate() {
@@ -753,7 +793,7 @@ views.settings = () => {
     ${opt('Avisar quando trocar de música', sw('notifications'), 'Notificação do Windows quando o app está minimizado')}
   </div>
   <div class="gtitle">Equalizador</div><div class="group">
-    ${opt('Ativar equalizador', sw('eqOn'), 'Funciona nas músicas do PC, Audius e Archive')}
+    ${opt('Ativar equalizador', sw('eqOn'), 'Funciona nas músicas do PC, YouTube, SoundCloud, Audius e Archive')}
     ${opt('Presets', `<div class="seg">${Object.keys(EQP).map(p => `<button data-eqp="${p}">${p}</button>`).join('')}</div>`)}
     ${FREQS.map((f, i) => opt(f >= 1000 ? f / 1000 + ' kHz' : f + ' Hz', `<div class="rng"><input type="range" data-eq="${i}" min="-12" max="12" step="1" value="${s.eq[i]}"><span>${s.eq[i]} dB</span></div>`)).join('')}
     ${opt('Graves extra', rng('bass', 0, 15, 1, v => v + ' dB'))}
@@ -922,3 +962,7 @@ async function rescan() {
   if (S().notifications && Notification.permission === 'default') Notification.requestPermission();
   rescan();
 })();
+
+/* libera memória quando o app fica minimizado ou no fundo */
+document.addEventListener('visibilitychange', () => { if (document.hidden) setTimeout(() => { if (document.hidden) U.trim(); }, 5000); });
+setInterval(() => U.trim(), 10 * 60e3);
