@@ -966,3 +966,20 @@ async function rescan() {
 /* libera memória quando o app fica minimizado ou no fundo */
 document.addEventListener('visibilitychange', () => { if (document.hidden) setTimeout(() => { if (document.hidden) U.trim(); }, 5000); });
 setInterval(() => U.trim(), 10 * 60e3);
+
+/* clicar no ícone/nome do app abre "Criado por" */
+function showAbout() {
+  modal(`<div class="about">
+    <img class="aboutApp" src="logo.png" alt="">
+    <div class="aboutName">Uncrowned Music</div>
+    <div class="aboutVer">para PC · 1.0</div>
+    <div class="aboutBy">
+      <div class="aboutPic"><img src="creator.jpg" alt="" onerror="this.remove()"><span>VA</span></div>
+      <div><div class="aboutLbl">Criado por</div><div class="aboutWho">Vinicius Andrade</div><div class="aboutRole">Analista de TI e desenvolvedor</div></div>
+    </div>
+    <p class="aboutTxt">Um player feito do meu jeito: suas músicas, YouTube e SoundCloud num lugar só, sem anúncio e personalizado do começo ao fim.</p>
+    <button class="btn fill aboutLi" id="aboutLi"><svg viewBox="0 0 24 24"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>Ver meu LinkedIn</button>
+  </div>`);
+  $('#aboutLi').onclick = () => U.openUrl('https://www.linkedin.com/in/devviniciusandrade/');
+}
+document.querySelector('#sidebar .brand').onclick = showAbout;
