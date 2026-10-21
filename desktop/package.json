@@ -44,9 +44,7 @@
       "createDesktopShortcut": true,
       "shortcutName": "Uncrowned Music",
       "artifactName": "UncrownedMusic-Setup.exe",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerIcon": "build/icon.ico"
     },
     "portable": {
       "artifactName": "UncrownedMusic-Portable.exe"
