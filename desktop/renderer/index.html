@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Uncrowned Music</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="drag"></div>
+<aside id="sidebar">
+  <div class="brand"><img src="logo.png" alt=""><span>Uncrowned</span></div>
+  <div class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="q" placeholder="Buscar" autocomplete="off" spellcheck="false"></div>
+  <nav id="nav"></nav>
+  <div class="navlabel">Playlists <button id="newPl" title="Nova playlist">+</button></div>
+  <nav id="plnav"></nav>
+</aside>
+
+<main id="main"><div id="view"></div></main>
+
+<!-- Tocando agora (tela cheia) -->
+<section id="np" class="hidden">
+  <div id="npBg"></div><div id="npShade"></div>
+  <button id="npClose" class="icon" title="Fechar (Esc)"><svg viewBox="0 0 24 24"><path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg></button>
+  <div id="npLeft">
+    <div id="npArtWrap"><img id="npArt" alt=""><div id="npVideoSlot"></div></div>
+    <div id="npMeta"><div><div id="npTitle"></div><div id="npArtist"></div></div><button id="npFav" class="icon round"></button></div>
+  </div>
+  <div id="npRight"><div id="lyrics"></div><div id="lyricsSrc"></div></div>
+</section>
+
+<!-- players oficiais (YouTube / SoundCloud / Vimeo) ficam aqui, sempre montados -->
+<div id="embed" class="mini hidden"><div id="embedInner"></div><button id="embedExpand" title="Abrir em tela cheia">⤢</button></div>
+
+<footer id="bar">
+  <div id="barLeft">
+    <img id="barArt" alt="">
+    <div class="barText"><div id="barTitle">Nada tocando</div><div id="barArtist"></div></div>
+    <button id="barFav" class="icon"></button>
+  </div>
+  <div id="barCenter">
+    <div class="ctrls">
+      <button id="bShuffle" class="icon small" title="Aleatório"></button>
+      <button id="bPrev" class="icon" title="Anterior (Ctrl+←)"></button>
+      <button id="bPlay" class="icon big" title="Tocar/Pausar (Espaço)"></button>
+      <button id="bNext" class="icon" title="Próxima (Ctrl+→)"></button>
+      <button id="bRepeat" class="icon small" title="Repetir"></button>
+    </div>
+    <div class="prog"><span id="tCur">0:00</span><div id="seek"><div id="seekFill"></div><div id="seekKnob"></div></div><span id="tDur">0:00</span></div>
+  </div>
+  <div id="barRight">
+    <button id="bLyrics" class="icon small" title="Letra"></button>
+    <button id="bInfo" class="icon small" title="Informações da música"></button>
+    <button id="bSpeed" class="icon small" title="Velocidade"></button>
+    <button id="bTimer" class="icon small" title="Timer pra parar"></button>
+    <button id="bQueue" class="icon small" title="Fila"></button>
+    <button id="bVideo" class="icon small" title="Mostrar/ocultar vídeo"></button>
+    <button id="bVol" class="icon small"></button>
+    <input id="vol" type="range" min="0" max="1" step="0.01">
+  </div>
+</footer>
+
+<div id="panel" class="hidden"></div>
+<div id="modal" class="hidden"><div id="modalBox"></div></div>
+<div id="toast"></div>
+<audio id="audio" crossorigin="anonymous" preload="auto"></audio>
+<script src="app.js"></script>
+</body>
+</html>

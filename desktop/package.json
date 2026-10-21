@@ -1,0 +1,29 @@
+{
+  "name": "uncrowned-music",
+  "productName": "Uncrowned Music",
+  "version": "1.0.0",
+  "description": "Uncrowned Music para PC",
+  "main": "main.js",
+  "author": "Vinicius Andrade",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable --publish never"
+  },
+  "dependencies": {
+    "music-metadata": "7.14.0"
+  },
+  "devDependencies": {
+    "electron": "31.7.7",
+    "electron-builder": "24.13.3"
+  },
+  "build": {
+    "appId": "com.uncrowned.music.desktop",
+    "productName": "Uncrowned Music",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload.js", "renderer/**", "build/icon.png"],
+    "win": { "icon": "build/icon.png", "target": ["nsis", "portable"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "shortcutName": "Uncrowned Music", "artifactName": "UncrownedMusic-Setup.exe" },
+    "portable": { "artifactName": "UncrownedMusic-Portable.exe" }
+  }
+}

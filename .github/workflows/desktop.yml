@@ -1,0 +1,33 @@
+name: Gerar EXE (PC)
+on:
+  push:
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npx electron-builder --win nsis portable --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pc-${{ github.run_number }}
+          name: Uncrowned Music para PC (build ${{ github.run_number }})
+          body: |
+            **UncrownedMusic-Setup.exe** — instalador (cria atalho na área de trabalho)
+            **UncrownedMusic-Portable.exe** — roda direto, sem instalar
+          make_latest: false
+          files: |
+            desktop/dist/UncrownedMusic-Setup.exe
+            desktop/dist/UncrownedMusic-Portable.exe
