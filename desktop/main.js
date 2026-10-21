@@ -271,6 +271,23 @@ async function soundcloud(q, retry = true) {
   }
 }
 
+/* SoundCloud tocando no player do próprio app (o mesmo stream que o site do SoundCloud usa pra tocar),
+   assim velocidade, tom e equalizador funcionam. Não baixa nada. */
+async function scStream(id) {
+  let cid = await scClientId(false); if (!cid) return null;
+  const resolve = c => getJSON(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent('https://soundcloud.com/' + id)}&client_id=${c}`);
+  let tr;
+  try { tr = await resolve(cid); }
+  catch (e) { if (e.status === 401 || e.status === 403) { scId = null; store.scid = null; cid = await scClientId(true); if (!cid) return null; tr = await resolve(cid); } else throw e; }
+  if (!tr || tr.kind !== 'track' || tr.policy === 'SNIP' || tr.policy === 'BLOCK') return null;
+  const tcs = (tr.media && tr.media.transcodings) || [];
+  const tc = tcs.find(x => x.format && x.format.protocol === 'progressive');
+  if (!tc) return null;
+  const j = await getJSON(`${tc.url}?client_id=${cid}${tr.track_authorization ? '&track_authorization=' + tr.track_authorization : ''}`);
+  if (!j.url) return null;
+  return { url: j.url, duration: tr.duration || 0, genre: tr.genre || '', art: (tr.artwork_url || '').replace('-large.', '-t500x500.') };
+}
+
 async function vimeo(q, token) {
   if (!token) return [];
   const j = await getJSON(`https://api.vimeo.com/videos?per_page=20&fields=uri,name,user.name,pictures.base_link,duration&query=${encodeURIComponent(q)}`,
@@ -427,12 +444,31 @@ app.on('web-contents-created', (_, wc) => {
   }
 });
 
+/* SoundCloud: o player oficial não tem controle de velocidade, então ajustamos direto no áudio dele */
+ipcMain.handle('sc-rate', async (_, rate, keepPitch) => {
+  if (!win) return 0;
+  const code = `(()=>{window.__uncRate=${Number(rate) || 1};window.__uncKeep=${!!keepPitch};
+    const apply=a=>{try{a.preservesPitch=window.__uncKeep;a.webkitPreservesPitch=window.__uncKeep;if(Math.abs(a.playbackRate-window.__uncRate)>0.001)a.playbackRate=window.__uncRate;}catch(e){}};
+    if(!window.__uncPatched){window.__uncPatched=true;window.__uncEls=new Set();
+      const op=HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play=function(){window.__uncEls.add(this);apply(this);return op.apply(this,arguments);};
+      setInterval(()=>{document.querySelectorAll('audio,video').forEach(a=>window.__uncEls.add(a));window.__uncEls.forEach(apply);},300);}
+    document.querySelectorAll('audio,video').forEach(a=>window.__uncEls.add(a));window.__uncEls.forEach(apply);
+    return window.__uncEls.size;})()`;
+  let n = 0;
+  for (const f of win.webContents.mainFrame.framesInSubtree) {
+    if (/w\.soundcloud\.com\/player/.test(f.url)) { try { n += await f.executeJavaScript(code); } catch {} }
+  }
+  return n;
+});
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });
 ipcMain.handle('default-folders', () => [app.getPath('music')]);
 ipcMain.handle('scan', (_, folders, opts) => scan(folders, opts));
 ipcMain.handle('search', (_, q) => searchAll(q));
+ipcMain.handle('sc-stream', (_, id) => scStream(id).catch(() => null));
 ipcMain.handle('trending', (_, genre, time) => audiusTrending(genre, time).catch(() => []));
 ipcMain.handle('audius-search', (_, q) => audiusSearch(q).catch(() => []));
 ipcMain.handle('lyrics', (_, a, t, d, s) => lyrics(a, t, d, s));

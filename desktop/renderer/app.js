@@ -115,7 +115,7 @@ function applyRate(user) {
   if (audio.playbackRate !== s.speed) audio.playbackRate = s.speed;
   if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.playbackRate=${s.speed};v.preservesPitch=${!s.pitchWithSpeed}}})(${V})`);
   if (st.kind === 'vm' && vm.player) vm.player.setPlaybackRate(s.speed).catch(() => {});
-  if (user && st.kind === 'sc' && s.speed !== 1 && rateWarned !== 'sc') { rateWarned = 'sc'; toast('O SoundCloud não deixa mudar a velocidade. Nas músicas do PC, Audius e Archive funciona.'); }
+  if (st.kind === 'sc') scApplyRate();
 }
 audio.addEventListener('loadedmetadata', () => applyRate());
 audio.addEventListener('playing', () => { if (audio.playbackRate !== S().speed) applyRate(); });
@@ -146,7 +146,7 @@ function stopEmbeds(except) {
 }
 function embedHost(kind) {
   const inner = $('#embedInner');
-  if (inner.dataset.kind !== kind) { inner.innerHTML = '<div id="embedTarget"></div>'; inner.dataset.kind = kind; yt.wv = null; yt.ready = false; sc.w = null; vm.player = null; }
+  if (inner.dataset.kind !== kind) { inner.innerHTML = '<div id="embedTarget"></div>'; inner.dataset.kind = kind; yt.wv = null; yt.ready = false; sc.hooked = false; scRetry = 0; sc.w = null; vm.player = null; }
   $('#embed').classList.remove('hidden');
   layoutEmbed();
 }
@@ -212,12 +212,24 @@ async function playSC(t) {
   else {
     $('#embedTarget').outerHTML = `<iframe id="scFrame" allow="autoplay" src="https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true&visual=true&show_comments=false"></iframe>`;
     sc.w = SC.Widget('scFrame');
-    sc.w.bind(SC.Widget.Events.PLAY, () => setPlaying(true));
+    sc.w.bind(SC.Widget.Events.PLAY, async () => {
+      setPlaying(true);
+      // na 1ª vez, "pega" o áudio do player: aplica, pausa e toca de novo pra capturar o elemento de áudio
+      if (!sc.hooked) { sc.hooked = true; if (S().speed !== 1) scApplyRate(); } else if (S().speed !== 1) scApplyRate();
+    });
     sc.w.bind(SC.Widget.Events.PAUSE, () => setPlaying(false));
     sc.w.bind(SC.Widget.Events.FINISH, () => ended());
     sc.w.bind(SC.Widget.Events.READY, () => sc.w.setVolume(S().volume * 100));
   }
   startPoll(() => sc.w && sc.w.getPosition(p => sc.w.getDuration(d => { st.time = p; st.dur = d; tick(); })));
+}
+let scRetry = 0;
+async function scApplyRate() {
+  if (st.kind !== 'sc') return;
+  const n = await U.scRate(S().speed, !S().pitchWithSpeed);
+  // ainda não achou o áudio do player: pausa e toca de novo pra ele aparecer (uma vez)
+  if (!n && sc.w && st.playing && scRetry < 2) { scRetry++; sc.w.pause(); setTimeout(() => { sc.w.play(); setTimeout(scApplyRate, 400); }, 150); }
+  else if (n) scRetry = 0;
 }
 async function playVM(t) {
   embedHost('vm');
@@ -238,8 +250,15 @@ async function playAt(i) {
   if (i < 0 || i >= st.queue.length) return;
   st.idx = i; const t = cur();
   st.time = 0; st.dur = t.duration || 0; lastT = -1;
-  const embed = ['yt', 'sc', 'vm'].includes(t.src);
-  stopEmbeds(t.src);
+  // SoundCloud: tenta tocar no player do app (velocidade/tom/equalizador funcionam); se não der, usa o player oficial
+  let scUrl = null;
+  if (t.src === 'sc') {
+    const r = await U.scStream(t.id).catch(() => null);
+    if (cur() !== t) return;
+    if (r) { scUrl = r.url; if (!t.duration) t.duration = r.duration; if (!t.genre) t.genre = r.genre; if (!t.art && r.art) t.art = r.art; }
+  }
+  const embed = ['yt', 'vm'].includes(t.src) || (t.src === 'sc' && !scUrl);
+  stopEmbeds(embed ? t.src : null);
   if (embed) {
     audio.pause(); st.kind = t.src;
     try { if (t.src === 'yt') await playYT(t); else if (t.src === 'sc') await playSC(t); else await playVM(t); }
@@ -248,7 +267,7 @@ async function playAt(i) {
     clearInterval(pollT); st.kind = 'audio';
     $('#embed').classList.add('hidden');
     initGraph(); if (ctx.state === 'suspended') ctx.resume();
-    audio.src = t.src === 'local' ? `/media?p=${encodeURIComponent(t.path)}` : `/proxy?u=${encodeURIComponent(t.stream)}`;
+    audio.src = t.src === 'local' ? `/media?p=${encodeURIComponent(t.path)}` : `/proxy?u=${encodeURIComponent(scUrl || t.stream)}`;
     applyRate();
     audio.play().catch(() => {});
   }
@@ -365,7 +384,7 @@ function openNp(open = true) {
 // posiciona o player oficial: grande dentro do "Tocando agora" ou mini flutuante
 function layoutEmbed() {
   const e = $('#embed'); const t = cur();
-  const embed = t && ['yt', 'sc', 'vm'].includes(t.src);
+  const embed = t && ['yt', 'sc', 'vm'].includes(st.kind);
   if (!embed) { e.classList.add('hidden'); return; }
   e.classList.remove('hidden');
   const npOpen = !$('#np').classList.contains('hidden');
@@ -738,14 +757,15 @@ $('#bSpeed').onclick = () => {
   if (!panel('speed', `<h3>Velocidade</h3>
     <div class="rng" style="margin:6px 4px"><input type="range" id="spR" min="0.5" max="2" step="0.05" value="${S().speed}" style="flex:1"><span id="spV">${S().speed.toFixed(2)}x</span></div>
     <div class="opt" style="padding:10px 4px"><div class="l">Mudar o tom junto<small>slowed / nightcore</small></div>${sw('pitchWithSpeed')}</div>
-    <div class="chips">${[['Slowed', 0.85, true], ['Normal', 1, false], ['Nightcore', 1.25, true], ['Sped up', 1.2, false], ['Lento', 0.75, false]].map(([n, v, p]) => `<button class="chip" data-sp="${v}" data-pp="${p}">${n}</button>`).join('')}</div>`)) return;
+    <div class="chips">${[['Slowed', 0.85, true], ['Normal', 1, false], ['Nightcore', 1.25, true], ['Sped up', 1.2, false], ['Lento', 0.75, false]].map(([n, v, p]) => `<button class="chip ${Math.abs(S().speed - v) < 0.001 && (v === 1 || S().pitchWithSpeed === p) ? 'on' : ''}" data-sp="${v}" data-pp="${p}">${n}</button>`).join('')}</div>`)) return;
   const p = $('#panel');
-  $('#spR').oninput = e => { S().speed = +e.target.value; $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(true); save(); updateModeBtns(); };
-  p.querySelector('[data-sw]').onclick = e => { S().pitchWithSpeed = !S().pitchWithSpeed; e.target.classList.toggle('on', S().pitchWithSpeed); applyRate(true); save(); };
+  const syncChips = () => p.querySelectorAll('[data-sp]').forEach(x => x.classList.toggle('on', Math.abs(S().speed - +x.dataset.sp) < 0.001 && (+x.dataset.sp === 1 || S().pitchWithSpeed === (x.dataset.pp === 'true'))));
+  $('#spR').oninput = e => { p.querySelectorAll('[data-sp]').forEach(x => x.classList.remove('on')); S().speed = +e.target.value; $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(true); save(); updateModeBtns(); syncChips(); };
+  p.querySelector('[data-sw]').onclick = e => { S().pitchWithSpeed = !S().pitchWithSpeed; e.target.classList.toggle('on', S().pitchWithSpeed); applyRate(true); save(); syncChips(); };
   p.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => {
     S().speed = +b.dataset.sp; S().pitchWithSpeed = b.dataset.pp === 'true'; rateWarned = ''; applyRate(true); save(); updateModeBtns();
     $('#spR').value = S().speed; $('#spV').textContent = S().speed.toFixed(2) + 'x'; p.querySelector('[data-sw]').classList.toggle('on', S().pitchWithSpeed);
-    p.querySelectorAll('[data-sp]').forEach(x => x.classList.toggle('on', x === b)); toast(b.textContent + ' ativado');
+    syncChips(); toast(b.textContent + ' ativado');
   });
 };
 $('#bTimer').onclick = () => {
