@@ -49,7 +49,7 @@ const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="$
 
 /* ---------------- estado e persistência ---------------- */
 const DEF = {
-  theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
+  skin: 'edgy', theme: 'dark', accent: '#ff1f3d', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
   adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
@@ -68,8 +68,27 @@ const artOf = t => t ? (t.src === 'local' ? `/cover?p=${encodeURIComponent(t.pat
 const isFav = t => !!(t && D.favs[keyOf(t)]);
 
 /* ---------------- aparência ---------------- */
+/* ---------------- temas (estilos de turma): cores, fonte, textura e a caveira do ícone ---------------- */
+const SKINS = {
+  edgy: { name: 'Edgy', desc: 'Dark, vermelho sangue e glitch', accent: '#ff1f3d', mode: 'dark', dots: ['#050505', '#ff1f3d', '#f2f2f2'] },
+  fadinha: { name: 'Fadinha', desc: 'Pastel, brilhinho e lacinho', accent: '#ff5fa8', mode: 'light', dots: ['#ffd6ec', '#e3c9ff', '#ff5fa8'] },
+  otaku: { name: 'Otaku', desc: 'Neon, sakura e anime', accent: '#ff3fa4', mode: 'dark', dots: ['#1a1240', '#ff3fa4', '#25f4ee'] },
+  oldmoney: { name: 'Old Money', desc: 'Creme, verde e dourado', accent: '#a67c2a', mode: 'light', dots: ['#f1e9d6', '#1f3b2d', '#b08a2e'] },
+  alternativo: { name: 'Alternativo', desc: 'Terroso, granulado e fone', accent: '#e76f51', mode: 'dark', dots: ['#1d2b2a', '#e9c46a', '#e76f51'] },
+  punk: { name: 'Punk', desc: 'Preto, verde neon e retícula', accent: '#39ff14', mode: 'dark', dots: ['#0b0b0b', '#39ff14', '#ff2fa0'] },
+  pulseirinhas: { name: 'Pulseirinhas', desc: 'Glitter colorido e miçangas', accent: '#c77dff', mode: 'dark', dots: ['#5b2a86', '#b8336a', '#2b59c3'] }
+};
+let logoV = Date.now();
+function refreshLogos() { logoV = Date.now(); document.querySelectorAll('img').forEach(i => { const a = i.getAttribute('src') || ''; if (/^logo\.png/.test(a)) i.src = 'logo.png?v=' + logoV; }); }
+function applySkin(k) {
+  const sk = SKINS[k] || SKINS.edgy, s = S();
+  s.skin = SKINS[k] ? k : 'edgy'; s.accent = sk.accent; s.theme = sk.mode;
+  save(); applyLook(); U.setSkin(s.skin); refreshLogos(); render();
+  toast(`Tema ${sk.name} aplicado`);
+}
 function applyLook() {
   const s = S(), r = document.documentElement;
+  r.dataset.skin = SKINS[s.skin] ? s.skin : 'edgy';
   const sys = matchMedia('(prefers-color-scheme: light)').matches;
   r.classList.toggle('light', s.theme === 'light' || (s.theme === 'system' && sys));
   r.classList.toggle('black', s.theme === 'black');
@@ -1080,6 +1099,8 @@ const EQP = { 'Normal': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 'Graves': [7, 6, 4, 2, 0
 views.settings = () => {
   const s = S();
   $('#view').innerHTML = `<h1>Ajustes</h1>
+  <div class="gtitle">Tema</div>
+  <div class="skins">${Object.entries(SKINS).map(([k, x]) => `<div class="skin ${s.skin === k ? 'on' : ''}" data-skin="${k}"><img src="themes/${k}.png"><div><b>${x.name}</b><span>${x.desc}</span><i>${x.dots.map(c => `<em style="background:${c}"></em>`).join('')}</i></div></div>`).join('')}</div>
   <div class="gtitle">Aparência</div><div class="group">
     ${opt('Tema', seg('theme', [['system', 'Sistema'], ['dark', 'Escuro'], ['black', 'Preto total'], ['light', 'Claro']]))}
     ${opt('Cor de destaque', `<div class="dots">${ACC.map(c => `<div class="dot ${s.accent === c ? 'on' : ''}" data-acc="${c}" style="background:${c}"></div>`).join('')}<input type="color" id="accPick" value="${s.accent}" style="width:30px;height:28px;border:0;background:none"></div>`)}
@@ -1136,6 +1157,7 @@ views.settings = () => {
   <div class="gfoot">A busca procura no seu PC, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
   <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC 1.0</div>`;
   const v = $('#view');
+  v.querySelectorAll('[data-skin]').forEach(d => d.onclick = () => applySkin(d.dataset.skin));
   v.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => { const k = b.parentElement.dataset.k; S()[k] = b.dataset.v; changed(k); });
   v.querySelectorAll('[data-sw]').forEach(b => b.onclick = () => { const k = b.dataset.sw; S()[k] = !S()[k]; changed(k); });
   v.querySelectorAll('[data-r]').forEach(r => { r.oninput = () => { S()[r.dataset.r] = +r.value; live(r.dataset.r); r.nextElementSibling.textContent = { speed: (+r.value).toFixed(2) + 'x', fontScale: (+r.value).toFixed(2) + 'x', minDur: r.value + ' s', bass: r.value + ' dB', gainBoost: '+' + r.value + ' dB' }[r.dataset.r] || r.value; }; r.onchange = () => changed(r.dataset.r, true); });
@@ -1847,6 +1869,7 @@ async function rescan() {
   applyLook(); updateModeBtns(); setPlaying(false); setVolume(S().volume);
   if (!D.startMig) { S().startView = 'discover'; D.startMig = 1; save(); }
   setTimeout(() => { const b = $('#bRetro'); if (b) { b.classList.toggle('on', !!S().retro); b.title = 'Modo retrô: ' + RETRO_NAMES[S().retro || '']; } }, 0);
+  if (!D.skinMig) { D.skinMig = 1; S().skin = 'edgy'; S().accent = SKINS.edgy.accent; S().theme = 'dark'; save(); applyLook(); U.setSkin('edgy'); }
   if (!D.pitchMig) { S().pitchWithSpeed = true; D.pitchMig = 1; save(); }
   view = { name: S().startView };
   renderNav(); render();

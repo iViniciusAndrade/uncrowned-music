@@ -515,3 +515,73 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .impProg span{display:block;font-size:13.5px;margin-bottom:8px}
 .impProg b{display:block;height:6px;border-radius:9px;background:var(--card2);overflow:hidden}
 .impProg i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+
+/* ======================= TEMAS ======================= */
+:root{--hfont:inherit}
+h1,h2,.brand span,.momCard b,.best .bt,.aTxt h1,.alHero h1,.chHead b,.hero b{font-family:var(--hfont)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:var(--texO,0);background:var(--tex,none)}
+#main,#bar,#sidebar{position:relative;z-index:2}
+/* galeria de temas */
+.skins{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
+.skin{display:flex;gap:12px;align-items:center;padding:10px;border-radius:14px;background:var(--card);cursor:pointer;border:2px solid transparent;transition:transform .15s,border-color .15s}
+.skin:hover{transform:translateY(-2px)} .skin.on{border-color:var(--accent)}
+.skin img{width:64px;height:64px;border-radius:14px;flex:none}
+.skin b{display:block;font-size:15px} .skin span{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.skin i{display:flex;gap:4px;margin-top:6px} .skin em{width:14px;height:14px;border-radius:50%;border:1px solid rgba(128,128,128,.4)}
+
+/* EDGY: preto, vermelho, glitch, scanlines + arte da caveira na barra lateral */
+:root[data-skin=edgy]{--bg:#060607;--card:#121214;--card2:#1e1e22;--hfont:'Oxanium',sans-serif;
+  --tex:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);--texO:1}
+:root[data-skin=edgy] #sidebar{background:linear-gradient(180deg,rgba(6,6,7,.72) 0%,rgba(6,6,7,.42) 32%,rgba(6,6,7,.5) 62%,rgba(6,6,7,.9) 100%),url("themes/edgy-side.jpg") center 38%/cover no-repeat,#0a0505;border-right-color:rgba(255,31,61,.22)}
+:root[data-skin=edgy] #sidebar nav a{text-shadow:0 1px 6px rgba(0,0,0,.9)}
+:root[data-skin=edgy] h1{text-shadow:2px 0 rgba(255,0,51,.55),-2px 0 rgba(0,229,255,.35);letter-spacing:.01em}
+
+/* FADINHA: pastel claro, brilhinho */
+:root[data-skin=fadinha]{--bg:#fff4fa;--side:#ffe3f1;--card:#ffffff;--card2:#f6e3f4;--line:rgba(160,80,140,.14);--text:#4a2a4f;--dim:#a07a9e;--hfont:'Quicksand',sans-serif;
+  --tex:radial-gradient(circle at 20% 30%,rgba(255,255,255,.9) 0 1.5px,transparent 2px),radial-gradient(circle at 70% 80%,rgba(255,170,215,.8) 0 1.5px,transparent 2px),radial-gradient(circle at 85% 15%,rgba(200,160,255,.8) 0 1.2px,transparent 2px);--texO:.9}
+:root[data-skin=fadinha] body::after{background-size:180px 180px,240px 240px,300px 300px}
+:root[data-skin=fadinha] #sidebar{background:linear-gradient(180deg,#ffd6ec,#e8d4ff 60%,#d4ebff);border-right-color:rgba(200,120,180,.25)}
+:root[data-skin=fadinha] #sidebar nav a{color:#5a2f5c} :root[data-skin=fadinha] #sidebar nav a:hover{background:rgba(255,255,255,.5)} :root[data-skin=fadinha] #sidebar nav a.on{background:rgba(255,255,255,.75)}
+:root[data-skin=fadinha] #sidebar .navlabel{color:#b07fb0;border-top-color:rgba(160,80,140,.15)} :root[data-skin=fadinha] #sidebar .brand{border-bottom-color:rgba(160,80,140,.15)}
+:root[data-skin=fadinha] #sidebar .search input{background:rgba(255,255,255,.7);border-color:rgba(200,120,180,.25)}
+:root[data-skin=fadinha] #bar{background:rgba(255,240,248,.92)}
+
+/* OTAKU: neon rosa/ciano, sakura */
+:root[data-skin=otaku]{--bg:#0f0b24;--card:#1b1538;--card2:#2a2150;--dim:#9b93c9;--hfont:'M PLUS Rounded 1c',sans-serif;
+  --tex:radial-gradient(ellipse 10px 6px at 15% 20%,rgba(255,183,213,.55),transparent 70%),radial-gradient(ellipse 8px 5px at 80% 60%,rgba(255,183,213,.45),transparent 70%),radial-gradient(ellipse 9px 6px at 45% 85%,rgba(255,183,213,.4),transparent 70%);--texO:1}
+:root[data-skin=otaku] body::after{background-size:420px 380px,520px 460px,380px 520px}
+:root[data-skin=otaku] #sidebar{background:linear-gradient(180deg,#1a1240,#2b0f45);border-right-color:rgba(37,244,238,.25)}
+:root[data-skin=otaku] #sidebar nav a.on{box-shadow:inset 2px 0 0 var(--accent),0 0 18px rgba(255,63,164,.25)}
+:root[data-skin=otaku] h1{text-shadow:0 0 18px rgba(255,63,164,.55)}
+
+/* OLD MONEY: creme, verde, dourado, serifa */
+:root[data-skin=oldmoney]{--bg:#f4eee0;--side:#ece3cd;--card:#fbf7ee;--card2:#e9dfc8;--line:rgba(31,59,45,.14);--text:#1f2e25;--dim:#7d7564;--hfont:'Cormorant Garamond',serif;
+  --tex:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .3 0 0 0 0 .1 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");--texO:1}
+:root[data-skin=oldmoney] h1{font-size:40px;font-weight:700;letter-spacing:.01em}
+:root[data-skin=oldmoney] #sidebar{background:#1f3b2d;border-right:1px solid #b08a2e}
+:root[data-skin=oldmoney] #sidebar nav a{color:#efe6cf} :root[data-skin=oldmoney] #sidebar nav a svg{fill:#d6b25e}
+:root[data-skin=oldmoney] #sidebar nav a.on{background:rgba(214,178,94,.16);box-shadow:inset 2px 0 0 #d6b25e}
+:root[data-skin=oldmoney] #sidebar .brand span{color:#f1e6c8;font-size:20px}
+:root[data-skin=oldmoney] #sidebar .navlabel{color:#b6a77f}
+:root[data-skin=oldmoney] #bar{background:rgba(244,238,224,.95);border-top:1px solid #d9c9a0}
+
+/* ALTERNATIVO: terroso, granulado */
+:root[data-skin=alternativo]{--bg:#161f1e;--card:#1f2b2a;--card2:#2b3a38;--text:#f4e8c8;--dim:#a8a08a;--hfont:'Space Grotesk',sans-serif;
+  --tex:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.95' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");--texO:1}
+:root[data-skin=alternativo] #sidebar{background:linear-gradient(180deg,#1d2b2a,#24302a);border-right-color:rgba(233,196,106,.2)}
+:root[data-skin=alternativo] #sidebar nav a{color:#f4e8c8}
+
+/* PUNK: preto, verde neon, retícula rosa */
+:root[data-skin=punk]{--bg:#0a0a0a;--card:#141414;--card2:#222;--hfont:'Bungee',sans-serif;
+  --tex:radial-gradient(circle,rgba(255,47,160,.16) 1.6px,transparent 2px);--texO:1}
+:root[data-skin=punk] body::after{background-size:22px 22px}
+:root[data-skin=punk] h1{letter-spacing:.02em;transform:rotate(-1deg);display:inline-block}
+:root[data-skin=punk] #sidebar{background:#050505;border-right:2px solid #39ff14}
+:root[data-skin=punk] #sidebar nav a.on{background:#39ff14;color:#000;box-shadow:none} :root[data-skin=punk] #sidebar nav a.on svg{fill:#000}
+
+/* PULSEIRINHAS: glitter colorido */
+:root[data-skin=pulseirinhas]{--bg:#1a1030;--card:#25183f;--card2:#35245a;--dim:#b7a6d9;--hfont:'Fredoka',sans-serif;
+  --tex:radial-gradient(circle at 10% 20%,rgba(255,233,168,.7) 0 1.2px,transparent 1.8px),radial-gradient(circle at 60% 70%,rgba(255,255,255,.6) 0 1px,transparent 1.6px),radial-gradient(circle at 85% 30%,rgba(255,111,181,.6) 0 1.2px,transparent 1.8px);--texO:1}
+:root[data-skin=pulseirinhas] body::after{background-size:140px 140px,200px 200px,260px 260px}
+:root[data-skin=pulseirinhas] #sidebar{background:linear-gradient(180deg,#5b2a86,#8a2a6e 55%,#2b3f8f)}
+:root[data-skin=pulseirinhas] h1{background:linear-gradient(90deg,#ff6fb5,#ffd166,#7ae7c7,#7aa8ff,#c77dff);-webkit-background-clip:text;color:transparent}

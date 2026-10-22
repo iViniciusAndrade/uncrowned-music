@@ -1,5 +1,5 @@
 // Uncrowned Music — processo principal (janela, arquivos, busca online, letras, downloads)
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, session, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -98,6 +98,11 @@ function startServer() {
       if (u.pathname === '/media') return serveFile(req, res, u.searchParams.get('p') || '');
       if (u.pathname === '/proxy') return proxy(req, res, u.searchParams.get('u') || '');
       if (u.pathname === '/cover') return cover(res, u.searchParams.get('p') || '');
+      // logo do app = caveira do tema escolhido
+      if (u.pathname === '/logo.png') {
+        const f = path.join(root, 'themes', skinNow() + '.png');
+        return fs.readFile(fs.existsSync(f) ? f : path.join(root, 'logo.png'), (e, b) => { if (e) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); res.end(b); });
+      }
       let p = path.normalize(path.join(root, decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname)));
       if (!p.startsWith(root)) { res.writeHead(403); return res.end(); }
       serveFile(req, res, p);
@@ -1226,6 +1231,11 @@ ipcMain.handle('import-resolve', async (e, items, tag) => {
   return out.filter(Boolean);
 });
 
+/* temas: troca o ícone da janela/barra de tarefas junto */
+const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas'];
+function skinNow() { const k = store.data && store.data.settings && store.data.settings.skin; return SKINS.includes(k) ? k : 'edgy'; }
+function applyWinSkin(k) { try { if (win && SKINS.includes(k)) win.setIcon(nativeImage.createFromPath(path.join(__dirname, 'renderer', 'themes', k + '.png'))); } catch {} }
+ipcMain.handle('set-skin', (_, k) => { applyWinSkin(k); return true; });
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });
@@ -1255,6 +1265,7 @@ app.whenReady().then(async () => {
   setupAdblock(s0.adblock !== false);
   await startServer();
   createWindow();
+  applyWinSkin(skinNow());
   setTimeout(warmUp, 1500);
 });
 app.on('window-all-closed', () => { try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.quit(); });
