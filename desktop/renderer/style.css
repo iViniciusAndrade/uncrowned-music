@@ -340,3 +340,24 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .btn:disabled{opacity:.45;cursor:default}
 .list .row{cursor:pointer}
 .sTopList .list .row{grid-template-columns:28px 44px minmax(0,3fr) minmax(0,2fr) 50px 72px}
+
+/* Descobrir: mais tocadas da semana em 3 colunas */
+.chH{margin-top:36px}
+.chartCols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+@media (max-width:1180px){.chartCols{grid-template-columns:1fr}}
+.chartBox{background:var(--card);border-radius:14px;padding:14px 10px 10px;min-height:120px;border-top:3px solid var(--c)}
+.chartBox.au{--c:#cc33ff} .chartBox.yt{--c:#ff3b30} .chartBox.sc{--c:#ff7700}
+.chartBox>.spinner{margin:30px auto;display:block}
+.chHead{display:flex;align-items:center;justify-content:space-between;padding:0 6px 10px}
+.chHead b{display:block;font-size:18px;font-weight:800;color:var(--c)}
+.chHead span{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.chPlay{width:40px;height:40px;border-radius:50%;background:var(--c);display:grid;place-items:center;flex:none;transition:transform .15s}
+.chPlay:hover{transform:scale(1.07)} .chPlay svg{width:20px;height:20px;fill:#fff}
+.chartBox .list .row{grid-template-columns:24px 42px minmax(0,1fr) 40px;grid-template-rows:auto auto;row-gap:1px;column-gap:10px;height:58px;padding:0 6px}
+.chartBox .row .n{grid-row:1/3} .chartBox .row>img,.chartBox .row>.ph{grid-row:1/3;width:42px;height:42px}
+.chartBox .row .t{grid-column:3;grid-row:1;align-self:end;font-size:14px}
+.chartBox .row .a{grid-column:3;grid-row:2;align-self:start;font-size:12.5px}
+.chartBox .row .d{grid-column:4;grid-row:1/3;font-size:12px}
+.chartBox .row .al,.chartBox .row .acts,.chartBox .row .badge{display:none}
+.chartBox .empty{padding:24px 0;font-size:13px}
+.plShelf h3{font-size:15px;font-weight:700;color:var(--dim);margin:14px 0 10px}

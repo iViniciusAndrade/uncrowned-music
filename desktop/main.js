@@ -740,6 +740,56 @@ ipcMain.handle('export-fx', (e, items, fx) => exportFx(e.sender, items || [], fx
 ipcMain.handle('export-stop', () => { if (exportJob) { exportJob.stop = true; try { exportJob.proc && exportJob.proc.kill(); } catch {} } return true; });
 ipcMain.handle('music-dir', () => app.getPath('music'));
 
+/* SoundCloud: mais tocadas da semana (charts oficiais; se o SoundCloud não entregar, usa a vitrine de descobertas dele) */
+const scMap = t => ({
+  src: 'sc', id: t.permalink_url.replace(/^https:\/\/soundcloud\.com\//, ''), url: t.permalink_url, title: t.title,
+  artist: (t.publisher_metadata && t.publisher_metadata.artist) || (t.user && t.user.username) || '', art: (t.artwork_url || (t.user && t.user.avatar_url) || '').replace('-large.', '-t500x500.'),
+  duration: t.duration || 0, genre: t.genre || '', plays: t.playback_count || 0
+});
+async function scCharts(region = 'BR') {
+  const k = 'sccharts|' + region; const c = sCache.get(k); if (c && Date.now() - c.at < 3 * 3600e3) return c.v;
+  const id = await scClientId(false).catch(() => null); if (!id) return [];
+  const reg = region === 'ZZ' ? '' : `&region=soundcloud:regions:${region}`;
+  const tries = [
+    `https://api-v2.soundcloud.com/charts?kind=top&genre=soundcloud:genres:all-music${reg}&limit=50&client_id=${id}`,
+    `https://api-v2.soundcloud.com/charts?kind=trending&genre=soundcloud:genres:all-music${reg}&limit=50&client_id=${id}`,
+    `https://api-v2.soundcloud.com/charts?kind=top&genre=soundcloud:genres:all-music&limit=50&client_id=${id}`
+  ];
+  let out = [];
+  for (const u of tries) {
+    try { const j = await getJSON(u); out = (j.collection || []).map(x => x.track || x).filter(t => t && t.permalink_url).map(scMap); } catch {}
+    if (out.length >= 10) break;
+  }
+  if (out.length < 10) {
+    try {
+      const j = await getJSON(`https://api-v2.soundcloud.com/mixed-selections?limit=10&client_id=${id}`);
+      const found = [];
+      (function walk(x) { if (Array.isArray(x)) return x.forEach(walk); if (x && typeof x === 'object') { if (x.kind === 'track' && x.permalink_url && x.title) found.push(x); else Object.values(x).forEach(walk); } })(j);
+      out = found.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0)).map(scMap);
+    } catch {}
+  }
+  out = out.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i).slice(0, 50);
+  if (out.length) sCache.set(k, { at: Date.now(), v: out });
+  return out;
+}
+ipcMain.handle('sc-charts', (_, region) => scCharts(region).catch(() => []));
+
+/* playlists mais populares do YouTube Music (página inicial + paradas), agrupadas pela prateleira */
+async function ytmPopularLists(gl = 'BR') {
+  const k = 'ytmlists|' + gl; const c = sCache.get(k); if (c && Date.now() - c.at < 6 * 3600e3) return c.v;
+  const ok = l => /^(VL)?(PL|RDCLAK|OLAK)/.test(l.id || '');
+  const groups = new Map();
+  const add = (shelf, l) => { if (!ok(l)) return; const g = groups.get(shelf) || []; if (!g.some(x => x.id === l.id) && g.length < 20) g.push(l); groups.set(shelf, g); };
+  const [home, charts] = await Promise.all([ytm({ browseId: 'FEmusic_home' }).catch(() => null), ytm({ browseId: 'FEmusic_charts', formData: { selectedValues: [gl] } }).catch(() => null)]);
+  if (charts) ytmParse(charts).lists.forEach(l => add('Paradas do YouTube Music', l));
+  if (home) ytmParse(home).lists.forEach(l => add(l.shelf || 'Playlists em destaque', l));
+  const seen = new Set();
+  const v = [...groups.entries()].map(([shelf, items]) => ({ shelf, items: items.filter(l => !seen.has(l.id) && seen.add(l.id)) })).filter(g => g.items.length >= 2).slice(0, 6);
+  if (v.length) sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+ipcMain.handle('ytm-lists', (_, gl) => ytmPopularLists(gl).catch(() => []));
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });

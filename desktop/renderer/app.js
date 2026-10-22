@@ -832,7 +832,7 @@ async function weekly(force) {
   D.weekly = { w, v: 2, t, artists: r.artists || [] }; save();
   return t;
 }
-let chartsGl = 'BR', chartsData = {}, chartsAll = false;
+let chartsGl = 'BR', chartsData = {}, listsData = {}, chartsOpen = {}, auTrend = null, scData = {};
 views.discover = async () => {
   if (!topOf(D.taste.g, 1).length && !D.pickedGenres) {
     const picked = new Set();
@@ -844,18 +844,21 @@ views.discover = async () => {
   }
   const g = topOf(D.taste.g, 6), a = topOf(D.taste.a, 5), max = g.length ? g[0][1] : 1;
   $('#view').innerHTML = `<h1>Descobrir</h1>
-    <h2>Mais ouvidas da semana <span class="chips inline">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="chip ${chartsGl === k ? 'on' : ''}" data-gl="${k}">${n}</button>`).join('')}</span></h2>
-    <div class="sub" id="chSub">YouTube Music</div>
-    <div id="charts"><span class="spinner"></span></div>
     <div class="hero" id="wkPlay"><b>Descobertas da Semana</b><span id="wkSub">Montando sua lista…</span></div>
     <div class="btns"><button class="btn" id="wkNew">Gerar de novo</button><button class="btn" id="wkShuf">${ico('shuffle')} Aleatório</button><button class="btn" id="tasteReset">Ajustar gosto</button></div>
     <div class="hscroll" id="wkRow"></div>
     <div id="wkArt"></div>
+    <h2 class="chH">Mais tocadas da semana <span class="chips inline">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="chip ${chartsGl === k ? 'on' : ''}" data-gl="${k}">${n}</button>`).join('')}</span></h2>
+    <div class="chartCols">
+      <div class="chartBox au" id="chAu"><span class="spinner"></span></div>
+      <div class="chartBox yt" id="chYt"><span class="spinner"></span></div>
+      <div class="chartBox sc" id="chSc"><span class="spinner"></span></div>
+    </div>
     <div id="chVideos"></div>
     <div id="chLists"></div>
     <h2>Seu gosto musical</h2><div class="bars">${g.map(([n, v]) => `<div class="b"><span>${esc(n)}</span><i style="width:${Math.max(4, v / max * 100)}%"></i></div>`).join('') || 'Ouça umas músicas que aparece aqui.'}
       ${a.length ? `<div style="color:var(--dim);font-size:13px;margin-top:10px">Mais ouvidos: ${a.map(x => esc(x[0])).join(', ')}</div>` : ''}</div>`;
-  $('#view').querySelectorAll('[data-gl]').forEach(b => b.onclick = () => { chartsGl = b.dataset.gl; chartsAll = false; render(); });
+  $('#view').querySelectorAll('[data-gl]').forEach(b => b.onclick = () => { chartsGl = b.dataset.gl; chartsOpen = {}; render(); });
   $('#tasteReset').onclick = () => { D.taste = { g: {}, a: {} }; D.pickedGenres = false; D.weekly = null; save(); render(); };
   const fill = l => {
     if (!$('#wkRow')) return;
@@ -871,29 +874,39 @@ views.discover = async () => {
   $('#wkShuf').onclick = () => rowsCtx.weekly && (st.queue = shuffleArr(rowsCtx.weekly.slice()), playAt(0));
   $('#wkNew').onclick = async () => { $('#wkSub').textContent = 'Montando…'; fill(await weekly(true)); };
   weekly(false).then(l => { if (view.name === 'discover') fill(l); });
-  // mais ouvidas: YouTube Music; se falhar, usa o em alta do Audius
+  // mais tocadas da semana: Audius, YouTube Music e SoundCloud, cada um carrega sozinho
   const gl = chartsGl;
+  const block = (el, key, name, sub, list) => {
+    const box = $(el); if (!box || view.name !== 'discover' || gl !== chartsGl) return;
+    const open = chartsOpen[key]; const shown = open ? list : list.slice(0, 10);
+    rowsCtx['ch_' + key] = list;
+    box.innerHTML = `<div class="chHead"><div><b>${name}</b><span>${esc(sub)}</span></div>${list.length ? `<button class="chPlay" data-play="ch_${key}" title="Tocar tudo">${ico('play')}</button>` : ''}</div>`
+      + rows(shown, 'ch_' + key, { empty: 'Não deu pra carregar agora.' })
+      + (list.length > 10 ? `<button class="lnk more" data-chm="${key}">${open ? 'Mostrar menos' : `Ver todas as ${list.length}`}</button>` : '');
+    const m = box.querySelector('[data-chm]'); if (m) m.onclick = () => { chartsOpen[key] = !open; block(el, key, name, sub, list); };
+  };
+  (async () => { if (!auTrend || !auTrend.length) auTrend = await U.trending(null, 'week'); block('#chAu', 'au', 'Audius', 'Em alta no mundo · artistas independentes', auTrend || []); })();
+  (async () => { const k = gl; if (!scData[k]) { const r = await U.scCharts(k); if (r.length) scData[k] = r; } block('#chSc', 'sc', 'SoundCloud', k === 'BR' ? 'Top no Brasil' : 'Top no mundo', scData[k] || []); })();
   let c = chartsData[gl];
   if (!c) { c = await U.ytmCharts(gl); if (c.top && c.top.length) chartsData[gl] = c; }
-  if (view.name !== 'discover' || !$('#charts') || gl !== chartsGl) return;
-  let top = c.top || [], from = 'YouTube Music';
-  if (!top.length) { top = await U.trending(null, 'week'); from = 'Audius (o YouTube Music não respondeu agora)'; }
-  $('#chSub').textContent = `${c.title && c.top.length ? c.title + ' · ' : ''}${from} · atualiza toda semana`;
-  const shown = chartsAll ? top : top.slice(0, 10);
-  $('#charts').innerHTML = (top.length ? playBtns('charts') : '') + rows(shown, 'chartsView', { empty: 'Não deu pra carregar agora.' }) + (top.length > 10 ? `<button class="lnk more" id="chMore">${chartsAll ? 'Mostrar menos' : `Ver todas as ${top.length}`}</button>` : '');
-  rowsCtx.charts = top;
-  if ($('#chMore')) $('#chMore').onclick = () => { chartsAll = !chartsAll; render(); };
+  if (view.name !== 'discover' || !$('#chYt') || gl !== chartsGl) return;
+  block('#chYt', 'yt', 'YouTube', (c.top && c.top.length ? c.title : 'O YouTube Music não respondeu agora') + '', c.top || []);
   const vids = c.videos || [];
   $('#chVideos').innerHTML = vids.length ? `<h2>Clipes em alta</h2><div class="hscroll wide">${vids.map((t, i) => `<div class="tile" data-cv="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('')}</div>` : '';
   $('#chVideos').querySelectorAll('[data-cv]').forEach(d => d.onclick = () => play(vids, +d.dataset.cv));
-  const ls = c.lists || [];
-  $('#chLists').innerHTML = ls.length ? `<h2>Playlists em alta</h2><div class="hscroll">${ls.map((l, i) => `<div class="tile" data-cl="${i}"><img loading="lazy" src="${esc(l.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(l.title)}</div><div class="ta">${esc(l.sub)}</div></div>`).join('')}</div>` : '';
-  $('#chLists').querySelectorAll('[data-cl]').forEach(d => d.onclick = async () => {
-    const l = ls[+d.dataset.cl]; toast('Abrindo ' + l.title + '…');
+  // playlists mais populares do YouTube (abre dentro do app)
+  const openList = async l => {
+    toast('Abrindo ' + l.title + '…');
     const t = await U.ytmPlaylist(l.id);
     if (!t.length) return toast('Não deu pra abrir essa playlist agora');
-    go({ name: 'group', title: l.title, list: t, sub: `${t.length} músicas · YouTube Music` });
-  });
+    go({ name: 'group', title: l.title, list: t, sub: `${t.length} músicas · playlist do YouTube` });
+  };
+  let groups = listsData[gl];
+  if (!groups) { groups = await U.ytmLists(gl); if (groups.length) listsData[gl] = groups; }
+  if (!groups.length && (c.lists || []).length) groups = [{ shelf: 'Playlists em alta', items: c.lists }];
+  if (view.name !== 'discover' || !$('#chLists') || gl !== chartsGl) return;
+  $('#chLists').innerHTML = groups.length ? `<h2>Playlists mais populares do YouTube</h2>` + groups.map((g, gi) => `<div class="plShelf">${groups.length > 1 ? `<h3>${esc(g.shelf)}</h3>` : ''}<div class="hscroll">${g.items.map((l, i) => `<div class="tile" data-cl="${gi}:${i}"><img loading="lazy" src="${esc(l.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(l.title)}</div><div class="ta">${esc(l.sub)}</div></div>`).join('')}</div></div>`).join('') : '';
+  $('#chLists').querySelectorAll('[data-cl]').forEach(d => d.onclick = () => { const [gi, i] = d.dataset.cl.split(':').map(Number); openList(groups[gi].items[i]); });
 };
 
 /* ---------------- ajustes ---------------- */
