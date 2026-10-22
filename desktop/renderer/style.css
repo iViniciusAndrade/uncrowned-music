@@ -715,3 +715,22 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 #navBtns button:disabled{opacity:.3;cursor:default}
 #navBtns button:not(:disabled):hover{background:rgba(0,0,0,.8)}
 :root.light #navBtns button{background:rgba(255,255,255,.75)} :root.light #navBtns button svg{fill:#222}
+
+#plnav a img.plCov{width:22px;height:22px;border-radius:5px;object-fit:cover;flex:none}
+
+/* barra lateral: opção com o mouse em cima e a selecionada ficam nítidas sobre a arte */
+:root[data-skin]{--navHov:rgba(8,8,10,.74);--navOn:rgba(8,8,10,.86);--navTx:#fff}
+:root[data-skin=fadinha],:root[data-skin=julie],:root[data-skin=divino]{--navHov:rgba(255,255,255,.82);--navOn:rgba(255,255,255,.95);--navTx:#2a1838}
+:root[data-skin=divino]{--navTx:#3a2f1a}
+:root[data-skin] #sidebar nav a{transition:background .15s,color .15s}
+:root[data-skin] #sidebar nav a:hover{background:var(--navHov)!important;color:var(--navTx)!important;text-shadow:none!important;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+:root[data-skin] #sidebar nav a.on{background:var(--navOn)!important;color:var(--navTx)!important;text-shadow:none!important;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:inset 3px 0 0 var(--accent),0 4px 14px rgba(0,0,0,.25)!important;font-weight:600}
+:root[data-skin] #sidebar nav a:hover svg,:root[data-skin] #sidebar nav a.on svg{fill:var(--accent)!important}
+:root[data-skin=punk] #sidebar nav a.on{background:#39ff14!important;color:#000!important} :root[data-skin=punk] #sidebar nav a.on svg{fill:#000!important}
+:root[data-skin=apagao] #sidebar nav a:hover{background:#111!important;color:#fff!important} :root[data-skin=apagao] #sidebar nav a.on{background:#161616!important;box-shadow:inset 2px 0 0 #fff!important} :root[data-skin=apagao] #sidebar nav a:hover svg,:root[data-skin=apagao] #sidebar nav a.on svg{fill:#fff!important}
+:root[data-skin] #sidebar .navlabel{text-shadow:0 1px 4px rgba(0,0,0,.35)}
+:root[data-skin=fadinha] #sidebar .navlabel,:root[data-skin=julie] #sidebar .navlabel,:root[data-skin=divino] #sidebar .navlabel{text-shadow:0 1px 4px rgba(255,255,255,.8)}
+:root[data-skin]{--navHov:rgba(28,28,34,.88)}
+:root[data-skin=fadinha],:root[data-skin=julie],:root[data-skin=divino]{--navHov:rgba(255,255,255,.82)}
+:root[data-skin] #sidebar nav a:hover{box-shadow:0 0 0 1px rgba(255,255,255,.1) inset}
+:root[data-skin=fadinha] #sidebar nav a:hover,:root[data-skin=julie] #sidebar nav a:hover,:root[data-skin=divino] #sidebar nav a:hover{box-shadow:0 0 0 1px rgba(0,0,0,.06) inset}

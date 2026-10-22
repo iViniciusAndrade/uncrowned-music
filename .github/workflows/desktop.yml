@@ -17,6 +17,13 @@ jobs:
         with:
           node-version: 20
       - run: npm install --no-audit --no-fund
+      - name: Proteger o código (embaralha antes de empacotar)
+        shell: bash
+        run: |
+          O="--compact true --string-array true --string-array-encoding base64 --string-array-threshold 0.6 --rename-globals false --self-defending false --control-flow-flattening false"
+          npx --yes javascript-obfuscator@4.1.1 main.js --output main.js $O --target node
+          npx --yes javascript-obfuscator@4.1.1 preload.js --output preload.js $O --target node
+          npx --yes javascript-obfuscator@4.1.1 renderer/app.js --output renderer/app.js $O --target browser
       - name: Build
         shell: bash
         env:

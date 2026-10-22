@@ -812,7 +812,8 @@ function renderNav() {
 }
 function renderPlNav() {
   const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas recentemente', 'history'], ['import', 'Importar playlists', 'plus'], ...((D.syncPending || []).length ? [['syncPending', `Pra sincronizar (${D.syncPending.length})`, 'dl']] : []), ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
-  $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${ico(i)}<span>${esc(l)}</span></a>`).join('');
+  const pc = D.plCovers || {};
+  $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${k.startsWith('pl:') && pc[k.slice(3)] ? `<img class="plCov" src="${esc(pc[k.slice(3)])}" onerror="this.remove()">` : ico(i)}<span>${esc(l)}</span></a>`).join('');
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('nav a'); if (!a) return;
@@ -895,7 +896,8 @@ views.history = () => {
 };
 views.playlist = () => {
   const l = D.playlists[view.pl] || [];
-  $('#view').innerHTML = `<h1>${esc(view.pl)}</h1><div class="btns">${l.length ? `<button class="btn" data-play="pl">${ico('play')} Tocar</button><button class="btn" data-shuf="pl">${ico('shuffle')} Aleatório</button><button class="btn" data-syncall="pl">${ico('dl')} Sincronizar tudo</button>` : ''}<button class="btn" id="delPl" style="color:#ff453a">Apagar playlist</button></div>${rows(l, 'pl', { empty: 'Use o botão ••• numa música pra adicionar aqui.' })}`;
+  const cov = (D.plCovers || {})[view.pl];
+  $('#view').innerHTML = `${cov ? `<div class="alHero"><img src="${esc(cov)}" onerror="this.src='logo.png'"><div><span>Playlist</span><h1>${esc(view.pl)}</h1><small>${l.length} músicas</small></div></div>` : `<h1>${esc(view.pl)}</h1>`}<div class="btns">${l.length ? `<button class="btn" data-play="pl">${ico('play')} Tocar</button><button class="btn" data-shuf="pl">${ico('shuffle')} Aleatório</button><button class="btn" data-syncall="pl">${ico('dl')} Sincronizar tudo</button>` : ''}<button class="btn" id="delPl" style="color:#ff453a">Apagar playlist</button></div>${rows(l, 'pl', { empty: 'Use o botão ••• numa música pra adicionar aqui.' })}`;
   $('#delPl').onclick = () => { delete D.playlists[view.pl]; save(); go({ name: 'songs' }); };
 };
 
@@ -1422,7 +1424,7 @@ let impBusy = false, impLib = null, impSel = new Set();
 U.onImportProgress(p => { const el = $('#impProg'); if (el) { el.querySelector('span').textContent = `${p.tag}: ${p.done} de ${p.total} músicas`; el.querySelector('i').style.width = (p.done / p.total * 100).toFixed(1) + '%'; } });
 function impStatus(txt) { const el = $('#impProg'); if (el) { el.classList.remove('hidden'); el.querySelector('span').textContent = txt; } }
 function learnTaste(tracks, w = 0.4) { tracks.forEach(t => { if (t.artist) bump(D.taste.a, t.artist, w); if (t.genre) bump(D.taste.g, t.genre, w); }); }
-function savePlaylist(name, tracks) { let n = name || 'Playlist importada', i = 2; while (D.playlists[n]) n = `${name} (${i++})`; D.playlists[n] = tracks; return n; }
+function savePlaylist(name, tracks, cover) { let n = name || 'Playlist importada', i = 2; while (D.playlists[n]) n = `${name} (${i++})`; D.playlists[n] = tracks; D.plCovers = D.plCovers || {}; D.plCovers[n] = cover || (tracks[0] && tracks[0].art) || ''; return n; }
 async function importSets(sets, liked, history) {
   if (impBusy) return toast('Já tem uma importação rodando');
   impBusy = true; let lists = 0, songs = 0;
@@ -1431,7 +1433,7 @@ async function importSets(sets, liked, history) {
       impStatus(`Importando "${set.name}"…`);
       const tracks = set.tracks && set.tracks.length ? set.tracks : await U.importResolve(set.items || [], set.name);
       if (!tracks.length) continue;
-      savePlaylist(set.name, tracks); learnTaste(tracks); lists++; songs += tracks.length; renderPlNav(); save();
+      savePlaylist(set.name, tracks, set.cover); learnTaste(tracks); lists++; songs += tracks.length; renderPlNav(); save();
     }
     if (liked && liked.length) {
       impStatus('Importando suas curtidas…');
@@ -1466,7 +1468,7 @@ views.import = () => {
     impStatus('Lendo o link…');
     const r = await U.importLink(u);
     if (!r || r.err) return impStatus('Não deu: ' + ((r && r.err) || 'link não reconhecido'));
-    importSets([{ name: r.name, items: r.items, tracks: r.tracks }]);
+    importSets([{ name: r.name, items: r.items, tracks: r.tracks, cover: r.cover }]);
   };
   const paintLib = () => {
     const box = $('#impLib'); if (!box || !impLib) return;
@@ -1481,7 +1483,7 @@ views.import = () => {
       for (const l of pick) {
         impStatus(`Lendo "${l.title}"…`);
         const r = await U.ytmFullPlaylist(l.id);
-        if (/^(VL)?LM$/.test(l.id)) liked.push(...r.tracks); else if (r.tracks.length) sets.push({ name: l.title || r.title, tracks: r.tracks });
+        if (/^(VL)?LM$/.test(l.id)) liked.push(...r.tracks); else if (r.tracks.length) sets.push({ name: l.title || r.title, tracks: r.tracks, cover: l.art || r.cover });
       }
       importSets(sets, liked);
     };

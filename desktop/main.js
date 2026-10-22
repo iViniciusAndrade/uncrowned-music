@@ -454,6 +454,8 @@ function createWindow() {
   if (s.max) win.maximize();
   win.loadURL(`http://127.0.0.1:${PORT}/`);
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  // segurança: a janela só mostra o próprio app
+  win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(`http://127.0.0.1:${PORT}`)) e.preventDefault(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) { const b = win.getBounds(); store.win = { w: b.width, h: b.height, x: b.x, y: b.y, max: false }; } else store.win = { ...(store.win || {}), max: win.isMaximized() }; saveStore(); };
   win.on('resize', keep); win.on('move', keep);
 }
@@ -1136,10 +1138,11 @@ async function ytmFullPlaylist(id, useAuth) {
   const j = await ytm({ browseId: bid }, auth);
   const head = deepFind(j, 'musicResponsiveHeaderRenderer') || deepFind(j, 'musicDetailHeaderRenderer') || deepFind(j, 'musicEditablePlaylistDetailHeaderRenderer') || {};
   const title = runsTxt(head.title) || runsTxt(deepFind(head, 'title'));
+  const cover = lastThumb(head.thumbnail || deepFind(head, 'thumbnail') || {}) || '';
   let songs = ytmParse(j).songs, tok = contTok(j);
   for (let n = 0; tok && n < 40; n++) { const k = await ytm({ continuation: tok }, auth).catch(() => null); if (!k) break; const more = ytmParse(k).songs; if (!more.length) break; songs = songs.concat(more); tok = contTok(k); }
   songs = songs.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i).map(({ shelf, ...t }) => t);
-  return { title, tracks: songs };
+  return { title, cover, tracks: songs };
 }
 async function ytmLibrary() {
   const auth = await ytmAuth(); if (!auth) return { logged: false, lists: [] };
@@ -1156,13 +1159,22 @@ async function spotifyLink(url) {
   const ent = deepFind(JSON.parse(mm[1]), 'entity') || {};
   const items = m[1] === 'track' ? [{ title: ent.name || ent.title, artist: (ent.artists || []).map(a => a.name).join(', ') || ent.subtitle || '' }]
     : (ent.trackList || []).map(t => ({ title: t.title, artist: t.subtitle || '', dur: t.duration || 0 }));
-  return { name: ent.name || ent.title || 'Playlist do Spotify', items: items.filter(i => i.title), from: 'Spotify' };
+  const img = (ent.coverArt && ent.coverArt.sources && ent.coverArt.sources[0] && ent.coverArt.sources[0].url) || (ent.visualIdentity && ent.visualIdentity.image && ent.visualIdentity.image[0] && ent.visualIdentity.image[0].url) || (Array.isArray(ent.images) && ent.images[0] && ent.images[0].url) || '';
+  return { name: ent.name || ent.title || 'Playlist do Spotify', cover: img, items: items.filter(i => i.title), from: 'Spotify' };
 }
 async function importLink(url) {
   url = (url || '').trim();
   if (/spotify\.com/.test(url)) return spotifyLink(url);
   const list = /[?&]list=([\w-]+)/.exec(url); const alb = /browse\/(MPRE[\w-]+)/.exec(url);
-  if (list || alb) { const r = await ytmFullPlaylist(alb ? alb[1] : list[1], true); return { name: r.title || 'Playlist do YouTube', tracks: r.tracks, from: 'YouTube' }; }
+  // Mix do YouTube (list=RD...): é montado na hora pelo YouTube a partir de um vídeo
+  if (list && /^RD/.test(list[1])) {
+    const v = (/[?&]v=([\w-]{11})/.exec(url) || [])[1] || list[1].replace(/^RD(MM|AMVM|CLAK)?/, '').slice(0, 11);
+    let tracks = await ytMix(v).catch(() => []);
+    if (tracks.length < 5) { const more = await ytmFullPlaylist(list[1], true).catch(() => ({ tracks: [] })); if (more.tracks.length > tracks.length) tracks = more.tracks; }
+    const first = tracks.find(t => t.id === v) || tracks[0];
+    return { name: first ? `Mix de ${first.title}`.slice(0, 80) : 'Mix do YouTube', cover: v ? `https://i.ytimg.com/vi/${v}/hqdefault.jpg` : '', tracks, from: 'YouTube' };
+  }
+  if (list || alb) { const r = await ytmFullPlaylist(alb ? alb[1] : list[1], true); return { name: r.title || 'Playlist do YouTube', cover: r.cover || (r.tracks[0] && r.tracks[0].art) || '', tracks: r.tracks, from: 'YouTube' }; }
   throw new Error('cole um link de playlist do Spotify, YouTube ou YouTube Music');
 }
 // arquivos de dados: Spotify (Baixar seus dados) e Google Takeout (YouTube e YouTube Music)
@@ -1305,6 +1317,12 @@ ipcMain.handle('title-color', (_, c) => { try { win.setTitleBarOverlay({ color: 
 app.commandLine.appendSwitch('disable-features', 'SpareRendererForSitePerProcess,MediaRouter,DialMediaRouteProvider,AutofillServerCommunication');
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 app.setAppUserModelId('com.uncrowned.music.desktop');
+// segurança: no app instalado, ninguém abre as ferramentas de desenvolvedor (nem no app, nem nos players)
+app.on('web-contents-created', (_, wc) => {
+  if (!app.isPackaged) return;
+  wc.on('devtools-opened', () => wc.closeDevTools());
+  wc.on('before-input-event', (e, i) => { if (i.key === 'F12' || (i.control && i.shift && /^[ijc]$/i.test(i.key))) e.preventDefault(); });
+});
 app.whenReady().then(async () => {
   loadStore();
   nativeTheme.themeSource = 'dark';
