@@ -448,6 +448,8 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: false, autoplayPolicy: 'no-user-gesture-required', webviewTag: true, backgroundThrottling: false, spellcheck: false }
   });
   // o player do YouTube recebe um script que tira os anúncios da resposta do próprio YouTube antes de tocar
+  // botões voltar/avançar do mouse no Windows
+  win.on('app-command', (_, cmd) => { if (cmd === 'browser-backward') win.webContents.send('nav', 'back'); if (cmd === 'browser-forward') win.webContents.send('nav', 'fwd'); });
   win.webContents.on('will-attach-webview', (_, wp) => { wp.preload = path.join(__dirname, 'yt-preload.js'); wp.spellcheck = false; delete wp.preloadURL; });
   if (s.max) win.maximize();
   win.loadURL(`http://127.0.0.1:${PORT}/`);
@@ -761,25 +763,30 @@ const scMap = t => ({
 });
 async function scCharts(region = 'BR') {
   const k = 'sccharts|' + region; const c = sCache.get(k); if (c && Date.now() - c.at < 3 * 3600e3) return c.v;
-  const id = await scClientId(false).catch(() => null); if (!id) return [];
+  let id = await scClientId(false).catch(() => null);
   const reg = region === 'ZZ' ? '' : `&region=soundcloud:regions:${region}`;
   const tries = [
-    `https://api-v2.soundcloud.com/charts?kind=top&genre=soundcloud:genres:all-music${reg}&limit=50&client_id=${id}`,
-    `https://api-v2.soundcloud.com/charts?kind=trending&genre=soundcloud:genres:all-music${reg}&limit=50&client_id=${id}`,
-    `https://api-v2.soundcloud.com/charts?kind=top&genre=soundcloud:genres:all-music&limit=50&client_id=${id}`
+    `/charts?kind=top&genre=soundcloud:genres:all-music${reg}&high_tier_only=false&limit=50`,
+    `/charts?kind=trending&genre=soundcloud:genres:all-music${reg}&high_tier_only=false&limit=50`,
+    `/charts?kind=top&genre=soundcloud:genres:all-music&high_tier_only=false&limit=50`,
+    `/charts?kind=trending&genre=soundcloud:genres:all-music&high_tier_only=false&limit=50`
   ];
-  let out = [];
-  for (const u of tries) {
-    try { const j = await getJSON(u); out = (j.collection || []).map(x => x.track || x).filter(t => t && t.permalink_url).map(scMap); } catch {}
+  let out = [], renewed = false;
+  for (const t of tries) {
+    if (!id) break;
+    try { const j = await getJSON(`https://api-v2.soundcloud.com${t}&client_id=${id}`); out = (j.collection || []).map(x => x.track || x).filter(x => x && x.permalink_url).map(scMap); }
+    catch (e) { if ((e.status === 401 || e.status === 403) && !renewed) { renewed = true; scId = null; store.scid = null; id = await scClientId(true).catch(() => null); try { const j = await getJSON(`https://api-v2.soundcloud.com${t}&client_id=${id}`); out = (j.collection || []).map(x => x.track || x).filter(x => x && x.permalink_url).map(scMap); } catch {} } }
     if (out.length >= 10) break;
   }
+  // plano B: as mais tocadas no SoundCloud dos artistas que estão em alta agora
   if (out.length < 10) {
-    try {
-      const j = await getJSON(`https://api-v2.soundcloud.com/mixed-selections?limit=10&client_id=${id}`);
-      const found = [];
-      (function walk(x) { if (Array.isArray(x)) return x.forEach(walk); if (x && typeof x === 'object') { if (x.kind === 'track' && x.permalink_url && x.title) found.push(x); else Object.values(x).forEach(walk); } })(j);
-      out = found.sort((a, b) => (b.playback_count || 0) - (a.playback_count || 0)).map(scMap);
-    } catch {}
+    let names = [];
+    try { const yc = await ytmCharts(region === 'ZZ' ? 'ZZ' : region); names = [...new Set((yc.top || []).map(t => (t.artist || '').split(/,| & | e | x /i)[0].trim()).filter(Boolean))].slice(0, 12); } catch {}
+    if (names.length < 5) { try { names = [...new Set([...names, ...(await audiusTrending(null, 'week')).map(t => t.artist)])].slice(0, 12); } catch {} }
+    const found = (await pool(names, 4, n => soundcloud(n).catch(() => []))).flat().filter(Boolean);
+    const byArtist = {};
+    out = found.filter(t => (byArtist[t.artist] = (byArtist[t.artist] || 0) + 1) <= 3);
+    sCache.set(k + '|fallback', { at: Date.now(), v: 1 });
   }
   out = out.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i).slice(0, 50);
   if (out.length) sCache.set(k, { at: Date.now(), v: out });

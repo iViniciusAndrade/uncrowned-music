@@ -822,7 +822,18 @@ document.addEventListener('click', e => {
   go(v.startsWith('pl:') ? { name: 'playlist', pl: v.slice(3) } : { name: v });
 });
 $('#newPl').onclick = () => prompt2('Nova playlist', n => { if (n) { D.playlists[n] = D.playlists[n] || []; save(); renderPlNav(); go({ name: 'playlist', pl: n }); } });
-function go(v) { if (v.name !== 'export' && typeof stopPrev === 'function') stopPrev(); view = v; openNp(false); renderNav(); render(); $('#main').scrollTop = 0; }
+/* voltar / avançar entre as telas, igual navegador */
+const navBack = [], navFwd = [];
+function pushHist() { navBack.push({ view, scroll: $('#main').scrollTop, q: searchQ }); if (navBack.length > 60) navBack.shift(); navFwd.length = 0; navBtns(); }
+function restoreHist(p) {
+  if (p.view.name === 'search') { searchQ = p.q || ''; $('#q').value = searchQ; if (searchQ) startLiveSearch(searchQ); }
+  go(p.view, true); requestAnimationFrame(() => { $('#main').scrollTop = p.scroll || 0; });
+}
+function goBack() { if (!navBack.length) return; navFwd.push({ view, scroll: $('#main').scrollTop, q: searchQ }); restoreHist(navBack.pop()); }
+function goFwd() { if (!navFwd.length) return; navBack.push({ view, scroll: $('#main').scrollTop, q: searchQ }); restoreHist(navFwd.pop()); }
+function navBtns() { const b = $('#navBack'), f = $('#navFwd'); if (b) b.disabled = !navBack.length; if (f) f.disabled = !navFwd.length; }
+function go(v, fromHist) {
+  setTimeout(navBtns, 0); if (!fromHist && view && (view.name !== v.name || view.id !== v.id || view.pl !== v.pl || view.title !== v.title)) pushHist(); if (v.name !== 'export' && typeof stopPrev === 'function') stopPrev(); view = v; openNp(false); renderNav(); render(); $('#main').scrollTop = 0; }
 
 /* ---------------- telas ---------------- */
 const views = {};
@@ -897,7 +908,7 @@ $('#q').addEventListener('input', e => {
   searchQ = e.target.value.trim();
   clearTimeout(searchT);
   if (!searchQ) { searchRes = null; if (view.name === 'search') render(); return; }
-  if (view.name !== 'search') { view = { name: 'search' }; openNp(false); renderNav(); }
+  if (view.name !== 'search') { pushHist(); view = { name: 'search' }; openNp(false); renderNav(); }
   searchRes = null; render();
   const isLink = /^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(searchQ);
   searchT = setTimeout(() => startLiveSearch(searchQ), isLink ? 0 : 220);
@@ -2000,3 +2011,14 @@ function showAbout() {
   $('#aboutLi').onclick = () => U.openUrl('https://www.linkedin.com/in/devviniciusandrade/');
 }
 document.querySelector('#sidebar .brand').onclick = showAbout;
+
+$('#navBack').onclick = goBack; $('#navFwd').onclick = goFwd; navBtns();
+// botões laterais do mouse, Alt+setas e Backspace fora de campo de texto
+window.addEventListener('mouseup', e => { if (e.button === 3) { e.preventDefault(); goBack(); } else if (e.button === 4) { e.preventDefault(); goFwd(); } });
+window.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA/.test((document.activeElement || {}).tagName || '');
+  if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); goBack(); }
+  else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goFwd(); }
+  else if (e.key === 'Backspace' && !typing) { e.preventDefault(); goBack(); }
+});
+U.onNav && U.onNav(d => d === 'back' ? goBack() : goFwd());

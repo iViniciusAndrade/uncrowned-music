@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('U', {
   syncOne: t => ipcRenderer.invoke('sync-one', t),
   syncMany: (l, tag) => ipcRenderer.invoke('sync-many', l, tag),
   onSyncProgress: cb => ipcRenderer.on('sync-progress', (_, p) => cb(p)),
+  onNav: cb => ipcRenderer.on('nav', (_, d) => cb(d)),
   focusWin: () => ipcRenderer.invoke('focus-win'),
   recStop: () => ipcRenderer.invoke('rec-stop'),
   onRecDone: cb => ipcRenderer.on('rec-done', (_, r) => cb(r)),
