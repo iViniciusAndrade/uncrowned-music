@@ -266,7 +266,7 @@ async function soundcloud(q, retry = true) {
     return (j.collection || []).filter(t => t.permalink_url).map(t => ({
       src: 'sc', id: t.permalink_url.replace(/^https:\/\/soundcloud\.com\//, ''), url: t.permalink_url, title: t.title,
       artist: (t.user && t.user.username) || '', art: (t.artwork_url || (t.user && t.user.avatar_url) || '').replace('-large.', '-t500x500.'),
-      duration: t.duration || 0, genre: t.genre || ''
+      duration: t.duration || 0, genre: t.genre || '', downloadable: !!t.downloadable
     }));
   } catch (e) {
     if (retry && (e.status === 401 || e.status === 403)) { scId = null; store.scid = null; return soundcloud(q, false); }
@@ -833,7 +833,7 @@ ipcMain.handle('radio-click', (_, id) => rb('/json/url/' + encodeURIComponent(id
 
 
 /* sincronizar do SoundCloud: só quando o artista liberou o download oficial */
-ipcMain.handle('sc-download', async (_, id) => {
+async function scDownload(id) {
   try {
     const cid = await scClientId(false); if (!cid) throw new Error('SoundCloud indisponível agora');
     const tr = await getJSON(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent('https://soundcloud.com/' + id)}&client_id=${cid}`);
@@ -844,7 +844,8 @@ ipcMain.handle('sc-download', async (_, id) => {
     const f = await download(j.redirectUri, `${artist ? artist + ' - ' : ''}${tr.title}`);
     return { ok: true, file: f };
   } catch (e) { return { ok: false, error: e.status === 404 || e.status === 401 ? 'o artista não liberou o download dessa música no SoundCloud' : String(e.message || e) }; }
-});
+}
+ipcMain.handle('sc-download', (_, id) => scDownload(id));
 
 /* ---------------- sinal ICY das rádios: lê o nome da música que está tocando ----------------
    As rádios mandam, no meio do áudio, um pedacinho com "StreamTitle='Artista - Música'".
@@ -1241,6 +1242,40 @@ ipcMain.handle('on-battery', () => { try { return powerMonitor.isOnBatteryPower(
 app.whenReady().then(() => {
   const tell = v => { try { if (win && !win.isDestroyed()) win.webContents.send('power', v); } catch {} };
   powerMonitor.on('on-battery', () => tell(true)); powerMonitor.on('on-ac', () => tell(false));
+});
+/* sincronizar: acha a mesma música numa fonte que libera download e salva */
+const nrm = x => (x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|prod\.?.*|ft\.?.*|feat\.?.*)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+function sameSong(a, b) {
+  const ta = nrm(a.title), tb = nrm(b.title), aa = nrm(a.artist), ab = nrm(b.artist);
+  if (!ta || !tb) return 0;
+  const tOk = ta === tb || ta.includes(tb) || tb.includes(ta);
+  if (!tOk) return 0;
+  const aOk = !aa || !ab || aa.includes(ab) || ab.includes(aa) || (nrm(b.title + ' ' + b.artist).includes(aa));
+  return aOk ? (ta === tb ? 3 : 2) : 1;
+}
+async function syncFind(t) {
+  const title = (t.title || '').replace(/\s*[\(\[].*?[\)\]]/g, '').replace(/^.*? - /, m => (t.artist && nrm(m).includes(nrm(t.artist)) ? '' : m)).trim();
+  const q = `${t.artist || ''} ${title}`.trim();
+  const ref = { title, artist: t.artist };
+  const [au, ia, sc] = await Promise.all([audiusSearch(q).catch(() => []), archive(q).catch(() => []), soundcloud(q).catch(() => [])]);
+  const cands = [...au.filter(x => x.download).map(x => ({ ...x, from: 'Audius' })), ...sc.filter(x => x.downloadable).map(x => ({ ...x, from: 'SoundCloud' })), ...ia.map(x => ({ ...x, from: 'Internet Archive' }))]
+    .map(x => ({ x, s: sameSong(ref, x) })).filter(o => o.s >= 2).sort((a, b) => b.s - a.s);
+  return cands.length ? cands[0].x : null;
+}
+async function syncOne(t) {
+  if (t.src === 'sc') { const r = await scDownload(t.id); if (r.ok) return { ok: true, file: r.file, from: 'SoundCloud' }; }
+  if (t.download) { try { return { ok: true, file: await download(t.download, `${t.artist} - ${t.title}`), from: t.src === 'au' ? 'Audius' : 'Internet Archive' }; } catch {} }
+  const c = await syncFind(t);
+  if (!c) return { ok: false, notFound: true };
+  if (c.src === 'sc') { const r = await scDownload(c.id); return r.ok ? { ok: true, file: r.file, from: 'SoundCloud', alt: true } : { ok: false, notFound: true }; }
+  try { return { ok: true, file: await download(c.download, `${c.artist} - ${c.title}`), from: c.from, alt: true }; } catch (e) { return { ok: false, error: String(e.message || e) }; }
+}
+ipcMain.handle('sync-one', (_, t) => syncOne(t).catch(e => ({ ok: false, error: String(e.message || e) })));
+ipcMain.handle('sync-many', async (e, list, tag) => {
+  const send = d => { try { if (!e.sender.isDestroyed()) e.sender.send('sync-progress', { tag, ...d }); } catch {} };
+  let done = 0; const results = [];
+  await pool(list, 3, async t => { const r = await syncOne(t).catch(er => ({ ok: false, error: String(er) })); results.push({ t, r }); send({ done: ++done, total: list.length, title: t.title, ok: r.ok }); });
+  return results;
 });
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });

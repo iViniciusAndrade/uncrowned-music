@@ -690,3 +690,20 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 :root[data-skin=divino] #sidebar nav a.on{background:rgba(255,255,255,.75);box-shadow:inset 2px 0 0 #b8902f}
 :root[data-skin=divino] #sidebar .navlabel{color:#a38a52} :root[data-skin=divino] #sidebar .search input{background:rgba(255,255,255,.75);border-color:#e3cf98}
 :root[data-skin=divino] #bar{background:rgba(253,251,245,.96);border-top:1px solid #eadfc0}
+
+/* sincronizar */
+#syncBar{position:fixed;right:20px;bottom:104px;z-index:70;background:var(--card);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:12px;padding:10px 14px;width:320px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+#syncBar span{display:block;font-size:12.5px;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#syncBar b{display:block;height:5px;border-radius:9px;background:var(--card2);overflow:hidden} #syncBar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.syncSum{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.syncSum div{background:var(--card2);border-radius:12px;padding:12px 14px} .syncSum b{display:block;font-size:28px;font-weight:900;color:var(--accent)} .syncSum span{font-size:12px;color:var(--dim)}
+.spRow .btn.mini{font-size:12px;padding:5px 10px}
+#bSync.busy svg{animation:syncSpin 1s linear infinite} @keyframes syncSpin{to{transform:rotate(360deg)}}
+#bSync.done svg{fill:var(--accent)}
+#syncMenu{position:fixed;bottom:96px;z-index:80;width:320px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+#syncMenu>b{display:block;font-size:15px} #syncMenu>small{display:block;color:var(--dim);font-size:12px;margin:2px 0 10px}
+#syncMenu button{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:9px 10px;border-radius:10px}
+#syncMenu button:hover:not([disabled]){background:var(--card2)} #syncMenu button[disabled]{opacity:.45;cursor:default}
+#syncMenu button svg{width:20px;height:20px;fill:var(--accent);flex:none}
+#syncMenu button span{font-size:13.5px;font-weight:600;min-width:0} #syncMenu em{display:block;font-style:normal;font-weight:400;font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+#syncMenu p{font-size:11.5px;color:var(--dim);margin:10px 2px 0;line-height:1.45}
