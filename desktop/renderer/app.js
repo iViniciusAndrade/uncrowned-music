@@ -505,7 +505,7 @@ function localRadio(seed, n = 25) {
 }
 function startLocalRadio(seed) {
   const l = localRadio(seed, 40);
-  if (!l.length) return toast('Precisa de músicas no PC pra montar o mix offline');
+  if (!l.length) return toast('Precisa de músicas offline pra montar o mix offline');
   if (seed) play([seed, ...l], 0); else play(l, 0);
   toast(seed ? `Mix offline de ${seed.artist || seed.title}` : 'Mix offline: mistura das suas músicas');
 }
@@ -613,7 +613,7 @@ function updateNowPlaying() {
   layoutEmbed(); markCurrent();
   if (!$('#panel').classList.contains('hidden') && $('#panel').dataset.kind === 'queue') openQueue();
 }
-const SRCNAME = { local: 'No seu PC', radio: 'Rádio ao vivo', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Internet Archive' };
+const SRCNAME = { local: 'Offline', radio: 'Rádio ao vivo', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Internet Archive' };
 /* cor dominante da capa pro fundo animado */
 let colorKey = '';
 function artColor(url) {
@@ -760,7 +760,7 @@ function menu(t, list, i, ctxName) {
     <div class="group">
       <div class="opt" data-m="next" style="cursor:pointer">Tocar a seguir</div>
       <div class="opt" data-m="queue" style="cursor:pointer">Adicionar à fila</div>
-      <div class="opt" data-m="radio" style="cursor:pointer">${t.src === 'local' ? 'Mix offline (parecidas do seu PC)' : 'Tocar parecidas (rádio)'}</div>
+      <div class="opt" data-m="radio" style="cursor:pointer">${t.src === 'local' ? 'Mix offline (parecidas das suas músicas)' : 'Tocar parecidas (rádio)'}</div>
       ${!['local', 'radio'].includes(t.src) ? '<div class="opt" data-m="sync" style="cursor:pointer">Sincronizar (salvar no PC)</div>' : ''}
       <div class="opt" data-m="info" style="cursor:pointer">Informações</div>
       ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div><div class="opt" data-m="fx" style="cursor:pointer">Fazer versão slowed / nightcore</div>' : ''}
@@ -805,9 +805,9 @@ const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], 
 function renderNav() {
   const radioOn = st.kind === 'radio' && st.playing;
   // na rádio: velocidade e sincronizar ficam desligados
-  for (const id of ['#bSpeed', '#bSync', '#bRetro']) { const b = $(id); if (b) { b.disabled = st.kind === 'radio'; b.title = st.kind === 'radio' ? 'Desligado na rádio ao vivo' : id === '#bSpeed' ? 'Velocidade' : id === '#bRetro' ? 'Modo retrô: ' + RETRO_NAMES[S().retro || ''] : 'Sincronizar (salvar no PC)'; } }
+  for (const id of ['#bSpeed', '#bSync', '#bRetro']) { const b = $(id); if (b) { b.disabled = st.kind === 'radio'; b.title = st.kind === 'radio' ? 'Desligado na rádio ao vivo' : id === '#bSpeed' ? 'Velocidade' : id === '#bRetro' ? 'Modo retrô: ' + RETRO_NAMES[S().retro || ''] : 'Sincronizar (salvar offline)'; } }
   const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''} ${k === 'export' && radioOn ? 'off' : ''}" ${k === 'export' && radioOn ? 'title="Desativado enquanto a rádio toca"' : ''}>${ico(i)}<span>${l}</span></a>`;
-  $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline · no seu PC</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
+  $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
   renderPlNav();
 }
 function renderPlNav() {
@@ -850,7 +850,7 @@ views.songs = () => {
   let l = LIB.slice();
   if (songSort === 'artist') l.sort((a, b) => a.artist.localeCompare(b.artist)); else if (songSort === 'recent') l.sort((a, b) => b.added - a.added);
   else if (songSort === 'album') l.sort((a, b) => a.album.localeCompare(b.album) || a.track - b.track); else l.sort((a, b) => a.title.localeCompare(b.title));
-  $('#view').innerHTML = `<h1>Músicas</h1><div class="sub">${LIB.length} músicas no seu PC${scanning ? '<span class="spinner"></span>' : ''}</div>
+  $('#view').innerHTML = `<h1>Músicas</h1><div class="sub">${LIB.length} músicas offline${scanning ? '<span class="spinner"></span>' : ''}</div>
     <div class="chips">${[['title', 'A-Z'], ['artist', 'Artista'], ['album', 'Álbum'], ['recent', 'Recentes']].map(([k, n]) => `<button class="chip ${songSort === k ? 'on' : ''}" data-sort="${k}">${n}</button>`).join('')}</div>
     ${l.length ? playBtns('songs').replace('</div>', `<button class="btn" id="offRadio">${ico('wave')} Mix offline</button></div>`) : ''}
     ${rows(l, 'songs', { empty: D.folders.length ? 'Nenhuma música encontrada nas pastas escolhidas.' : 'Escolha as pastas de música em Ajustes → Biblioteca. Ou use a busca pra ouvir online.' })}`;
@@ -878,9 +878,9 @@ views.group = () => {
 views.favs = () => { const l = Object.values(D.favs); $('#view').innerHTML = `<h1>Favoritas</h1>${l.length ? playBtns('favs') : ''}${rows(l, 'favs', { empty: 'Toque no coração das músicas pra salvar aqui.' })}`; };
 views.history = () => {
   const l = D.history;
-  const SRC = { local: 'No PC', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Archive' };
+  const SRC = { local: 'Offline', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Archive' };
   rowsCtx.history = l;
-  $('#view').innerHTML = `<h1>Ouvidas recentemente</h1><div class="sub">${l.length} músicas que você ouviu por último, do PC e da internet</div>
+  $('#view').innerHTML = `<h1>Ouvidas recentemente</h1><div class="sub">${l.length} músicas que você ouviu por último, offline e online</div>
     ${l.length ? `<div class="btns"><button class="btn" data-play="history">${ico('play')} Tocar</button><button class="btn" data-shuf="history">${ico('shuffle')} Aleatório</button><button class="btn" id="histClr">Limpar histórico</button></div>` : ''}
     ${l.length ? `<div class="grid hgrid">${l.map((t, i) => `<div class="htile ${keyOf(t) === keyOf(cur()) ? 'cur' : ''}" data-hi="${i}">
       <div class="hart"><img loading="lazy" src="${esc(artOf(t))}" onerror="this.src='logo.png'"><span class="hsrc ${t.src}">${SRC[t.src] || ''}</span>
@@ -957,7 +957,7 @@ views.search = () => {
   const by = src => R.stream.filter(t => t.src === src);
   const yt = by('yt'), sc = by('sc'), vm = by('vm');
   const Y = R.ytm && Array.isArray(R.ytm.artists) ? { albums: [], songs: [], ...R.ytm } : { artists: [], albums: [], songs: [] };
-  const F = [['all', 'Tudo'], ['art', 'Artistas'], ['alb', 'Álbuns'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'No PC'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'art' ? Y.artists.length : k === 'alb' ? Y.albums.length : k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
+  const F = [['all', 'Tudo'], ['art', 'Artistas'], ['alb', 'Álbuns'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'Offline'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'art' ? Y.artists.length : k === 'alb' ? Y.albums.length : k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
   const nq = x => (x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const artTiles = l => `<div class="hscroll">${l.map((a, i) => `<div class="tile round" data-sart="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt" style="text-align:center">${esc(a.name)}</div><div class="ta" style="text-align:center">Artista</div></div>`).join('')}</div>`;
   const albTiles = l => `<div class="hscroll">${l.map((a, i) => `<div class="tile" data-salb="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.title)}</div><div class="ta">${esc([a.year, a.artist || a.type].filter(Boolean).join(' • '))}</div></div>`).join('')}</div>`;
@@ -982,13 +982,13 @@ views.search = () => {
       body += `<div class="sTop">
         <div><h2>Melhor resultado</h2><div class="best" id="bestCard">
           <img src="${esc(artOf(best))}" onerror="this.src='logo.png'"><div class="bt">${esc(best.title)}</div>
-          <div class="ba"><span class="badge ${best.src}">${{ local: 'NO PC', yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE' }[best.src] || ''}</span>${esc(best.artist)}</div>
+          <div class="ba"><span class="badge ${best.src}">${{ local: 'OFFLINE', yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE' }[best.src] || ''}</span>${esc(best.artist)}</div>
           <button class="bplay" title="Tocar">${ico('play')}</button></div></div>
         <div class="sTopList"><h2>Músicas</h2>${rows(top4, 'sTop4')}</div></div>`;
     } else if (!R.loading) body += `<div class="empty">Nada encontrado pra "${esc(q)}".</div>`;
     if (Y.artists.length) body += `<h2>Artistas</h2>${artTiles(Y.artists)}`;
     if (Y.albums.length) body += `<h2>Álbuns</h2>${albTiles(Y.albums)}`;
-    if (local.length) body += `<h2>No seu PC</h2>${rows(local.slice(0, 10), 'sLocal')}`;
+    if (local.length) body += `<h2>Offline</h2>${rows(local.slice(0, 10), 'sLocal')}`;
     if (yt.length) body += `<h2>YouTube</h2>${rows(yt.slice(0, 10), 'sYt')}`;
     if (sc.length) body += `<h2>SoundCloud</h2>${rows(sc.slice(0, 8), 'sSc')}`;
     if (vm.length) body += `<h2>Vimeo</h2>${rows(vm.slice(0, 6), 'sVm')}`;
@@ -1184,7 +1184,7 @@ views.settings = () => {
     ${opt('Economia de bateria', seg('battery', [['auto', 'Automático'], ['on', 'Sempre'], ['off', 'Nunca']]), 'Automático = liga sozinho quando o notebook sai da tomada. Tira animações, deixa o vídeo do YouTube na qualidade mais baixa (o som não muda) e confere as rádios com menos frequência. Todas as funções continuam.')}
   </div>
   <div class="gtitle">Equalizador</div><div class="group">
-    ${opt('Ativar equalizador', sw('eqOn'), 'Funciona nas músicas do PC, YouTube, SoundCloud, Audius e Archive')}
+    ${opt('Ativar equalizador', sw('eqOn'), 'Funciona nas músicas offline, YouTube, SoundCloud, Audius e Archive')}
     ${opt('Presets', `<div class="seg">${Object.keys(EQP).map(p => `<button data-eqp="${p}">${p}</button>`).join('')}</div>`)}
     ${FREQS.map((f, i) => opt(f >= 1000 ? f / 1000 + ' kHz' : f + ' Hz', `<div class="rng"><input type="range" data-eq="${i}" min="-12" max="12" step="1" value="${s.eq[i]}"><span>${s.eq[i]} dB</span></div>`)).join('')}
     ${opt('Graves extra', rng('bass', 0, 15, 1, v => v + ' dB'))}
@@ -1197,7 +1197,7 @@ views.settings = () => {
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
-  <div class="gfoot">A busca procura no seu PC, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
+  <div class="gfoot">A busca procura nas suas músicas offline, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
   <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC 1.0</div>`;
   const v = $('#view');
   v.querySelectorAll('[data-skin]').forEach(d => d.onclick = () => applySkin(d.dataset.skin));
@@ -1576,7 +1576,7 @@ const seenM = new Set(M.map(m => { const d = new Date(m[0] * 1000); return d.get
 async function syncTrack(t) {
   if (!t) return;
   if (t.src === 'radio') return toast('Na rádio use o botão Gravar');
-  if (t.src === 'local') return toast('Essa já está no seu PC');
+  if (t.src === 'local') return toast('Essa já está offline');
   toast(`Sincronizando "${t.title}"…`); syncBtnState(true);
   const r = await U.syncOne(t);
   syncDone([{ t, r }], 1);
@@ -1596,7 +1596,7 @@ function syncDone(results, quiet) {
     return;
   }
   modal(`<h3 style="margin:0 0 6px">Sincronização concluída</h3>
-    <div class="syncSum"><div><b>${ok.length}</b><span>salvas no PC</span></div><div><b>${miss.length}</b><span>sem versão liberada</span></div></div>
+    <div class="syncSum"><div><b>${ok.length}</b><span>salvas offline</span></div><div><b>${miss.length}</b><span>sem versão liberada</span></div></div>
     ${ok.filter(x => x.r.alt).length ? `<div class="sub">${ok.filter(x => x.r.alt).length} vieram de uma versão liberada (Audius, Internet Archive ou SoundCloud).</div>` : ''}
     ${miss.length ? `<div class="sub">As que faltaram ficaram em <b>Pra sincronizar</b>, na barra lateral, com atalho pra comprar no Bandcamp.</div>` : ''}
     <div class="btns" style="justify-content:flex-end"><button class="btn" id="syOpen">Abrir pasta</button><button class="btn fill" id="syOk">OK</button></div>`);
@@ -1605,7 +1605,7 @@ function syncDone(results, quiet) {
 let syncBusy = false;
 async function syncList(list, name) {
   const l = list.filter(t => t && !['local', 'radio'].includes(t.src));
-  if (!l.length) return toast('Tudo aqui já está no seu PC');
+  if (!l.length) return toast('Tudo aqui já está offline');
   if (syncBusy) return toast('Já tem uma sincronização rodando');
   syncBusy = true; syncBtnState(true); syncBar(`Sincronizando "${name}": 0 de ${l.length}`, 0);
   const res = await U.syncMany(l, name);
@@ -1769,7 +1769,7 @@ views.export = () => {
   const list = LIB.filter(t => !q || (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).sort((a, b) => a.title.localeCompare(b.title));
   const vis = list.slice(0, 400);
   $('#view').innerHTML = `<h1>Slowed / Nightcore</h1>
-    <div class="sub">Cria versões das músicas do seu PC com outra velocidade e tom, e salva direto na sua pasta Música. Elas aparecem em Músicas depois.</div>
+    <div class="sub">Cria versões das suas músicas offline com outra velocidade e tom, e salva direto na pasta Música. Elas aparecem em Músicas depois.</div>
     <div class="exBox">
       <div class="seg exSeg">${Object.entries(EX_PRE).map(([k, [n]]) => `<button class="${exPreset === k ? 'on' : ''}" data-ep="${k}">${n}</button>`).join('')}</div>
       <div class="exRow"><span>Velocidade e tom</span><input type="range" id="exRate" min="0.5" max="1.5" step="0.01" value="${exRate}"><b id="exRateV"></b></div>
@@ -1777,7 +1777,7 @@ views.export = () => {
         <span class="ck">Som: <span class="seg exRetro">${[['', 'Normal'], ['k7', 'Fita K7'], ['vinil', 'Vinil']].map(([k, n]) => `<button class="${exRetro === k ? 'on' : ''}" data-er="${k}">${n}</button>`).join('')}</span></span>
         <button class="btn" id="exPrev">${ico('play')} Ouvir prévia</button></div>
     </div>
-    <div class="exTools"><div class="search mini">${ico('search')}<input id="exQ" placeholder="Filtrar músicas do PC" value="${esc(exFilter)}"></div>
+    <div class="exTools"><div class="search mini">${ico('search')}<input id="exQ" placeholder="Filtrar músicas offline" value="${esc(exFilter)}"></div>
       <button class="btn" id="exAll">Marcar ${vis.length === list.length ? 'todas' : 'visíveis'}</button><button class="btn" id="exNone">Desmarcar</button></div>
     <div class="list exList">${vis.map(t => `<label class="row exr ${exSel.has(t.path) ? 'sel' : ''}"><input type="checkbox" data-ex="${esc(t.path)}" ${exSel.has(t.path) ? 'checked' : ''}>
       <img loading="lazy" src="${esc(artOf(t))}" onerror="this.outerHTML='<div class=ph></div>'"><span class="t">${esc(t.title)}</span><span class="a">${esc(t.artist)}</span><span class="d">${t.duration ? fmt(t.duration) : ''}</span></label>`).join('') || `<div class="empty">${LIB.length ? 'Nada com esse nome.' : 'Nenhuma música do PC ainda. Escolha as pastas em Ajustes → Biblioteca.'}</div>`}</div>
@@ -1854,8 +1854,8 @@ $('#bSync').onclick = e => {
   e.stopPropagation();
   const t = cur(), done = t && (t.src === 'local' || (D.synced || {})[keyOf(t)]);
   const box = document.createElement('div'); box.id = 'syncMenu';
-  box.innerHTML = `<b>Sincronizar</b><small>Salva no seu PC pra ouvir sem internet</small>
-    <button data-sm="one" ${!t || done ? 'disabled' : ''}>${ico('dl')}<span>${done ? 'Essa já está no seu PC' : 'Salvar esta música'}<em>${t ? esc(t.title) : 'Nada tocando'}</em></span></button>
+  box.innerHTML = `<b>Sincronizar</b><small>Salva no aparelho pra ouvir sem internet</small>
+    <button data-sm="one" ${!t || done ? 'disabled' : ''}>${ico('dl')}<span>${done ? 'Essa já está offline' : 'Salvar esta música'}<em>${t ? esc(t.title) : 'Nada tocando'}</em></span></button>
     <button data-sm="queue" ${st.queue.length ? '' : 'disabled'}>${ico('plist')}<span>Sincronizar a fila inteira<em>${st.queue.length} músicas</em></span></button>
     <button data-sm="pend">${ico('history')}<span>Ver Pra sincronizar<em>${(D.syncPending || []).length} pendentes</em></span></button>
     <p>Salva direto quando o artista libera. Se não liberou, o app procura a mesma música no Audius, Internet Archive ou SoundCloud com download aberto.</p>`;
