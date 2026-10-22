@@ -100,7 +100,7 @@ function startServer() {
       if (u.pathname === '/cover') return cover(res, u.searchParams.get('p') || '');
       // logo do app = caveira do tema escolhido
       if (u.pathname === '/logo.png') {
-        const f = path.join(root, 'themes', skinNow() + '.png');
+        const qs = u.searchParams.get('s'); const f = path.join(root, 'themes', (SKINS.includes(qs) ? qs : skinNow()) + '.png');
         return fs.readFile(fs.existsSync(f) ? f : path.join(root, 'logo.png'), (e, b) => { if (e) { res.writeHead(404); return res.end(); } res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); res.end(b); });
       }
       let p = path.normalize(path.join(root, decodeURIComponent(u.pathname === '/' ? '/index.html' : u.pathname)));

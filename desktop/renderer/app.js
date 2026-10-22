@@ -74,10 +74,10 @@ const SKINS = {
   fadinha: { name: 'Fadinha', desc: 'Pastel, brilhinho e lacinho', accent: '#ff5fa8', mode: 'light', dots: ['#ffd6ec', '#e3c9ff', '#ff5fa8'] },
   otaku: { name: 'Otaku', desc: 'Neon, sakura e anime', accent: '#ff3fa4', mode: 'dark', dots: ['#1a1240', '#ff3fa4', '#25f4ee'] },
   oldmoney: { name: 'Old Money', desc: 'Linho, marinho, caramelo e cartola', accent: '#a8763e', mode: 'light', dots: ['#f4eee1', '#1d2b44', '#b5895a'] },
-  alternativo: { name: 'Alternativo', desc: 'Terroso, granulado e fone', accent: '#e76f51', mode: 'dark', dots: ['#1d2b2a', '#e9c46a', '#e76f51'] },
+  alternativo: { name: 'Indie', desc: 'Terroso, granulado e fone', accent: '#e76f51', mode: 'dark', dots: ['#1d2b2a', '#e9c46a', '#e76f51'] },
   punk: { name: 'Punk', desc: 'Preto, verde neon e retícula', accent: '#39ff14', mode: 'dark', dots: ['#0b0b0b', '#39ff14', '#ff2fa0'] },
   pulseirinhas: { name: 'Pulseirinhas', desc: 'Glitter colorido e miçangas', accent: '#c77dff', mode: 'dark', dots: ['#5b2a86', '#b8336a', '#2b59c3'] },
-  ninja: { name: 'Ninja Renegado', desc: 'Preto, carmesim e traço de pincel', accent: '#d62839', mode: 'dark', dots: ['#0a0809', '#8c0f1c', '#f3efe9'] },
+  ninja: { name: 'Ninja Renegado', desc: 'Preto, carmesim, shurikens e kunais', accent: '#d62839', mode: 'dark', dots: ['#0a0809', '#8c0f1c', '#f3efe9'] },
   deserto: { name: 'Deserto Estelar', desc: 'Noite no deserto, ouro e turquesa', accent: '#2ec4b6', mode: 'dark', dots: ['#0f1a3a', '#c8923a', '#2ec4b6'] },
   ouro: { name: 'Ouro Italiano', desc: 'Dourado, magenta e linhas de mangá', accent: '#f2b632', mode: 'dark', dots: ['#3a0b2e', '#ff4fa3', '#f2b632'] },
   cela: { name: 'Cela Esmeralda', desc: 'Verde-pedra, correntes e jade', accent: '#3ddc97', mode: 'dark', dots: ['#0e231c', '#2f6b55', '#3ddc97'] },
@@ -89,11 +89,11 @@ const SKINS = {
   divino: { name: 'Divino', desc: 'Todo branco com dourado', accent: '#b8902f', mode: 'light', dots: ['#fffdf6', '#e8dcc0', '#c9a24a'] }
 };
 let logoV = Date.now();
-function refreshLogos() { logoV = Date.now(); document.querySelectorAll('img').forEach(i => { const a = i.getAttribute('src') || ''; if (/^logo\.png/.test(a)) i.src = 'logo.png?v=' + logoV; }); }
+function refreshLogos() { logoV = Date.now(); const k = S().skin || 'edgy'; document.querySelectorAll('img').forEach(i => { const a = i.getAttribute('src') || ''; if (/^logo\.png/.test(a)) i.src = `logo.png?s=${k}&v=${logoV}`; }); }
 function applySkin(k) {
   const sk = SKINS[k] || SKINS.edgy, s = S();
   s.skin = SKINS[k] ? k : 'edgy'; s.accent = sk.accent; s.theme = sk.mode;
-  save(); applyLook(); U.setSkin(s.skin); refreshLogos(); render();
+  save(); applyLook(); U.setSkin(s.skin); render(); refreshLogos();
   toast(`Tema ${sk.name} aplicado`);
 }
 function applyLook() {
