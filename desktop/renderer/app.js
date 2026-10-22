@@ -1130,8 +1130,8 @@ views.settings = () => {
   <div class="gtitle">Tema</div>
   <div class="skins">${Object.entries(SKINS).map(([k, x]) => `<div class="skin ${s.skin === k ? 'on' : ''}" data-skin="${k}"><img src="themes/${k}.png"><div><b>${x.name}</b><span>${x.desc}</span><i>${x.dots.map(c => `<em style="background:${c}"></em>`).join('')}</i></div></div>`).join('')}</div>
   <div class="gtitle">Aparência</div><div class="group">
-    ${opt('Tema', seg('theme', [['system', 'Sistema'], ['dark', 'Escuro'], ['black', 'Preto total'], ['light', 'Claro']]))}
-    ${opt('Cor de destaque', `<div class="dots">${ACC.map(c => `<div class="dot ${s.accent === c ? 'on' : ''}" data-acc="${c}" style="background:${c}"></div>`).join('')}<input type="color" id="accPick" value="${s.accent}" style="width:30px;height:28px;border:0;background:none"></div>`)}
+    ${opt('Fundo', seg('theme', [['system', 'Igual ao Windows'], ['dark', 'Escuro'], ['black', 'Preto total'], ['light', 'Claro']]), 'Muda só o fundo. O tema escolhido acima continua')}
+    ${opt('Cor dos botões', `<div class="dots">${ACC.map(c => `<div class="dot ${s.accent === c ? 'on' : ''}" data-acc="${c}" style="background:${c}"></div>`).join('')}<input type="color" id="accPick" value="${s.accent}" style="width:30px;height:28px;border:0;background:none"></div>`, 'Botões, chaves, barras e detalhes')}
     ${opt('Arredondamento', rng('radius', 0, 28, 1))}
     ${opt('Tamanho do texto', rng('fontScale', 0.85, 1.3, 0.05, v => (+v).toFixed(2) + 'x'))}
     ${opt('Tamanho das capas na grade', rng('tile', 130, 260, 10))}
