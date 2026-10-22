@@ -39,6 +39,7 @@ const P = {
   eq: 'M10 20h4V4h-4v16zm-6 0h4v-8H4v8zM16 9v11h4V9h-4z',
   search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   wave: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
+  radio: 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z',
   close: 'M18.3 5.71a.996.996 0 0 0-1.41 0L12 10.59 7.11 5.7A.996.996 0 1 0 5.7 7.11L10.59 12 5.7 16.89a.996.996 0 1 0 1.41 1.41L12 13.41l4.89 4.89a.996.996 0 1 0 1.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z'
 };
 const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="${P[n]}"/></svg>`;
@@ -300,9 +301,28 @@ async function playVM(t) {
 }
 
 /* ---------------- controle unificado ---------------- */
+/* rádio ao vivo: tocador próprio, toca o endereço da estação direto */
+const radioEl = new Audio(); radioEl.preload = 'none';
+radioEl.addEventListener('play', () => { if (st.kind === 'radio') setPlaying(true); });
+radioEl.addEventListener('pause', () => { if (st.kind === 'radio') setPlaying(false); });
+radioEl.addEventListener('playing', () => { if (st.kind === 'radio') { $('#tDur').textContent = 'AO VIVO'; } });
+radioEl.addEventListener('error', () => { if (st.kind === 'radio' && radioEl.getAttribute('src')) { toast('Essa rádio está fora do ar agora. Indo pra próxima…'); setTimeout(next, 1200); } });
+function stopRadio() { if (radioEl.getAttribute('src')) { radioEl.pause(); radioEl.removeAttribute('src'); radioEl.load(); } }
 async function playAt(i) {
   if (i < 0 || i >= st.queue.length) return;
   st.idx = i; const t = cur();
+  if (t.src === 'radio') {
+    stopEmbeds(null); audio.pause(); clearInterval(pollT); $('#embed').classList.add('hidden');
+    st.kind = 'radio'; st.time = 0; st.dur = 0;
+    radioEl.src = t.stream; radioEl.volume = S().volume;
+    radioEl.play().catch(() => {});
+    U.radioClick(t.id);
+    D.radioRecent = [t, ...(D.radioRecent || []).filter(x => x.id !== t.id)].slice(0, 12); save();
+    updateNowPlaying(); markCurrent(); $('#tDur').textContent = 'AO VIVO'; $('#tCur').textContent = '';
+    if (view.name === 'radio') render();
+    return;
+  }
+  stopRadio();
   st.time = 0; st.dur = t.duration || 0; lastT = -1;
   // SoundCloud: tenta tocar no player do app (velocidade/tom/equalizador funcionam); se não der, usa o player oficial
   let scUrl = null;
@@ -332,6 +352,7 @@ function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math
 function toggle() {
   if (!cur()) return;
   if (!st.kind) return playAt(st.idx);
+  if (st.kind === 'radio') { if (radioEl.paused) { radioEl.src = cur().stream; radioEl.play().catch(() => {}); } else stopRadio(), setPlaying(false); return; }
   if (st.kind === 'audio') audio.paused ? audio.play() : audio.pause();
   else if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.paused?v.play():v.pause()}})(${V})`).then(() => setPlaying(!st.playing));
   else if (st.kind === 'sc' && sc.w) sc.w.toggle();
@@ -356,17 +377,50 @@ function ended() {
   else setPlaying(false);
 }
 /* rádio: músicas parecidas com a atual (Mix do YouTube) */
+/* rádio offline: monta a fila só com músicas do seu PC, parecidas com a atual (artista, gênero, álbum,
+   época) e puxando pro que você mais ouve. Funciona sem internet. */
+function localRadio(seed, n = 25) {
+  const recent = new Set(st.queue.slice(-80).map(keyOf));
+  const norm = x => (x || '').toLowerCase().trim();
+  const sa = norm(seed && seed.artist), sg = norm(seed && seed.genre), sal = norm(seed && seed.album), sy = (seed && +seed.year) || 0;
+  const maxA = Math.max(1, ...Object.values(D.taste.a || {}));
+  const scored = LIB.filter(t => keyOf(t) !== keyOf(seed) && !recent.has(keyOf(t))).map(t => {
+    let sc = 0.3 + Math.random() * 1.2;
+    if (seed) {
+      if (sa && norm(t.artist) === sa) sc += 2.5;
+      if (sg && norm(t.genre) === sg) sc += 2;
+      if (sal && norm(t.album) === sal) sc += 0.8;
+      if (sy && t.year && Math.abs(t.year - sy) <= 3) sc += 0.8;
+    }
+    sc += Math.max(0, (D.taste.a[t.artist] || 0) / maxA) * 1.5 + Math.max(0, (D.taste.g[t.genre] || 0) > 0 ? 0.6 : 0);
+    const p = D.plays && D.plays[keyOf(t)]; if (p) sc += Math.min(1.5, p.n * 0.15);
+    if (D.favs[keyOf(t)]) sc += 1;
+    return [t, sc];
+  }).sort((a, b) => b[1] - a[1]);
+  const per = {}, out = [];
+  for (const [t] of scored) { const a = norm(t.artist); if ((per[a] = (per[a] || 0) + 1) > 3) continue; out.push(t); if (out.length >= n) break; }
+  return shuffleArr(out.slice(0, Math.ceil(n * 0.4))).concat(shuffleArr(out.slice(Math.ceil(n * 0.4))));
+}
+function startLocalRadio(seed) {
+  const l = localRadio(seed, 40);
+  if (!l.length) return toast('Precisa de músicas no PC pra montar o mix offline');
+  if (seed) play([seed, ...l], 0); else play(l, 0);
+  toast(seed ? `Mix offline de ${seed.artist || seed.title}` : 'Mix offline: mistura das suas músicas');
+}
 async function startRadio(t, append) {
   if (!append) toast('Montando rádio de ' + (t.artist || t.title) + '…');
   const recent = new Set(st.queue.slice(-60).map(keyOf));
-  const l = (await U.radio({ src: t.src, id: t.id, title: t.title, artist: t.artist })).filter(x => !recent.has(keyOf(x))).slice(0, 25);
+  // música do PC ou sem internet: rádio com as músicas do PC
+  let l = [];
+  if (t.src !== 'local' && navigator.onLine) l = (await U.radio({ src: t.src, id: t.id, title: t.title, artist: t.artist })).filter(x => !recent.has(keyOf(x))).slice(0, 25);
+  if (!l.length) l = localRadio(t.src === 'local' ? t : null, 25);
   if (!l.length) { if (append) setPlaying(false); else toast('Não achei músicas parecidas agora'); return; }
   if (append) { st.queue.push(...l); next(); toast('Fila acabou: tocando parecidas'); }
   else { st.queue.splice(st.idx + 1, 0, ...l); toast(`Rádio: ${l.length} músicas parecidas na fila`); if (st.idx < 0) playAt(0); }
 }
 function setVolume(v) {
   S().volume = v; save();
-  audio.volume = v;
+  audio.volume = v; radioEl.volume = v;
   if (yt.wv) ytExec(`${V}&&(${V}.volume=${v})`);
   if (sc.w) sc.w.setVolume(v * 100);
   if (vm.player) vm.player.setVolume(v).catch(() => {});
@@ -396,6 +450,7 @@ function tasteDecay() {
   D.tasteWeek = w;
 }
 function onTrackChange(t) {
+  if (t && t.src === 'radio') return;
   // quanto da música anterior você ouviu: pulou rápido = não curtiu; ouviu quase inteira = curtiu
   if (lastKey && lastMeta) {
     const el = Date.now() - startedAt, dur = lastMeta.duration || 0;
@@ -434,7 +489,7 @@ function updateNowPlaying() {
   const cs = S().artShape === 'disc' || S().artShape === 'circle' ? 'none' : S().caseStyle === 'random' ? 'c' + (1 + h % 5) : S().caseStyle;
   $('#npCase').className = cs;
   $('#npCase .caseNum').textContent = { c2: '2', c3: '3', c4: '4', c5: '5' }[cs] || '';
-  $('#npCase .caseLabel').textContent = SRCNAME[t.src].toUpperCase();
+  $('#npCase .caseLabel').textContent = (SRCNAME[t.src] || '').toUpperCase();
   $('#npSrc').innerHTML = `<i></i>${SRCNAME[t.src]}${t.year ? ' · ' + t.year : ''}${t.genre ? ' · ' + esc(t.genre) : ''}`;
   const nx = st.queue[st.idx + 1];
   $('#npNext').innerHTML = nx ? `<img src="${esc(artOf(nx))}" onerror="this.src='logo.png'"><div style="min-width:0"><small>A seguir</small><b>${esc(nx.title)} — ${esc(nx.artist)}</b></div>` : '';
@@ -454,7 +509,7 @@ function updateNowPlaying() {
   layoutEmbed(); markCurrent();
   if (!$('#panel').classList.contains('hidden') && $('#panel').dataset.kind === 'queue') openQueue();
 }
-const SRCNAME = { local: 'No seu PC', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Internet Archive' };
+const SRCNAME = { local: 'No seu PC', radio: 'Rádio ao vivo', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Internet Archive' };
 /* cor dominante da capa pro fundo animado */
 let colorKey = '';
 function artColor(url) {
@@ -473,6 +528,7 @@ function artColor(url) {
 }
 $('#npNext').onclick = () => next();
 function tick() {
+  if (st.kind === 'radio') { $('#seekFill').style.width = '0%'; $('#tDur').textContent = 'AO VIVO'; return; }
   const p = st.dur ? Math.min(1, st.time / st.dur) : 0;
   if (!seeking) { $('#seekFill').style.width = (p * 100) + '%'; $('#seekKnob').style.left = (p * 100) + '%'; $('#tCur').textContent = fmt(st.time); }
   $('#tDur').textContent = '-' + fmt(st.dur - st.time);
@@ -510,6 +566,7 @@ addEventListener('resize', layoutEmbed);
 let LY = null, lyKey = '', lyLines = [], lyCur = -1;
 async function loadLyrics() {
   const t = cur(); if (!t) return;
+  if (t.src === 'radio') { lyKey = ''; $('#lyricsSrc').textContent = ''; $('#lyrics').innerHTML = `<div class="noLy"><div class="noLyT">Rádio ao vivo</div><div class="noLyS">${esc(t.title)}${t.artist ? ' · ' + esc(t.artist) : ''}</div></div>`; return; }
   const k = keyOf(t) + S().lyricsSource; if (k === lyKey) return; lyKey = k;
   const box = $('#lyrics'); $('#lyricsSrc').textContent = 'Procurando a letra…';
   box.innerHTML = `<div class="lyLoad">${[82, 64, 90, 48, 72, 58, 86].map(w => `<i style="width:${w}%"></i>`).join('')}</div>`;
@@ -599,7 +656,7 @@ function menu(t, list, i, ctxName) {
     <div class="group">
       <div class="opt" data-m="next" style="cursor:pointer">Tocar a seguir</div>
       <div class="opt" data-m="queue" style="cursor:pointer">Adicionar à fila</div>
-      <div class="opt" data-m="radio" style="cursor:pointer">Tocar parecidas (rádio)</div>
+      <div class="opt" data-m="radio" style="cursor:pointer">${t.src === 'local' ? 'Mix offline (parecidas do seu PC)' : 'Tocar parecidas (rádio)'}</div>
       <div class="opt" data-m="info" style="cursor:pointer">Informações</div>
       ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div><div class="opt" data-m="fx" style="cursor:pointer">Fazer versão slowed / nightcore</div>' : ''}
       ${t.url || ['yt', 'vm'].includes(t.src) ? '<div class="opt" data-m="web" style="cursor:pointer">Abrir no navegador</div>' : ''}
@@ -637,7 +694,7 @@ function prompt2(label, cb) {
 }
 
 /* ---------------- navegação ---------------- */
-const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search']];
+const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio']];
 const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
   const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''}">${ico(i)}<span>${l}</span></a>`;
@@ -673,9 +730,10 @@ views.songs = () => {
   else if (songSort === 'album') l.sort((a, b) => a.album.localeCompare(b.album) || a.track - b.track); else l.sort((a, b) => a.title.localeCompare(b.title));
   $('#view').innerHTML = `<h1>Músicas</h1><div class="sub">${LIB.length} músicas no seu PC${scanning ? '<span class="spinner"></span>' : ''}</div>
     <div class="chips">${[['title', 'A-Z'], ['artist', 'Artista'], ['album', 'Álbum'], ['recent', 'Recentes']].map(([k, n]) => `<button class="chip ${songSort === k ? 'on' : ''}" data-sort="${k}">${n}</button>`).join('')}</div>
-    ${l.length ? playBtns('songs') : ''}
+    ${l.length ? playBtns('songs').replace('</div>', `<button class="btn" id="offRadio">${ico('wave')} Mix offline</button></div>`) : ''}
     ${rows(l, 'songs', { empty: D.folders.length ? 'Nenhuma música encontrada nas pastas escolhidas.' : 'Escolha as pastas de música em Ajustes → Biblioteca. Ou use a busca pra ouvir online.' })}`;
   $('#view').querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { songSort = b.dataset.sort; render(); });
+  if ($('#offRadio')) $('#offRadio').onclick = () => startLocalRadio(null);
 };
 const groupBy = (l, f) => l.reduce((m, t) => ((m[f(t)] = m[f(t)] || []).push(t), m), {});
 views.albums = () => {
@@ -690,7 +748,11 @@ views.artists = () => {
   $('#view').innerHTML = `<h1>Artistas</h1><div class="grid">${keys.map(k => `<div class="tile round" data-ar="${esc(k)}"><img loading="lazy" src="${esc(artOf(g[k][0]))}" onerror="this.src='logo.png'"><div class="tt" style="text-align:center">${esc(k)}</div><div class="ta" style="text-align:center">${g[k].length} músicas</div></div>`).join('') || '<div class="empty">Nada por aqui.</div>'}</div>`;
   $('#view').querySelectorAll('[data-ar]').forEach(d => d.onclick = () => go({ name: 'group', title: d.dataset.ar, list: g[d.dataset.ar], sub: `${g[d.dataset.ar].length} músicas` }));
 };
-views.group = () => { $('#view').innerHTML = `<h1>${esc(view.title)}</h1><div class="sub">${esc(view.sub || '')}</div>${playBtns('group')}${rows(view.list, 'group')}`; };
+views.group = () => {
+  const local = view.list.length && view.list.every(t => t.src === 'local');
+  $('#view').innerHTML = `<h1>${esc(view.title)}</h1><div class="sub">${esc(view.sub || '')}</div>${playBtns('group').replace('</div>', local ? `<button class="btn" id="grpRadio">${ico('wave')} Mix offline</button></div>` : '</div>')}${rows(view.list, 'group')}`;
+  if ($('#grpRadio')) $('#grpRadio').onclick = () => startLocalRadio(view.list[Math.floor(Math.random() * view.list.length)]);
+};
 views.favs = () => { const l = Object.values(D.favs); $('#view').innerHTML = `<h1>Favoritas</h1>${l.length ? playBtns('favs') : ''}${rows(l, 'favs', { empty: 'Toque no coração das músicas pra salvar aqui.' })}`; };
 views.history = () => { $('#view').innerHTML = `<h1>Ouvidas online</h1>${rows(D.history, 'history')}`; };
 views.playlist = () => {
@@ -1003,6 +1065,45 @@ function changed(k, keepView) {
   if (k === 'lyricsSource') { lyKey = ''; }
   if (!keepView) render();
 }
+
+/* ---------------- rádio ---------------- */
+const RTAGS = [['', 'Mais ouvidas'], ['funk', 'Funk'], ['sertanejo', 'Sertanejo'], ['pagode', 'Pagode'], ['pop', 'Pop'], ['rock', 'Rock'], ['hip hop', 'Rap / Hip Hop'], ['electronic', 'Eletrônica'], ['gospel', 'Gospel'], ['mpb', 'MPB'], ['news', 'Notícias'], ['sports', 'Esportes'], ['80s', 'Anos 80'], ['lofi', 'Lo-fi']];
+let rCountry = 'BR', rTag = '', rQ = '', rList = null, rLoadKey = '', rQT = null;
+function stationCard(t, i, ctx) {
+  const on = cur() && cur().src === 'radio' && cur().id === t.id;
+  const fav = (D.radioFavs || []).some(x => x.id === t.id);
+  return `<div class="stn ${on ? 'on' : ''}" data-st="${ctx}:${i}">
+    <div class="stnArt">${t.art ? `<img loading="lazy" src="${esc(t.art)}" onerror="this.remove()">` : ''}${ico('radio')}</div>
+    <div class="stnTxt"><b>${esc(t.title)}</b><span>${esc(t.artist || '')}${t.bitrate ? ` · ${t.bitrate} kbps` : ''}</span></div>
+    ${on ? '<i class="live">AO VIVO</i>' : ''}
+    <button class="stnFav" data-sf="${ctx}:${i}" title="Favoritar">${ico(fav ? 'heart' : 'heartO')}</button></div>`;
+}
+views.radio = () => {
+  const favs = D.radioFavs || [], rec = (D.radioRecent || []).filter(x => !favs.some(f => f.id === x.id)).slice(0, 8);
+  const key = `${rCountry}|${rTag}|${rQ}`;
+  $('#view').innerHTML = `<h1>Rádio</h1><div class="sub">Estações ao vivo pela internet, do Brasil e do mundo.</div>
+    <div class="exTools"><div class="search mini">${ico('search')}<input id="rQ" placeholder="Procurar rádio (ex: Jovem Pan, Antena 1, 89 FM)" value="${esc(rQ)}"></div>
+      <div class="seg">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="${rCountry === k ? 'on' : ''}" data-rc="${k}">${n}</button>`).join('')}</div></div>
+    <div class="chips">${RTAGS.map(([k, n]) => `<button class="chip ${rTag === k ? 'on' : ''}" data-rt="${k}">${n}</button>`).join('')}</div>
+    ${favs.length ? `<h2>Suas rádios</h2><div class="stns">${favs.map((t, i) => stationCard(t, i, 'f')).join('')}</div>` : ''}
+    ${rec.length ? `<h2>Ouvidas recentemente</h2><div class="stns">${rec.map((t, i) => stationCard(t, i, 'r')).join('')}</div>` : ''}
+    <h2>${rQ ? `Resultados pra "${esc(rQ)}"` : (RTAGS.find(x => x[0] === rTag) || ['', ''])[1] + (rCountry === 'BR' ? ' no Brasil' : ' no mundo')}</h2>
+    <div class="stns" id="rList">${rList && rLoadKey === key ? (rList.length ? rList.map((t, i) => stationCard(t, i, 'l')).join('') : '<div class="empty">Nenhuma rádio encontrada.</div>') : '<span class="spinner"></span>'}</div>`;
+  const lists = { f: favs, r: rec, l: rList || [] };
+  $('#view').querySelectorAll('[data-rc]').forEach(b => b.onclick = () => { rCountry = b.dataset.rc; render(); });
+  $('#view').querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rTag = b.dataset.rt; rQ = ''; render(); });
+  $('#rQ').oninput = e => { clearTimeout(rQT); rQT = setTimeout(() => { rQ = e.target.value.trim(); render(); const i = $('#rQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  $('#view').querySelectorAll('[data-st]').forEach(d => d.onclick = e => {
+    const [c, i] = d.dataset.st.split(':'); const l = lists[c], t = l[+i];
+    if (e.target.closest('[data-sf]')) {
+      const f = D.radioFavs || (D.radioFavs = []); const k = f.findIndex(x => x.id === t.id);
+      if (k >= 0) f.splice(k, 1); else f.unshift(t); save(); render(); return;
+    }
+    if (cur() && cur().id === t.id && st.kind === 'radio') return toggle();
+    play(l, +i);
+  });
+  if (!(rList && rLoadKey === key)) U.radios({ q: rQ, tag: rTag, country: rCountry }).then(l => { rList = l; rLoadKey = key; if (view.name === 'radio') render(); });
+};
 
 /* ---------------- exportar slowed / nightcore ---------------- */
 const EX_PRE = { slowed: ['Slowed', 0.85, false], slowrev: ['Slowed + Reverb', 0.8, true], nightcore: ['Nightcore', 1.25, false], custom: ['Personalizado', null, null] };

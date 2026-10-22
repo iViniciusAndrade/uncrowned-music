@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('U', {
   ytmCharts: gl => ipcRenderer.invoke('ytm-charts', gl),
   scCharts: r => ipcRenderer.invoke('sc-charts', r),
   ytmLists: gl => ipcRenderer.invoke('ytm-lists', gl),
+  radios: o => ipcRenderer.invoke('radios', o),
+  radioClick: id => ipcRenderer.invoke('radio-click', id),
   ytmPlaylist: id => ipcRenderer.invoke('ytm-playlist', id),
   exportFx: (items, fx) => ipcRenderer.invoke('export-fx', items, fx),
   exportStop: () => ipcRenderer.invoke('export-stop'),

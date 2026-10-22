@@ -790,6 +790,34 @@ async function ytmPopularLists(gl = 'BR') {
 }
 ipcMain.handle('ytm-lists', (_, gl) => ytmPopularLists(gl).catch(() => []));
 
+/* ---------------- rádio ao vivo (Radio Browser: catálogo aberto e gratuito de rádios do mundo todo) ---------------- */
+const RB = ['https://de1.api.radio-browser.info', 'https://nl1.api.radio-browser.info', 'https://at1.api.radio-browser.info', 'https://fi1.api.radio-browser.info'];
+let rbi = 0;
+async function rb(pathq) {
+  for (let i = 0; i < RB.length; i++) {
+    const base = RB[(rbi + i) % RB.length];
+    try { const j = await getJSON(base + pathq, { 'User-Agent': 'UncrownedMusic/1.0' }); rbi = (rbi + i) % RB.length; return j; } catch {}
+  }
+  return [];
+}
+const rbMap = x => ({
+  src: 'radio', id: x.stationuuid, title: (x.name || '').trim(), stream: x.url_resolved || x.url,
+  artist: [x.state || x.country, (x.tags || '').split(',').filter(Boolean).slice(0, 2).join(', ')].filter(Boolean).join(' · '),
+  art: x.favicon || '', codec: x.codec || '', bitrate: x.bitrate || 0, country: x.countrycode || '', votes: x.votes || 0
+});
+async function radios({ q = '', tag = '', country = 'BR', limit = 80 } = {}) {
+  const k = `radio|${q}|${tag}|${country}`; const c = sCache.get(k); if (c && Date.now() - c.at < 30 * 60e3) return c.v;
+  const p = new URLSearchParams({ hidebroken: 'true', order: 'clickcount', reverse: 'true', limit: String(limit) });
+  if (q) p.set('name', q); if (tag) p.set('tag', tag); if (country && country !== 'ZZ') p.set('countrycode', country);
+  const list = await rb('/json/stations/search?' + p.toString());
+  const v = (Array.isArray(list) ? list : []).filter(x => !x.hls && (x.url_resolved || x.url) && x.name).map(rbMap)
+    .filter((s, i, a) => a.findIndex(o => o.title.toLowerCase() === s.title.toLowerCase()) === i);
+  if (v.length) sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+ipcMain.handle('radios', (_, o) => radios(o || {}).catch(() => []));
+ipcMain.handle('radio-click', (_, id) => rb('/json/url/' + encodeURIComponent(id)).then(() => true).catch(() => false));
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });
