@@ -1,6 +1,11 @@
 package com.uncrowned.music
 
+import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -26,7 +31,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -96,6 +108,76 @@ object RadioApi {
     }
 }
 
+/* Gravador: puxa o áudio da rádio e salva do jeito que ela transmite (MP3/AAC) na pasta Música/Uncrowned */
+object RadioRecorder {
+    var recording by mutableStateOf<Track?>(null); private set
+    var startedAt by mutableLongStateOf(0L); private set
+    var lastStation by mutableStateOf<Track?>(null)
+    @Volatile private var stopFlag = false
+
+    fun start(ctx: Context, t: Track) {
+        if (recording != null) return
+        val app = ctx.applicationContext
+        stopFlag = false; recording = t; startedAt = System.currentTimeMillis()
+        CoroutineScope(Dispatchers.IO).launch {
+            val r = runCatching { record(app, t) }
+            withContext(Dispatchers.Main) {
+                recording = null
+                Toast.makeText(app, r.fold({ "Gravação salva em Música/Uncrowned: $it" }, { "A gravação não deu certo: ${it.message ?: "sem conexão"}" }), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    fun stop() { stopFlag = true }
+
+    private fun open(url: String): HttpURLConnection {
+        var u = url
+        repeat(6) {
+            val c = URL(u).openConnection() as HttpURLConnection
+            c.instanceFollowRedirects = false; c.connectTimeout = 10000; c.readTimeout = 20000
+            c.setRequestProperty("User-Agent", "UncrownedMusic/1.0"); c.setRequestProperty("Icy-MetaData", "0")
+            val code = c.responseCode
+            if (code in 300..399) { u = URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect() } else if (code in 200..299) return c else throw Exception("a rádio respondeu $code")
+        }
+        throw Exception("redirecionamentos demais")
+    }
+
+    private fun record(ctx: Context, t: Track): String {
+        val c = open(t.url)
+        val type = (c.contentType ?: "audio/mpeg").lowercase()
+        val (ext, mime) = when { "aac" in type || "mp4" in type -> "aac" to "audio/aac"; "ogg" in type -> "ogg" to "audio/ogg"; else -> "mp3" to "audio/mpeg" }
+        val stamp = SimpleDateFormat("dd-MM-yyyy HH'h'mm", Locale("pt", "BR")).format(Date())
+        val name = "${t.title} - $stamp".replace(Regex("[\\/:*?\"<>|]"), "").take(120) + ".$ext"
+        val resolver = ctx.contentResolver
+        var itemUri: android.net.Uri? = null; var file: File? = null
+        val out = if (Build.VERSION.SDK_INT >= 29) {
+            val v = ContentValues().apply {
+                put(MediaStore.Audio.Media.DISPLAY_NAME, name); put(MediaStore.Audio.Media.MIME_TYPE, mime)
+                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Uncrowned")
+                put(MediaStore.Audio.Media.TITLE, "${t.title} ($stamp)"); put(MediaStore.Audio.Media.ARTIST, t.title); put(MediaStore.Audio.Media.ALBUM, "Gravações de rádio")
+                put(MediaStore.Audio.Media.IS_MUSIC, 1); put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+            itemUri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v) ?: throw Exception("não deu pra criar o arquivo")
+            resolver.openOutputStream(itemUri!!) ?: throw Exception("não deu pra abrir o arquivo")
+        } else {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Uncrowned").apply { mkdirs() }
+            file = File(dir, name); file!!.outputStream()
+        }
+        var total = 0L
+        try {
+            c.inputStream.use { inp ->
+                out.use { o ->
+                    val buf = ByteArray(16 * 1024)
+                    while (!stopFlag) { val n = inp.read(buf); if (n < 0) break; o.write(buf, 0, n); total += n }
+                }
+            }
+        } catch (e: Exception) { if (total < 8000) throw e } finally { c.disconnect() }
+        if (total < 8000) { itemUri?.let { resolver.delete(it, null, null) }; file?.delete(); throw Exception("a rádio não mandou áudio") }
+        itemUri?.let { resolver.update(it, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null) }
+        file?.let { MediaScannerConnection.scanFile(ctx, arrayOf(it.absolutePath), arrayOf(mime), null) }
+        return name
+    }
+}
+
 private val RTAGS = listOf("" to "Mais ouvidas", "funk" to "Funk", "sertanejo" to "Sertanejo", "pagode" to "Pagode", "pop" to "Pop", "rock" to "Rock",
     "hip hop" to "Rap", "electronic" to "Eletrônica", "gospel" to "Gospel", "mpb" to "MPB", "news" to "Notícias", "sports" to "Esportes")
 
@@ -131,6 +213,7 @@ fun RadioScreen(ui: PlayerUi, onBack: () -> Unit) {
                 }
             }
         }
+        item { RecordCard(ui) }
         item {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 placeholder = { Text("Procurar rádio (Jovem Pan, Antena 1...)") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -146,7 +229,7 @@ fun RadioScreen(ui: PlayerUi, onBack: () -> Unit) {
         }
         if (favs.isNotEmpty()) {
             item { Text("Suas rádios", Modifier.padding(start = 16.dp, top = 18.dp, bottom = 6.dp), fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-            itemsIndexed(favs, key = { _, t -> "f" + t.id }) { i, t -> StationRow(t, true, ui.mediaId == t.mediaId, { ui.playOnline(favs, i) }) { RadioApi.toggleFav(t); favs = RadioApi.favs() } }
+            itemsIndexed(favs, key = { _, t -> "f" + t.id }) { i, t -> StationRow(t, true, ui.mediaId == t.mediaId, { RadioRecorder.lastStation = t; ui.playOnline(favs, i) }) { RadioApi.toggleFav(t); favs = RadioApi.favs() } }
         }
         item {
             Text(if (search.isNotBlank()) "Resultados pra \"$search\"" else (RTAGS.firstOrNull { it.first == tag }?.second ?: "") + if (country == "BR") " no Brasil" else " no mundo",
@@ -157,7 +240,7 @@ fun RadioScreen(ui: PlayerUi, onBack: () -> Unit) {
             l == null -> item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }
             l.isEmpty() -> item { Text("Nenhuma rádio encontrada. Precisa de internet pra essa lista.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else -> itemsIndexed(l, key = { _, t -> "l" + t.id }) { i, t ->
-                StationRow(t, favs.any { it.id == t.id }, ui.mediaId == t.mediaId, { ui.playOnline(l, i) }) { RadioApi.toggleFav(t); favs = RadioApi.favs() }
+                StationRow(t, favs.any { it.id == t.id }, ui.mediaId == t.mediaId, { RadioRecorder.lastStation = t; ui.playOnline(l, i) }) { RadioApi.toggleFav(t); favs = RadioApi.favs() }
             }
         }
     }
@@ -173,5 +256,31 @@ private fun StationRow(t: Track, fav: Boolean, playing: Boolean, onPlay: () -> U
             Text(if (playing) "AO VIVO · ${t.artist}" else t.artist, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onClick = onFav) { Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = MaterialTheme.colorScheme.primary) }
+    }
+}
+
+@Composable
+private fun RecordCard(ui: PlayerUi) {
+    val ctx = LocalContext.current
+    val rec = RadioRecorder.recording
+    val st = RadioRecorder.lastStation
+    val live = st != null && ui.mediaId == st.mediaId
+    if (rec == null && !live) return
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(rec) { while (rec != null) { now = System.currentTimeMillis(); delay(1000) } }
+    val secs = ((now - RadioRecorder.startedAt) / 1000).coerceAtLeast(0)
+    val red = Color(0xFFFF3B30)
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (rec != null) red.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(if (rec != null) "Gravando: ${rec.title}" else "Tocando agora: ${st!!.title}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (rec != null) "● %d:%02d · salva em Música/Uncrowned quando parar".format(secs / 60, secs % 60) else "Grave o que está passando e ouça depois sem internet",
+                    fontSize = 12.5.sp, color = if (rec != null) red else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.width(10.dp))
+            if (rec != null) OutlinedButton(onClick = { RadioRecorder.stop() }) { Text("Parar", color = red) }
+            else Button(onClick = { RadioRecorder.start(ctx, st!!) }, colors = ButtonDefaults.buttonColors(containerColor = red)) { Text("● Gravar", color = Color.White) }
+        }
     }
 }
