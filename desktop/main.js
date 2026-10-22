@@ -1232,7 +1232,7 @@ ipcMain.handle('import-resolve', async (e, items, tag) => {
 });
 
 /* temas: troca o ícone da janela/barra de tarefas junto */
-const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas', 'ninja', 'deserto', 'ouro', 'cela', 'rock', 'pavor', 'apagao'];
+const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas', 'ninja', 'deserto', 'ouro', 'cela', 'rock', 'pavor', 'apagao', 'julie', 'nino', 'divino'];
 function skinNow() { const k = store.data && store.data.settings && store.data.settings.skin; return SKINS.includes(k) ? k : 'edgy'; }
 function applyWinSkin(k) { try { if (win && SKINS.includes(k)) win.setIcon(nativeImage.createFromPath(path.join(__dirname, 'renderer', 'themes', k + '.png'))); } catch {} }
 ipcMain.handle('set-skin', (_, k) => { applyWinSkin(k); return true; });

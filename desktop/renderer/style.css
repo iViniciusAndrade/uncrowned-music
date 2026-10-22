@@ -664,3 +664,29 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 :root.eco body::after,:root.eco #npAurora,:root.eco #npGrain{display:none!important}
 :root.eco #npBg{filter:none!important;opacity:.35}
 :root.eco .aBg{filter:brightness(.4)!important;transform:none!important}
+
+/* JULIE: lilás fofinho */
+:root[data-skin=julie]{--bg:#f7f0ff;--card:#ffffff;--card2:#efe4ff;--line:rgba(125,79,176,.14);--text:#3b2352;--dim:#9a84b8;--hfont:'Quicksand',sans-serif;
+  --tex:radial-gradient(circle at 20% 30%,rgba(180,142,240,.55) 0 1.6px,transparent 2.2px),radial-gradient(circle at 75% 70%,rgba(255,255,255,.95) 0 1.6px,transparent 2.2px);--texO:1}
+:root[data-skin=julie] body::after{background-size:160px 160px,230px 230px}
+:root[data-skin=julie] h1{color:#7d4fb0;font-weight:700}
+:root[data-skin=julie] #sidebar{background-image:linear-gradient(180deg,rgba(245,236,255,.7),rgba(245,236,255,.38) 35%,rgba(245,236,255,.5) 65%,rgba(245,236,255,.88)),url("themes/julie-side.jpg")!important;border-right:1px solid rgba(155,111,214,.3)}
+:root[data-skin=julie] #sidebar nav a{color:#3b2352;text-shadow:0 1px 6px rgba(255,255,255,.9)} :root[data-skin=julie] #sidebar nav a.on{background:rgba(255,255,255,.75)}
+:root[data-skin=julie] #sidebar .navlabel{color:#8a6bb4} :root[data-skin=julie] #sidebar .search input{background:rgba(255,255,255,.7);border-color:rgba(155,111,214,.3)}
+:root[data-skin=julie] #bar{background:rgba(247,240,255,.94)}
+/* NINO: vaquinha milkmoo */
+:root[data-skin=nino]{--bg:#fffafc;--card:#ffffff;--card2:#f3eef0;--line:rgba(27,27,31,.1);--text:#1b1b1f;--dim:#8b8590;--hfont:'Baloo 2',sans-serif;
+  --tex:radial-gradient(ellipse 70px 46px at 15% 20%,rgba(27,27,31,.05),transparent 70%),radial-gradient(ellipse 90px 56px at 80% 65%,rgba(27,27,31,.05),transparent 70%),radial-gradient(ellipse 50px 70px at 45% 90%,rgba(27,27,31,.05),transparent 70%);--texO:1}
+:root[data-skin=nino] body::after{background-size:520px 460px,640px 560px,480px 600px}
+:root[data-skin=nino] h1{font-weight:800}
+:root[data-skin=nino] #sidebar{background-image:linear-gradient(180deg,rgba(20,20,24,.55),rgba(20,20,24,.25) 35%,rgba(20,20,24,.38) 65%,rgba(20,20,24,.85)),url("themes/nino-side.jpg")!important}
+:root[data-skin=nino] #bar{background:rgba(255,250,252,.95)}
+/* DIVINO: branco e dourado */
+:root[data-skin=divino]{--bg:#fdfbf5;--card:#ffffff;--card2:#f3ecdc;--line:rgba(184,144,47,.18);--text:#3a2f1a;--dim:#9a8a66;--hfont:'Cinzel Decorative','Cinzel',serif;
+  --tex:radial-gradient(120% 60% at 50% 0%,rgba(233,201,117,.18),transparent 60%);--texO:1}
+:root[data-skin=divino] h1{background:linear-gradient(90deg,#9c7322,#d8ad4a,#9c7322);-webkit-background-clip:text;color:transparent;letter-spacing:.03em}
+:root[data-skin=divino] #sidebar{background-image:linear-gradient(180deg,rgba(255,252,244,.72),rgba(255,252,244,.4) 35%,rgba(255,252,244,.5) 65%,rgba(255,252,244,.9)),url("themes/divino-side.jpg")!important;border-right:1px solid #e3cf98}
+:root[data-skin=divino] #sidebar nav a{color:#4a3c1f;text-shadow:0 1px 6px rgba(255,255,255,.9)} :root[data-skin=divino] #sidebar nav a svg{fill:#b8902f}
+:root[data-skin=divino] #sidebar nav a.on{background:rgba(255,255,255,.75);box-shadow:inset 2px 0 0 #b8902f}
+:root[data-skin=divino] #sidebar .navlabel{color:#a38a52} :root[data-skin=divino] #sidebar .search input{background:rgba(255,255,255,.75);border-color:#e3cf98}
+:root[data-skin=divino] #bar{background:rgba(253,251,245,.96);border-top:1px solid #eadfc0}
