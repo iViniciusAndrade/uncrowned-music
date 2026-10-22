@@ -818,6 +818,41 @@ async function radios({ q = '', tag = '', country = 'BR', limit = 80 } = {}) {
 ipcMain.handle('radios', (_, o) => radios(o || {}).catch(() => []));
 ipcMain.handle('radio-click', (_, id) => rb('/json/url/' + encodeURIComponent(id)).then(() => true).catch(() => false));
 
+/* gravar a rádio que está tocando (mp3 na pasta Música) */
+let rec = null;
+ipcMain.handle('rec-start', async (e, station) => {
+  if (rec) return { err: 'Já está gravando' };
+  const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) return { err: 'ffmpeg não encontrado' };
+  const { spawn } = require('child_process');
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const stamp = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}h${pad(d.getMinutes())}`;
+  const base = `${station.title} - ${stamp}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 150);
+  let out = path.join(app.getPath('music'), base + '.mp3'); let n = 2; while (fs.existsSync(out)) out = path.join(app.getPath('music'), `${base} ${n++}.mp3`);
+  const args = ['-hide_banner', '-y', '-user_agent', UA, '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    '-i', station.stream, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-id3v2_version', '3',
+    '-metadata', `title=${station.title} (${stamp})`, '-metadata', `artist=${station.title}`, '-metadata', 'album=Gravações de rádio', '-metadata', 'genre=Rádio', out];
+  const p = spawn(bin, args, { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
+  let err = '';
+  p.stderr.on('data', x => { err = (err + x.toString()).slice(-1500); });
+  const sender = e.sender;
+  rec = { proc: p, out, start: Date.now() };
+  p.on('close', code => {
+    const ok = fs.existsSync(out) && fs.statSync(out).size > 8000;
+    if (!ok) try { fs.unlinkSync(out); } catch {}
+    rec = null;
+    try { if (!sender.isDestroyed()) sender.send('rec-done', { file: ok ? out : null, err: ok ? '' : (err.split('\n').filter(Boolean).pop() || 'erro ' + code) }); } catch {}
+  });
+  p.on('error', er => { rec = null; try { sender.send('rec-done', { file: null, err: String(er) }); } catch {} });
+  return { ok: true, file: out };
+});
+ipcMain.handle('rec-stop', () => {
+  if (!rec) return null;
+  const r = rec;
+  try { r.proc.stdin.write('q'); r.proc.stdin.end(); } catch {}
+  setTimeout(() => { try { if (rec === r) r.proc.kill(); } catch {} }, 5000);
+  return r.out;
+});
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });

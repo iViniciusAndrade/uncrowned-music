@@ -375,3 +375,16 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .stnTxt span{display:block;font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .stn .live{position:absolute;top:8px;right:40px;font-style:normal;font-size:9px;font-weight:800;letter-spacing:.06em;color:#fff;background:var(--accent);padding:2px 6px;border-radius:5px}
 .stnFav{flex:none;opacity:.5} .stnFav:hover{opacity:1} .stnFav svg{width:18px;height:18px;fill:var(--accent)}
+
+/* gravar rádio */
+.recBox{display:flex;align-items:center;gap:16px;background:var(--card);border-radius:14px;padding:14px 16px;margin:4px 0 18px;border:1px solid rgba(255,255,255,.06)}
+.recBox.on{border-color:#ff3b30;box-shadow:0 0 0 1px #ff3b30 inset,0 0 30px rgba(255,59,48,.15)}
+.recInfo{flex:1;min-width:0}
+.recInfo b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recInfo span{display:block;font-size:12.5px;color:var(--dim);margin-top:3px}
+.recInfo i{font-style:normal;color:#ff3b30;font-weight:700;font-variant-numeric:tabular-nums}
+.recBtn.fill{background:#ff3b30!important;color:#fff!important}
+.recBox.on .recBtn{color:#ff3b30}
+#barRec{display:inline-block;margin-top:3px;font-size:11px;font-weight:800;color:#ff3b30;letter-spacing:.04em;animation:recBlink 1.4s infinite}
+@keyframes recBlink{50%{opacity:.45}}
+#sidebar nav a.off{opacity:.35;cursor:not-allowed}

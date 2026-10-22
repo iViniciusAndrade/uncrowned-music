@@ -303,8 +303,8 @@ async function playVM(t) {
 /* ---------------- controle unificado ---------------- */
 /* rádio ao vivo: tocador próprio, toca o endereço da estação direto */
 const radioEl = new Audio(); radioEl.preload = 'none';
-radioEl.addEventListener('play', () => { if (st.kind === 'radio') setPlaying(true); });
-radioEl.addEventListener('pause', () => { if (st.kind === 'radio') setPlaying(false); });
+radioEl.addEventListener('play', () => { if (st.kind === 'radio') { setPlaying(true); renderNav(); } });
+radioEl.addEventListener('pause', () => { if (st.kind === 'radio') { setPlaying(false); renderNav(); } });
 radioEl.addEventListener('playing', () => { if (st.kind === 'radio') { $('#tDur').textContent = 'AO VIVO'; } });
 radioEl.addEventListener('error', () => { if (st.kind === 'radio' && radioEl.getAttribute('src')) { toast('Essa rádio está fora do ar agora. Indo pra próxima…'); setTimeout(next, 1200); } });
 function stopRadio() { if (radioEl.getAttribute('src')) { radioEl.pause(); radioEl.removeAttribute('src'); radioEl.load(); } }
@@ -312,6 +312,7 @@ async function playAt(i) {
   if (i < 0 || i >= st.queue.length) return;
   st.idx = i; const t = cur();
   if (t.src === 'radio') {
+    if (recState && recState.id !== t.id) { recStop(true); toast('Gravação anterior salva. Trocou de rádio.'); }
     stopEmbeds(null); audio.pause(); clearInterval(pollT); $('#embed').classList.add('hidden');
     st.kind = 'radio'; st.time = 0; st.dur = 0;
     radioEl.src = t.stream; radioEl.volume = S().volume;
@@ -319,10 +320,14 @@ async function playAt(i) {
     U.radioClick(t.id);
     D.radioRecent = [t, ...(D.radioRecent || []).filter(x => x.id !== t.id)].slice(0, 12); save();
     updateNowPlaying(); markCurrent(); $('#tDur').textContent = 'AO VIVO'; $('#tCur').textContent = '';
-    if (view.name === 'radio') render();
+    if (view.name === 'radio') render(); else paintRec();
+    renderNav();
     return;
   }
+  if (recState) recStop(true);
   stopRadio();
+  if (st.kind === 'radio') { st.kind = null; }
+  setTimeout(renderNav, 0);
   st.time = 0; st.dur = t.duration || 0; lastT = -1;
   // SoundCloud: tenta tocar no player do app (velocidade/tom/equalizador funcionam); se não der, usa o player oficial
   let scUrl = null;
@@ -352,7 +357,7 @@ function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math
 function toggle() {
   if (!cur()) return;
   if (!st.kind) return playAt(st.idx);
-  if (st.kind === 'radio') { if (radioEl.paused) { radioEl.src = cur().stream; radioEl.play().catch(() => {}); } else stopRadio(), setPlaying(false); return; }
+  if (st.kind === 'radio') { if (radioEl.paused) { radioEl.src = cur().stream; radioEl.play().catch(() => {}); } else { stopRadio(); setPlaying(false); renderNav(); } return; }
   if (st.kind === 'audio') audio.paused ? audio.play() : audio.pause();
   else if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.paused?v.play():v.pause()}})(${V})`).then(() => setPlaying(!st.playing));
   else if (st.kind === 'sc' && sc.w) sc.w.toggle();
@@ -697,7 +702,8 @@ function prompt2(label, cb) {
 const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio']];
 const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
-  const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''}">${ico(i)}<span>${l}</span></a>`;
+  const radioOn = st.kind === 'radio' && st.playing;
+  const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''} ${k === 'export' && radioOn ? 'off' : ''}" ${k === 'export' && radioOn ? 'title="Desativado enquanto a rádio toca"' : ''}>${ico(i)}<span>${l}</span></a>`;
   $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline · no seu PC</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
   renderPlNav();
 }
@@ -708,6 +714,7 @@ function renderPlNav() {
 document.addEventListener('click', e => {
   const a = e.target.closest('nav a'); if (!a) return;
   const v = a.dataset.v;
+  if (a.classList.contains('off')) return toast('Slowed / Nightcore fica desligado enquanto a rádio toca. Pause a rádio ou toque outra música.');
   if (v === 'search') { go({ name: 'search' }); $('#q').focus(); return; }
   go(v.startsWith('pl:') ? { name: 'playlist', pl: v.slice(3) } : { name: v });
 });
@@ -1067,6 +1074,36 @@ function changed(k, keepView) {
 }
 
 /* ---------------- rádio ---------------- */
+let recState = null, recTimer = null;
+function recLabel() { if (!recState) return ''; const s = Math.floor((Date.now() - recState.start) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+async function recStart() {
+  const t = cur(); if (!t || t.src !== 'radio' || st.kind !== 'radio') return toast('Toque uma rádio primeiro');
+  const r = await U.recStart({ title: t.title, stream: t.stream });
+  if (r.err) return toast('Não deu pra gravar: ' + r.err);
+  recState = { id: t.id, title: t.title, start: Date.now() };
+  clearInterval(recTimer); recTimer = setInterval(() => { const el = $('#recTime'); if (el) el.textContent = recLabel(); const b = $('#barRec'); if (b) b.textContent = '● REC ' + recLabel(); }, 1000);
+  toast('Gravando ' + t.title + '…'); paintRec();
+}
+async function recStop(quiet) { if (!recState) return; await U.recStop(); if (!quiet) toast('Salvando a gravação…'); }
+U.onRecDone(r => {
+  recState = null; clearInterval(recTimer); paintRec();
+  if (r.file) { toast('Gravação salva na pasta Música'); rescan(); } else toast('A gravação não deu certo: ' + (r.err || '').slice(0, 90));
+});
+function paintRec() {
+  const box = $('#recBox'); if (box) box.outerHTML = recBoxHtml();
+  bindRec();
+  let b = $('#barRec');
+  if (recState && !b) { b = document.createElement('span'); b.id = 'barRec'; $('#barLeft .barText').appendChild(b); }
+  if (b) { if (recState) b.textContent = '● REC ' + recLabel(); else b.remove(); }
+}
+function recBoxHtml() {
+  const t = cur(); const live = t && t.src === 'radio' && st.kind === 'radio';
+  if (!live && !recState) return '<div id="recBox"></div>';
+  return `<div id="recBox" class="recBox ${recState ? 'on' : ''}">
+    <div class="recInfo"><b>${recState ? 'Gravando' : 'Tocando agora'}: ${esc(recState ? recState.title : t.title)}</b><span>${recState ? `<i id="recTime">${recLabel()}</i> · vai pra sua pasta Música quando você parar` : 'Grave o que está passando e ouça depois, até sem internet'}</span></div>
+    <button class="btn ${recState ? '' : 'fill'} recBtn" id="recBtn">${recState ? '■ Parar e salvar' : '● Gravar'}</button></div>`;
+}
+function bindRec() { const b = $('#recBtn'); if (b) b.onclick = () => recState ? recStop() : recStart(); }
 const RTAGS = [['', 'Mais ouvidas'], ['funk', 'Funk'], ['sertanejo', 'Sertanejo'], ['pagode', 'Pagode'], ['pop', 'Pop'], ['rock', 'Rock'], ['hip hop', 'Rap / Hip Hop'], ['electronic', 'Eletrônica'], ['gospel', 'Gospel'], ['mpb', 'MPB'], ['news', 'Notícias'], ['sports', 'Esportes'], ['80s', 'Anos 80'], ['lofi', 'Lo-fi']];
 let rCountry = 'BR', rTag = '', rQ = '', rList = null, rLoadKey = '', rQT = null;
 function stationCard(t, i, ctx) {
@@ -1082,6 +1119,7 @@ views.radio = () => {
   const favs = D.radioFavs || [], rec = (D.radioRecent || []).filter(x => !favs.some(f => f.id === x.id)).slice(0, 8);
   const key = `${rCountry}|${rTag}|${rQ}`;
   $('#view').innerHTML = `<h1>Rádio</h1><div class="sub">Estações ao vivo pela internet, do Brasil e do mundo.</div>
+    ${recBoxHtml()}
     <div class="exTools"><div class="search mini">${ico('search')}<input id="rQ" placeholder="Procurar rádio (ex: Jovem Pan, Antena 1, 89 FM)" value="${esc(rQ)}"></div>
       <div class="seg">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="${rCountry === k ? 'on' : ''}" data-rc="${k}">${n}</button>`).join('')}</div></div>
     <div class="chips">${RTAGS.map(([k, n]) => `<button class="chip ${rTag === k ? 'on' : ''}" data-rt="${k}">${n}</button>`).join('')}</div>
@@ -1090,6 +1128,7 @@ views.radio = () => {
     <h2>${rQ ? `Resultados pra "${esc(rQ)}"` : (RTAGS.find(x => x[0] === rTag) || ['', ''])[1] + (rCountry === 'BR' ? ' no Brasil' : ' no mundo')}</h2>
     <div class="stns" id="rList">${rList && rLoadKey === key ? (rList.length ? rList.map((t, i) => stationCard(t, i, 'l')).join('') : '<div class="empty">Nenhuma rádio encontrada.</div>') : '<span class="spinner"></span>'}</div>`;
   const lists = { f: favs, r: rec, l: rList || [] };
+  bindRec();
   $('#view').querySelectorAll('[data-rc]').forEach(b => b.onclick = () => { rCountry = b.dataset.rc; render(); });
   $('#view').querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rTag = b.dataset.rt; rQ = ''; render(); });
   $('#rQ').oninput = e => { clearTimeout(rQT); rQT = setTimeout(() => { rQ = e.target.value.trim(); render(); const i = $('#rQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
@@ -1114,6 +1153,7 @@ function exLabel() {
 }
 function stopPrev() { if (exPrev) { exPrev.pause(); exPrev = null; } const b = $('#exPrev'); if (b) b.innerHTML = `${ico('play')} Ouvir prévia`; }
 views.export = () => {
+  if (st.kind === 'radio' && st.playing) { $('#view').innerHTML = `<h1>Slowed / Nightcore</h1><div class="empty">Desligado enquanto a rádio toca.<br>Pause a rádio ou toque uma música pra usar.</div>`; return; }
   const q = exFilter.toLowerCase();
   const list = LIB.filter(t => !q || (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).sort((a, b) => a.title.localeCompare(b.title));
   const vis = list.slice(0, 400);
