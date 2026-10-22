@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('U', {
   ytLogout: () => ipcRenderer.invoke('yt-logout'),
   recommend: o => ipcRenderer.invoke('recommend', o),
   radio: t => ipcRenderer.invoke('radio', t),
+  ytmCharts: gl => ipcRenderer.invoke('ytm-charts', gl),
+  ytmPlaylist: id => ipcRenderer.invoke('ytm-playlist', id),
+  exportFx: (items, fx) => ipcRenderer.invoke('export-fx', items, fx),
+  exportStop: () => ipcRenderer.invoke('export-stop'),
+  onExportProgress: cb => ipcRenderer.on('export-progress', (_, p) => cb(p)),
+  musicDir: () => ipcRenderer.invoke('music-dir'),
   frameEq: code => ipcRenderer.invoke('frame-eq', code),
   // libera memória (cache de imagens + coleta de lixo) quando o app vai pro fundo
   trim: () => { try { webFrame.clearCache(); } catch {} try { if (global.gc) global.gc(); } catch {} }

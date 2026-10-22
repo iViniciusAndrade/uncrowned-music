@@ -36,7 +36,10 @@ const P = {
   more: 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
   dl: 'M16.59 9H15V4c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5H7.41c-.89 0-1.34 1.08-.71 1.71l4.59 4.59c.39.39 1.02.39 1.41 0l4.59-4.59c.63-.63.19-1.71-.7-1.71zM5 19c0 .55.45 1 1 1h12c.55 0 1-.45 1-1s-.45-1-1-1H6c-.55 0-1 .45-1 1z',
   plus: 'M18 13h-5v5c0 .55-.45 1-1 1s-1-.45-1-1v-5H6c-.55 0-1-.45-1-1s.45-1 1-1h5V6c0-.55.45-1 1-1s1 .45 1 1v5h5c.55 0 1 .45 1 1s-.45 1-1 1z',
-  eq: 'M10 20h4V4h-4v16zm-6 0h4v-8H4v8zM16 9v11h4V9h-4z'
+  eq: 'M10 20h4V4h-4v16zm-6 0h4v-8H4v8zM16 9v11h4V9h-4z',
+  search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  wave: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
+  close: 'M18.3 5.71a.996.996 0 0 0-1.41 0L12 10.59 7.11 5.7A.996.996 0 1 0 5.7 7.11L10.59 12 5.7 16.89a.996.996 0 1 0 1.41 1.41L12 13.41l4.89 4.89a.996.996 0 1 0 1.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z'
 };
 const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="${P[n]}"/></svg>`;
 
@@ -45,7 +48,7 @@ const DEF = {
   theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
-  adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'songs', notifications: true
+  adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
 const S = () => D.settings;
@@ -579,6 +582,7 @@ let lastRowClick = 0;
 document.addEventListener('click', e => {
   const r = e.target.closest('.row'); if (!r || e.target.closest('[data-act], .acts, button, a, input')) return;
   if (Date.now() - lastRowClick < 400) return; lastRowClick = Date.now();
+  if (view.name === 'search' && searchQ) addRecent(searchQ);
   play(rowsCtx[r.dataset.ctx], +r.dataset.i);
 });
 document.addEventListener('click', async e => {
@@ -597,7 +601,7 @@ function menu(t, list, i, ctxName) {
       <div class="opt" data-m="queue" style="cursor:pointer">Adicionar à fila</div>
       <div class="opt" data-m="radio" style="cursor:pointer">Tocar parecidas (rádio)</div>
       <div class="opt" data-m="info" style="cursor:pointer">Informações</div>
-      ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div>' : ''}
+      ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div><div class="opt" data-m="fx" style="cursor:pointer">Fazer versão slowed / nightcore</div>' : ''}
       ${t.url || ['yt', 'vm'].includes(t.src) ? '<div class="opt" data-m="web" style="cursor:pointer">Abrir no navegador</div>' : ''}
       ${view.name === 'playlist' ? '<div class="opt" data-m="rm" style="cursor:pointer;color:#ff453a">Remover desta playlist</div>' : ''}
     </div>
@@ -613,6 +617,7 @@ function menu(t, list, i, ctxName) {
     if (m === 'radio') startRadio(t, false);
     if (m === 'info') return showInfo(t);
     if (m === 'show') U.openPath(t.path);
+    if (m === 'fx') { exSel = new Set([t.path]); exFilter = ''; closeModal(); go({ name: 'export' }); return; }
     if (m === 'web') U.openUrl(t.url || (t.src === 'yt' ? `https://youtu.be/${t.id}` : `https://vimeo.com/${t.id}`));
     if (m === 'rm') { D.playlists[view.pl] = D.playlists[view.pl].filter(x => keyOf(x) !== keyOf(t)); save(); render(); }
     if (m === 'newpl') { const n = prompt2('Nome da playlist', name => { if (name) { D.playlists[name] = D.playlists[name] || []; addToPl(name, t); renderPlNav(); } }); return; }
@@ -632,9 +637,11 @@ function prompt2(label, cb) {
 }
 
 /* ---------------- navegação ---------------- */
-const NAV = [['search', 'Buscar', 'explore'], ['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['discover', 'Descobrir', 'explore'], ['settings', 'Ajustes', 'gear']];
+const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search']];
+const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
-  $('#nav').innerHTML = NAV.filter(n => n[0] !== 'search').map(([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''}">${ico(i)}<span>${l}</span></a>`).join('');
+  const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''}">${ico(i)}<span>${l}</span></a>`;
+  $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline · no seu PC</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
   renderPlNav();
 }
 function renderPlNav() {
@@ -644,10 +651,11 @@ function renderPlNav() {
 document.addEventListener('click', e => {
   const a = e.target.closest('nav a'); if (!a) return;
   const v = a.dataset.v;
+  if (v === 'search') { go({ name: 'search' }); $('#q').focus(); return; }
   go(v.startsWith('pl:') ? { name: 'playlist', pl: v.slice(3) } : { name: v });
 });
 $('#newPl').onclick = () => prompt2('Nova playlist', n => { if (n) { D.playlists[n] = D.playlists[n] || []; save(); renderPlNav(); go({ name: 'playlist', pl: n }); } });
-function go(v) { view = v; openNp(false); renderNav(); render(); $('#main').scrollTop = 0; }
+function go(v) { if (v.name !== 'export' && typeof stopPrev === 'function') stopPrev(); view = v; openNp(false); renderNav(); render(); $('#main').scrollTop = 0; }
 
 /* ---------------- telas ---------------- */
 const views = {};
@@ -692,13 +700,14 @@ views.playlist = () => {
 };
 
 /* busca única: no PC + online (SoundCloud → YouTube → Vimeo) + pra baixar */
-let searchQ = '', searchRes = null, searchT;
-$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(searchT); e.target.dispatchEvent(new Event('input')); } });
+let searchQ = '', searchRes = null, searchT, sFilter = 'all';
+$('#q').addEventListener('focus', () => { if (view.name !== 'search' && !$('#q').value.trim()) go({ name: 'search' }); });
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') { addRecent($('#q').value.trim()); clearTimeout(searchT); e.target.dispatchEvent(new Event('input')); } });
 $('#q').addEventListener('paste', () => setTimeout(() => { clearTimeout(searchT); $('#q').dispatchEvent(new Event('input')); }, 0));
 $('#q').addEventListener('input', e => {
   searchQ = e.target.value.trim();
   clearTimeout(searchT);
-  if (!searchQ) { if (view.name === 'search') go({ name: S().startView }); return; }
+  if (!searchQ) { searchRes = null; if (view.name === 'search') render(); return; }
   if (view.name !== 'search') { view = { name: 'search' }; openNp(false); renderNav(); }
   searchRes = null; render();
   const isLink = /^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(searchQ);
@@ -707,7 +716,7 @@ $('#q').addEventListener('input', e => {
 /* resultados entram na tela conforme cada fonte responde (YouTube primeiro) */
 let searchRid = 0, sParts = {}, sShowT = null, sRaf = 0;
 function startLiveSearch(q) {
-  searchRid++; sParts = { q }; clearTimeout(sShowT);
+  searchRid++; sFilter = 'all'; sParts = { q }; clearTimeout(sShowT);
   // espera o YouTube até 1,2 s pra lista não "pular" quando ele chegar por cima
   sShowT = setTimeout(() => { sParts.show = true; paintSearch(); }, 1200);
   U.searchLive(q, searchRid);
@@ -726,6 +735,7 @@ function paintSearch() {
   cancelAnimationFrame(sRaf); sRaf = requestAnimationFrame(() => { if (view.name === 'search') { const y = $('#main').scrollTop; render(); $('#main').scrollTop = y; } });
 }
 views.search = () => {
+  if (!searchQ) return views.browse();
   const q = searchQ.toLowerCase();
   const local = q && !/^(https?:|www\.)/.test(q) ? LIB.filter(t => (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).slice(0, 40) : [];
   if (searchRes && searchRes.link) {
@@ -741,12 +751,53 @@ views.search = () => {
     $('#lnkMore').onclick = () => menu(t, searchRes.stream, 0, 'link');
     return;
   }
-  $('#view').innerHTML = `<h1>Resultados</h1>
-    ${local.length ? `<h2>No seu PC</h2>${rows(local, 'sLocal')}` : ''}
-    <h2>Online ${!searchRes || searchRes.loading ? '<span class="spinner"></span>' : ''}</h2>
-    ${searchRes && (searchRes.stream.length || !searchRes.loading) ? rows(searchRes.stream, 'sOnline', { empty: `Nada online pra "${esc(searchQ)}".` }) : ''}
-    ${searchRes && searchRes.downloadable.length ? `<h2>Pra baixar</h2><div class="sub">Músicas liberadas pelos próprios artistas (Audius e Internet Archive).</div>${rows(searchRes.downloadable, 'sDl')}` : ''}`;
+    const R = searchRes || { stream: [], downloadable: [], loading: true };
+  const by = src => R.stream.filter(t => t.src === src);
+  const yt = by('yt'), sc = by('sc'), vm = by('vm');
+  const F = [['all', 'Tudo'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'No PC'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
+  const chips = `<div class="chips sticky">${F.map(([k, n]) => `<button class="chip ${sFilter === k ? 'on' : ''}" data-sf="${k}">${n}</button>`).join('')}${R.loading ? '<span class="spinner"></span>' : ''}</div>`;
+  let body = '';
+  if (sFilter === 'all') {
+    const pool = [...local, ...R.stream];
+    const ql = q.toLowerCase();
+    const best = local.find(t => (t.title + ' ' + t.artist).toLowerCase().includes(ql)) || R.stream[0] || local[0];
+    const top4 = pool.filter(t => t !== best).slice(0, 4);
+    if (best) {
+      rowsCtx.best = [best, ...top4];
+      body += `<div class="sTop">
+        <div><h2>Melhor resultado</h2><div class="best" id="bestCard">
+          <img src="${esc(artOf(best))}" onerror="this.src='logo.png'"><div class="bt">${esc(best.title)}</div>
+          <div class="ba"><span class="badge ${best.src}">${{ local: 'NO PC', yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE' }[best.src] || ''}</span>${esc(best.artist)}</div>
+          <button class="bplay" title="Tocar">${ico('play')}</button></div></div>
+        <div class="sTopList"><h2>Músicas</h2>${rows(top4, 'sTop4')}</div></div>`;
+    } else if (!R.loading) body += `<div class="empty">Nada encontrado pra "${esc(q)}".</div>`;
+    if (local.length) body += `<h2>No seu PC</h2>${rows(local.slice(0, 10), 'sLocal')}`;
+    if (yt.length) body += `<h2>YouTube</h2>${rows(yt.slice(0, 10), 'sYt')}`;
+    if (sc.length) body += `<h2>SoundCloud</h2>${rows(sc.slice(0, 8), 'sSc')}`;
+    if (vm.length) body += `<h2>Vimeo</h2>${rows(vm.slice(0, 6), 'sVm')}`;
+    if (R.downloadable.length) body += `<h2>Pra baixar</h2><div class="sub">Músicas liberadas pelos próprios artistas (Audius e Internet Archive).</div>${rows(R.downloadable, 'sDl')}`;
+  } else {
+    const l = sFilter === 'local' ? local : sFilter === 'dl' ? R.downloadable : by(sFilter);
+    body = rows(l, 's_' + sFilter, { empty: R.loading ? 'Procurando…' : 'Nada aqui.' });
+  }
+  $('#view').innerHTML = chips + body;
+  $('#view').querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { sFilter = b.dataset.sf; render(); });
+  if ($('#bestCard')) $('#bestCard').onclick = () => { addRecent(searchQ); play(rowsCtx.best, 0); };
 };
+/* busca vazia: buscas recentes + navegar por estilo (igual Spotify) */
+const BROWSE = [['Funk', '#e8115b'], ['Trap', '#8d67ab'], ['Phonk', '#1e3264'], ['Rap', '#ba5d07'], ['Sertanejo', '#e1118c'], ['Pagode', '#148a08'], ['Pop', '#477d95'], ['Rock', '#e91429'], ['Eletrônica', '#0d73ec'], ['Lo-fi', '#509bf5'], ['Drill', '#503750'], ['R&B', '#dc148c'], ['Reggaeton', '#27856a'], ['Metal', '#777777'], ['Gospel', '#8c1932'], ['MPB', '#af2896'], ['Slowed + Reverb', '#283ea8'], ['Nightcore', '#e8115b'], ['Anos 2000', '#a56752'], ['Para treinar', '#777700']];
+function addRecent(q) { if (!q || q.length < 2 || /^https?:/i.test(q)) return; D.recentSearches = [q, ...(D.recentSearches || []).filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 12); save(); }
+function searchFor(q) { const i = $('#q'); i.value = q; i.dispatchEvent(new Event('input')); }
+views.browse = () => {
+  const rec = D.recentSearches || [];
+  $('#view').innerHTML = `<h1>Buscar</h1>
+    ${rec.length ? `<h2>Buscas recentes <button class="lnk" id="recClr">Limpar</button></h2><div class="chips">${rec.map((r, i) => `<span class="chip rec" data-rq="${i}">${esc(r)}<i data-rx="${i}">${ico('close')}</i></span>`).join('')}</div>` : ''}
+    <h2>Navegar por tudo</h2><div class="browse">${BROWSE.map(([n, c]) => `<div class="bcard" data-bq="${esc(n)}" style="background:${c}"><b>${esc(n)}</b></div>`).join('')}</div>`;
+  $('#view').querySelectorAll('[data-bq]').forEach(d => d.onclick = () => searchFor(d.dataset.bq));
+  $('#view').querySelectorAll('[data-rq]').forEach(d => d.onclick = e => { const i = +d.dataset.rq; if (e.target.closest('[data-rx]')) { D.recentSearches.splice(i, 1); save(); render(); } else searchFor(rec[i]); });
+  if ($('#recClr')) $('#recClr').onclick = () => { D.recentSearches = []; save(); render(); };
+};
+
 
 /* descobrir: gosto musical + descobertas da semana + em alta */
 const GENRES = ['Electronic', 'Hip-Hop/Rap', 'Pop', 'R&B/Soul', 'Rock', 'Alternative', 'Latin', 'Lo-Fi', 'House', 'Trap', 'Deep House', 'Techno', 'Dubstep', 'Jazz', 'Acoustic', 'Funk', 'Reggae', 'Metal', 'Ambient', 'Soundtrack'];
@@ -781,6 +832,7 @@ async function weekly(force) {
   D.weekly = { w, v: 2, t, artists: r.artists || [] }; save();
   return t;
 }
+let chartsGl = 'BR', chartsData = {}, chartsAll = false;
 views.discover = async () => {
   if (!topOf(D.taste.g, 1).length && !D.pickedGenres) {
     const picked = new Set();
@@ -792,32 +844,56 @@ views.discover = async () => {
   }
   const g = topOf(D.taste.g, 6), a = topOf(D.taste.a, 5), max = g.length ? g[0][1] : 1;
   $('#view').innerHTML = `<h1>Descobrir</h1>
+    <h2>Mais ouvidas da semana <span class="chips inline">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="chip ${chartsGl === k ? 'on' : ''}" data-gl="${k}">${n}</button>`).join('')}</span></h2>
+    <div class="sub" id="chSub">YouTube Music</div>
+    <div id="charts"><span class="spinner"></span></div>
     <div class="hero" id="wkPlay"><b>Descobertas da Semana</b><span id="wkSub">Montando sua lista…</span></div>
     <div class="btns"><button class="btn" id="wkNew">Gerar de novo</button><button class="btn" id="wkShuf">${ico('shuffle')} Aleatório</button><button class="btn" id="tasteReset">Ajustar gosto</button></div>
     <div class="hscroll" id="wkRow"></div>
     <div id="wkArt"></div>
+    <div id="chVideos"></div>
+    <div id="chLists"></div>
     <h2>Seu gosto musical</h2><div class="bars">${g.map(([n, v]) => `<div class="b"><span>${esc(n)}</span><i style="width:${Math.max(4, v / max * 100)}%"></i></div>`).join('') || 'Ouça umas músicas que aparece aqui.'}
-      ${a.length ? `<div style="color:var(--dim);font-size:13px;margin-top:10px">Mais ouvidos: ${a.map(x => esc(x[0])).join(', ')}</div>` : ''}</div>
-    <h2>Em alta na semana</h2>
-    <div class="chips">${[null, ...new Set([...g.map(x => x[0]), ...GENRES])].slice(0, 13).map(x => `<button class="chip ${trendGenre === x ? 'on' : ''}" data-tg="${x ?? ''}">${x ?? 'Tudo'}</button>`).join('')}</div>
-    <div id="trend"><span class="spinner"></span></div>`;
-  $('#view').querySelectorAll('[data-tg]').forEach(b => b.onclick = () => { trendGenre = b.dataset.tg || null; trendList = null; render(); });
+      ${a.length ? `<div style="color:var(--dim);font-size:13px;margin-top:10px">Mais ouvidos: ${a.map(x => esc(x[0])).join(', ')}</div>` : ''}</div>`;
+  $('#view').querySelectorAll('[data-gl]').forEach(b => b.onclick = () => { chartsGl = b.dataset.gl; chartsAll = false; render(); });
   $('#tasteReset').onclick = () => { D.taste = { g: {}, a: {} }; D.pickedGenres = false; D.weekly = null; save(); render(); };
   const fill = l => {
+    if (!$('#wkRow')) return;
     rowsCtx.weekly = l;
     $('#wkSub').textContent = `${l.length} músicas novas pra você · renova toda semana`;
     $('#wkRow').innerHTML = l.map((t, i) => `<div class="tile" data-wi="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('');
     $('#wkRow').querySelectorAll('[data-wi]').forEach(d => d.onclick = () => play(l, +d.dataset.wi));
     const ar = (D.weekly && D.weekly.artists) || [];
     $('#wkArt').innerHTML = ar.length ? `<h2>Artistas pra você conhecer</h2><div class="hscroll">${ar.map((a, i) => `<div class="tile round" data-ar="${i}"><img loading="lazy" src="${esc(a.pic || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.name)}</div><div class="ta">${a.because && a.because.length ? 'Porque você ouve ' + esc(a.because[0]) : ''}</div></div>`).join('')}</div>` : '';
-    $('#wkArt').querySelectorAll('[data-ar]').forEach(d => d.onclick = () => { const q = $('#q'); q.value = ar[+d.dataset.ar].name; q.dispatchEvent(new Event('input')); });
+    $('#wkArt').querySelectorAll('[data-ar]').forEach(d => d.onclick = () => searchFor(ar[+d.dataset.ar].name));
   };
   $('#wkPlay').onclick = () => rowsCtx.weekly && rowsCtx.weekly.length && play(rowsCtx.weekly, 0);
   $('#wkShuf').onclick = () => rowsCtx.weekly && (st.queue = shuffleArr(rowsCtx.weekly.slice()), playAt(0));
   $('#wkNew').onclick = async () => { $('#wkSub').textContent = 'Montando…'; fill(await weekly(true)); };
   weekly(false).then(l => { if (view.name === 'discover') fill(l); });
-  if (!trendList) trendList = await U.trending(trendGenre, 'week');
-  if (view.name === 'discover' && $('#trend')) $('#trend').innerHTML = rows(trendList.slice(0, 30), 'trend');
+  // mais ouvidas: YouTube Music; se falhar, usa o em alta do Audius
+  const gl = chartsGl;
+  let c = chartsData[gl];
+  if (!c) { c = await U.ytmCharts(gl); if (c.top && c.top.length) chartsData[gl] = c; }
+  if (view.name !== 'discover' || !$('#charts') || gl !== chartsGl) return;
+  let top = c.top || [], from = 'YouTube Music';
+  if (!top.length) { top = await U.trending(null, 'week'); from = 'Audius (o YouTube Music não respondeu agora)'; }
+  $('#chSub').textContent = `${c.title && c.top.length ? c.title + ' · ' : ''}${from} · atualiza toda semana`;
+  const shown = chartsAll ? top : top.slice(0, 10);
+  $('#charts').innerHTML = (top.length ? playBtns('charts') : '') + rows(shown, 'chartsView', { empty: 'Não deu pra carregar agora.' }) + (top.length > 10 ? `<button class="lnk more" id="chMore">${chartsAll ? 'Mostrar menos' : `Ver todas as ${top.length}`}</button>` : '');
+  rowsCtx.charts = top;
+  if ($('#chMore')) $('#chMore').onclick = () => { chartsAll = !chartsAll; render(); };
+  const vids = c.videos || [];
+  $('#chVideos').innerHTML = vids.length ? `<h2>Clipes em alta</h2><div class="hscroll wide">${vids.map((t, i) => `<div class="tile" data-cv="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('')}</div>` : '';
+  $('#chVideos').querySelectorAll('[data-cv]').forEach(d => d.onclick = () => play(vids, +d.dataset.cv));
+  const ls = c.lists || [];
+  $('#chLists').innerHTML = ls.length ? `<h2>Playlists em alta</h2><div class="hscroll">${ls.map((l, i) => `<div class="tile" data-cl="${i}"><img loading="lazy" src="${esc(l.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(l.title)}</div><div class="ta">${esc(l.sub)}</div></div>`).join('')}</div>` : '';
+  $('#chLists').querySelectorAll('[data-cl]').forEach(d => d.onclick = async () => {
+    const l = ls[+d.dataset.cl]; toast('Abrindo ' + l.title + '…');
+    const t = await U.ytmPlaylist(l.id);
+    if (!t.length) return toast('Não deu pra abrir essa playlist agora');
+    go({ name: 'group', title: l.title, list: t, sub: `${t.length} músicas · YouTube Music` });
+  });
 };
 
 /* ---------------- ajustes ---------------- */
@@ -838,7 +914,7 @@ views.settings = () => {
     ${opt('Tamanho do texto', rng('fontScale', 0.85, 1.3, 0.05, v => (+v).toFixed(2) + 'x'))}
     ${opt('Tamanho das capas na grade', rng('tile', 130, 260, 10))}
     ${opt('Lista de músicas', seg('density', [['normal', 'Confortável'], ['compact', 'Compacta']]))}
-    ${opt('Tela inicial', seg('startView', [['songs', 'Músicas'], ['albums', 'Álbuns'], ['artists', 'Artistas'], ['discover', 'Descobrir']]))}
+    ${opt('Tela inicial', seg('startView', [['discover', 'Descobrir'], ['search', 'Buscar'], ['songs', 'Offline']]))}
   </div>
   <div class="gtitle">Tocando agora</div><div class="group">
     ${opt('Capa', seg('artShape', [['square', 'Quadrada'], ['rounded', 'Arredondada'], ['circle', 'Círculo'], ['disc', 'Disco girando']]))}
@@ -914,6 +990,82 @@ function changed(k, keepView) {
   if (k === 'lyricsSource') { lyKey = ''; }
   if (!keepView) render();
 }
+
+/* ---------------- exportar slowed / nightcore ---------------- */
+const EX_PRE = { slowed: ['Slowed', 0.85, false], slowrev: ['Slowed + Reverb', 0.8, true], nightcore: ['Nightcore', 1.25, false], custom: ['Personalizado', null, null] };
+let exPreset = 'slowrev', exRate = 0.8, exReverb = true, exBass = false, exFilter = '', exSel = new Set(), exRun = null, exPrev = null;
+function exLabel() {
+  if (exPreset !== 'custom') return EX_PRE[exPreset][0];
+  return (exRate < 1 ? 'Slowed' : exRate > 1 ? 'Nightcore' : 'Edit') + (exReverb ? ' + Reverb' : '');
+}
+function stopPrev() { if (exPrev) { exPrev.pause(); exPrev = null; } const b = $('#exPrev'); if (b) b.innerHTML = `${ico('play')} Ouvir prévia`; }
+views.export = () => {
+  const q = exFilter.toLowerCase();
+  const list = LIB.filter(t => !q || (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).sort((a, b) => a.title.localeCompare(b.title));
+  const vis = list.slice(0, 400);
+  $('#view').innerHTML = `<h1>Slowed / Nightcore</h1>
+    <div class="sub">Cria versões das músicas do seu PC com outra velocidade e tom, e salva direto na sua pasta Música. Elas aparecem em Músicas depois.</div>
+    <div class="exBox">
+      <div class="seg exSeg">${Object.entries(EX_PRE).map(([k, [n]]) => `<button class="${exPreset === k ? 'on' : ''}" data-ep="${k}">${n}</button>`).join('')}</div>
+      <div class="exRow"><span>Velocidade e tom</span><input type="range" id="exRate" min="0.5" max="1.5" step="0.01" value="${exRate}"><b id="exRateV"></b></div>
+      <div class="exRow"><label class="ck"><input type="checkbox" id="exRev" ${exReverb ? 'checked' : ''}> Reverb (eco de ambiente)</label><label class="ck"><input type="checkbox" id="exBass" ${exBass ? 'checked' : ''}> Graves extra</label>
+        <button class="btn" id="exPrev">${ico('play')} Ouvir prévia</button></div>
+    </div>
+    <div class="exTools"><div class="search mini">${ico('search')}<input id="exQ" placeholder="Filtrar músicas do PC" value="${esc(exFilter)}"></div>
+      <button class="btn" id="exAll">Marcar ${vis.length === list.length ? 'todas' : 'visíveis'}</button><button class="btn" id="exNone">Desmarcar</button></div>
+    <div class="list exList">${vis.map(t => `<label class="row exr ${exSel.has(t.path) ? 'sel' : ''}"><input type="checkbox" data-ex="${esc(t.path)}" ${exSel.has(t.path) ? 'checked' : ''}>
+      <img loading="lazy" src="${esc(artOf(t))}" onerror="this.outerHTML='<div class=ph></div>'"><span class="t">${esc(t.title)}</span><span class="a">${esc(t.artist)}</span><span class="d">${t.duration ? fmt(t.duration) : ''}</span></label>`).join('') || `<div class="empty">${LIB.length ? 'Nada com esse nome.' : 'Nenhuma música do PC ainda. Escolha as pastas em Ajustes → Biblioteca.'}</div>`}</div>
+    ${list.length > vis.length ? `<div class="sub">Mostrando 400 de ${list.length}. Use o filtro pra achar as outras.</div>` : ''}
+    <div class="exBar"><div class="exInfo" id="exInfo"></div><div class="exProg"><i id="exPg"></i></div>
+      <button class="btn" id="exOpen">Abrir pasta Música</button><button class="btn fill" id="exGo"></button></div>`;
+  const upd = () => {
+    $('#exRateV').textContent = `${exRate.toFixed(2)}x · ${exRate < 1 ? 'mais lento e grave' : exRate > 1 ? 'mais rápido e agudo' : 'normal'}`;
+    if (!exRun) { $('#exGo').textContent = exSel.size ? `Exportar ${exSel.size} como "${exLabel()}"` : 'Marque as músicas'; $('#exGo').disabled = !exSel.size; }
+  };
+  upd();
+  $('#view').querySelectorAll('[data-ep]').forEach(b => b.onclick = () => { exPreset = b.dataset.ep; const p = EX_PRE[exPreset]; if (p[1] != null) { exRate = p[1]; exReverb = p[2]; } render(); });
+  $('#exRate').oninput = e => { exRate = +e.target.value; exPreset = 'custom'; $('#view').querySelectorAll('[data-ep]').forEach(b => b.classList.toggle('on', b.dataset.ep === 'custom')); if (exPrev) { exPrev.playbackRate = exRate; } upd(); };
+  $('#exRev').onchange = e => { exReverb = e.target.checked; if (exPreset !== 'custom' && exReverb !== EX_PRE[exPreset][2]) { exPreset = 'custom'; render(); } else upd(); };
+  $('#exBass').onchange = e => { exBass = e.target.checked; };
+  $('#exQ').oninput = e => { exFilter = e.target.value; clearTimeout(exQT); exQT = setTimeout(() => { render(); const i = $('#exQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 200); };
+  $('#view').querySelectorAll('[data-ex]').forEach(c => c.onchange = () => { c.checked ? exSel.add(c.dataset.ex) : exSel.delete(c.dataset.ex); c.closest('.exr').classList.toggle('sel', c.checked); upd(); });
+  $('#exAll').onclick = () => { vis.forEach(t => exSel.add(t.path)); render(); };
+  $('#exNone').onclick = () => { exSel.clear(); render(); };
+  $('#exOpen').onclick = async () => U.openPath(await U.musicDir());
+  $('#exPrev').onclick = () => {
+    if (exPrev) return stopPrev();
+    const t = LIB.find(x => exSel.has(x.path)) || cur() && cur().src === 'local' && cur() || vis[0];
+    if (!t) return toast('Marque uma música pra ouvir');
+    pause();
+    exPrev = new Audio(`/media?p=${encodeURIComponent(t.path)}`);
+    exPrev.preservesPitch = false; exPrev.webkitPreservesPitch = false; exPrev.playbackRate = exRate; exPrev.volume = S().volume;
+    exPrev.currentTime = 30; exPrev.play().catch(() => {});
+    $('#exPrev').innerHTML = `${ico('pause')} Parar prévia`;
+    toast('Prévia de ' + t.title + (exReverb ? ' (o reverb só entra no arquivo final)' : ''));
+  };
+  $('#exGo').onclick = async () => {
+    if (exRun) { U.exportStop(); return; }
+    stopPrev();
+    const items = LIB.filter(t => exSel.has(t.path)).map(t => ({ path: t.path, title: t.title, artist: t.artist }));
+    if (!items.length) return;
+    exRun = { n: items.length, ok: 0, err: 0 };
+    $('#exGo').textContent = 'Cancelar'; $('#exGo').disabled = false;
+    const r = await U.exportFx(items, { rate: exRate, reverb: exReverb, bass: exBass, label: exLabel() });
+    const run = exRun; exRun = null;
+    if (r.err) toast('Não deu pra exportar: ' + r.err);
+    else toast(`${r.files.length} ${r.files.length === 1 ? 'música exportada' : 'músicas exportadas'} pra pasta Música${r.stopped ? ' (cancelado)' : ''}`);
+    if (r.files.length) { exSel.clear(); rescan(); }
+    if (view.name === 'export') { render(); const i = $('#exInfo'); if (i) i.textContent = `Pronto: ${r.files.length} de ${run.n}${run.err ? ` · ${run.err} com erro` : ''}`; }
+  };
+};
+let exQT = null;
+U.onExportProgress(p => {
+  if (!exRun) return;
+  if (p.err) exRun.err++; if (p.file) exRun.ok++;
+  const total = ((p.i + (p.pct || 0) / 100) / p.n) * 100;
+  const pg = $('#exPg'); if (pg) pg.style.width = total.toFixed(1) + '%';
+  const inf = $('#exInfo'); if (inf) inf.textContent = p.err ? `Erro numa música: ${p.err.slice(0, 80)}` : `Exportando ${Math.min(p.i + 1, p.n)} de ${p.n}… ${Math.round(p.pct || 0)}%`;
+});
 
 /* ---------------- painéis: fila, velocidade, timer, info ---------------- */
 function panel(kind, html) {
@@ -1034,6 +1186,7 @@ async function rescan() {
   if (saved && saved.settings) D = { ...D, ...saved, settings: { ...DEF, ...saved.settings } };
   if (!D.folders.length && !D.foldersInit) { D.folders = await U.defaultFolders(); D.foldersInit = true; save(); }
   applyLook(); updateModeBtns(); setPlaying(false); setVolume(S().volume);
+  if (!D.startMig) { S().startView = 'discover'; D.startMig = 1; save(); }
   view = { name: S().startView };
   renderNav(); render();
   if (D.lastQueue && D.lastQueue.q && D.lastQueue.q.length) { st.queue = D.lastQueue.q; st.idx = Math.min(D.lastQueue.i, st.queue.length - 1); updateNowPlaying(); }

@@ -287,3 +287,56 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .aboutTxt{font-size:13.5px;line-height:1.5;opacity:.7;margin:16px 4px 18px}
 .aboutLi{display:inline-flex;align-items:center;gap:8px;background:#0a66c2!important;color:#fff!important}
 .aboutLi svg{width:16px;height:16px;fill:#fff}
+
+/* navegação: grupo offline */
+#sidebar .navsep{height:1px;background:rgba(255,255,255,.05);margin:10px 6px}
+.badge.local{color:#34c759}
+.chips.inline{display:inline-flex;margin:0 0 0 12px;vertical-align:3px}
+.chips.inline .chip{font-size:12px;padding:4px 11px}
+.chips.sticky{position:sticky;top:0;z-index:5;padding:14px 0 12px;margin:-14px 0 6px;background:var(--bg);align-items:center}
+.lnk{color:var(--accent);font-size:13px;font-weight:600;margin-left:12px;background:none}
+.lnk.more{display:block;margin:10px 0 0 4px}
+.hscroll.wide .tile{width:250px} .hscroll.wide .tile img{aspect-ratio:16/9}
+
+/* busca igual Spotify */
+.sTop{display:grid;grid-template-columns:minmax(260px,400px) 1fr;gap:26px;align-items:start}
+.sTop h2{margin-top:6px}
+.best{position:relative;background:var(--card);border-radius:14px;padding:20px;cursor:pointer;transition:background .2s;min-height:200px}
+.best:hover{background:var(--card2)}
+.best img{width:96px;height:96px;border-radius:10px;object-fit:cover;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.best .bt{font-size:28px;font-weight:800;margin-top:18px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.best .ba{color:var(--dim);font-size:14px;margin-top:6px}
+.best .bplay{position:absolute;right:18px;bottom:18px;width:52px;height:52px;border-radius:50%;background:var(--accent);display:grid;place-items:center;opacity:0;transform:translateY(8px);transition:.2s;box-shadow:0 8px 20px rgba(0,0,0,.45)}
+.best .bplay svg{width:26px;height:26px;fill:#fff}
+.best:hover .bplay{opacity:1;transform:none}
+.sTopList .list .row .al{display:none}
+@media (max-width:1100px){.sTop{grid-template-columns:1fr}}
+.browse{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+.bcard{position:relative;aspect-ratio:1.6;border-radius:12px;padding:16px;cursor:pointer;overflow:hidden;transition:transform .2s}
+.bcard:hover{transform:scale(1.03)}
+.bcard b{font-size:20px;font-weight:800;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.25)}
+.bcard::after{content:"";position:absolute;right:-18px;bottom:-14px;width:80px;height:80px;border-radius:10px;background:rgba(0,0,0,.18);transform:rotate(25deg)}
+.chip.rec{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.chip.rec i{display:grid;place-items:center;opacity:.55} .chip.rec i:hover{opacity:1}
+.chip.rec i svg{width:13px;height:13px;fill:currentColor}
+
+/* exportar slowed / nightcore */
+.exBox{background:var(--card);border-radius:14px;padding:18px;margin:6px 0 18px;display:flex;flex-direction:column;gap:14px}
+.exSeg{align-self:flex-start}
+.exRow{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.exRow input[type=range]{flex:1;min-width:200px;accent-color:var(--accent)}
+.exRow b{font-weight:600;font-size:13px;color:var(--dim);min-width:190px}
+.ck{display:inline-flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.ck input,.exr input{accent-color:var(--accent);width:16px;height:16px}
+.exTools{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.search.mini{margin:0;flex:1;max-width:360px}
+.search.mini svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);width:16px;height:16px;fill:var(--dim)}
+.exList .exr{display:grid;grid-template-columns:28px 40px 1fr 1fr 60px;align-items:center;gap:12px;cursor:pointer}
+.exList .exr.sel{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.exBar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;padding:14px 0;margin-top:10px;background:var(--bg);border-top:1px solid rgba(255,255,255,.06)}
+.exInfo{flex:1;font-size:13px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exProg{width:180px;height:5px;border-radius:9px;background:var(--card2);overflow:hidden}
+.exProg i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.btn:disabled{opacity:.45;cursor:default}
+.list .row{cursor:pointer}
+.sTopList .list .row{grid-template-columns:28px 44px minmax(0,3fr) minmax(0,2fr) 50px 72px}

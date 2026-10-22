@@ -616,6 +616,130 @@ async function radio(t) {
 ipcMain.handle('recommend', (_, o) => recommend(o || {}).catch(e => ({ tracks: [], artists: [], err: String(e) })));
 ipcMain.handle('radio', (_, t) => radio(t).catch(() => []));
 
+/* ---------------- YouTube Music: mais ouvidas da semana (só pras recomendações) ---------------- */
+const YTM_VER = '1.20250101.01.00';
+async function ytm(body) {
+  const txt = await getText('https://music.youtube.com/youtubei/v1/browse?prettyPrint=false',
+    { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/', 'X-Youtube-Client-Name': '67', 'X-Youtube-Client-Version': YTM_VER },
+    { method: 'POST', body: JSON.stringify({ context: { client: { clientName: 'WEB_REMIX', clientVersion: YTM_VER, hl: 'pt', gl: 'BR' } }, ...body }) });
+  return JSON.parse(txt);
+}
+const runsTxt = o => !o ? '' : o.runs ? o.runs.map(r => r.text).join('') : (o.simpleText || '');
+function findKey(o, key, depth = 0) {
+  if (!o || typeof o !== 'object' || depth > 12) return undefined;
+  if (key in o) return o[key];
+  for (const v of Object.values(o)) { const r = findKey(v, key, depth + 1); if (r !== undefined) return r; }
+}
+function ytmParse(j) {
+  const songs = [], lists = [];
+  (function walk(x, shelf) {
+    if (Array.isArray(x)) return x.forEach(y => walk(y, shelf));
+    if (!x || typeof x !== 'object') return;
+    const sh = x.musicCarouselShelfRenderer || x.musicShelfRenderer || x.musicPlaylistShelfRenderer;
+    if (sh) {
+      const t = runsTxt((sh.header && sh.header.musicCarouselShelfBasicHeaderRenderer && sh.header.musicCarouselShelfBasicHeaderRenderer.title) || sh.title) || shelf;
+      return walk(sh.contents, t);
+    }
+    if (x.musicResponsiveListItemRenderer) {
+      const r = x.musicResponsiveListItemRenderer;
+      const cols = (r.flexColumns || []).map(c => runsTxt(c.musicResponsiveListItemFlexColumnRenderer && c.musicResponsiveListItemFlexColumnRenderer.text));
+      const we = findKey(r, 'watchEndpoint');
+      const id = (r.playlistItemData && r.playlistItemData.videoId) || (we && we.videoId);
+      const len = (r.fixedColumns || []).map(c => runsTxt(c.musicResponsiveListItemFixedColumnRenderer && c.musicResponsiveListItemFixedColumnRenderer.text)).find(t => /^\d+:\d+/.test(t));
+      if (id && cols[0]) songs.push({ src: 'yt', id, title: cols[0], artist: (cols[1] || '').split(' • ')[0], art: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: len ? len.split(':').reduce((a, b) => a * 60 + (+b), 0) * 1000 : 0, shelf });
+      else { const be = findKey(r, 'browseEndpoint'); if (be && /^(VL|PL|RD|OL)/.test(be.browseId || '')) lists.push({ id: be.browseId, title: cols[0], sub: cols[1] || '', shelf }); }
+      return;
+    }
+    if (x.musicTwoRowItemRenderer) {
+      const r = x.musicTwoRowItemRenderer, ne = r.navigationEndpoint || {};
+      const title = runsTxt(r.title), sub = runsTxt(r.subtitle);
+      const thumbs = findKey(r.thumbnailRenderer, 'thumbnails') || [];
+      const art = thumbs.length ? thumbs[thumbs.length - 1].url : '';
+      if (ne.watchEndpoint && ne.watchEndpoint.videoId) { const id = ne.watchEndpoint.videoId; songs.push({ src: 'yt', id, title, artist: sub.split(' • ')[0], art: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, duration: 0, shelf, video: true }); }
+      else if (ne.browseEndpoint && ne.browseEndpoint.browseId) lists.push({ id: ne.browseEndpoint.browseId, title, sub, art, shelf });
+      return;
+    }
+    Object.values(x).forEach(y => walk(y, shelf));
+  })(j, '');
+  const uniq = l => l.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i);
+  return { songs: uniq(songs), lists: uniq(lists) };
+}
+async function ytmPlaylist(id) {
+  const k = 'ytmpl|' + id; const c = sCache.get(k); if (c && Date.now() - c.at < 3 * 3600e3) return c.v;
+  const r = ytmParse(await ytm({ browseId: id.startsWith('VL') || !/^(PL|RD|OL)/.test(id) ? id : 'VL' + id })).songs.map(({ shelf, ...t }) => t);
+  if (r.length) sCache.set(k, { at: Date.now(), v: r });
+  return r;
+}
+async function ytmCharts(gl = 'BR') {
+  const k = 'charts|' + gl; const c = sCache.get(k); if (c && Date.now() - c.at < 3 * 3600e3) return c.v;
+  const j = await ytm({ browseId: 'FEmusic_charts', formData: { selectedValues: [gl] } });
+  const { songs, lists } = ytmParse(j);
+  const pl = lists.find(l => /top|100|mais/i.test(l.title) && /m[uú]sica|song|faixa/i.test(l.title + ' ' + l.shelf)) || lists.find(l => /top|100/i.test(l.title)) || lists[0];
+  let top = pl ? await ytmPlaylist(pl.id).catch(() => []) : [];
+  const videos = songs.filter(s => s.video || /v[ií]deo/i.test(s.shelf)).map(({ shelf, ...t }) => t);
+  if (!top.length) top = songs.map(({ shelf, ...t }) => t);
+  const v = { top: top.slice(0, 50), videos: videos.slice(0, 20), lists: lists.filter(l => l !== pl).slice(0, 12), title: (pl && pl.title) || 'Mais ouvidas da semana' };
+  if (v.top.length) sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+ipcMain.handle('ytm-charts', (_, gl) => ytmCharts(gl).catch(e => ({ top: [], videos: [], lists: [], err: String(e) })));
+ipcMain.handle('ytm-playlist', (_, id) => ytmPlaylist(id).catch(() => []));
+
+/* ---------------- exportar slowed / nightcore (ffmpeg) ---------------- */
+let ffmpegBin = null;
+function ffmpegPath() {
+  if (ffmpegBin) return ffmpegBin;
+  try { ffmpegBin = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked'); } catch { ffmpegBin = null; }
+  return ffmpegBin;
+}
+let exportJob = null;
+async function exportFx(sender, items, fx) {
+  const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) throw new Error('ffmpeg não encontrado');
+  const { spawn } = require('child_process');
+  mm = mm || require('music-metadata');
+  const dir = app.getPath('music');
+  const rate = Math.min(2, Math.max(0.5, Number(fx.rate) || 1));
+  const label = fx.label || (rate < 1 ? 'Slowed' : 'Nightcore');
+  const job = exportJob = { stop: false, proc: null };
+  const send = d => { try { if (!sender.isDestroyed()) sender.send('export-progress', d); } catch {} };
+  const done = [];
+  for (let i = 0; i < items.length && !job.stop; i++) {
+    const it = items[i];
+    try {
+      let sr = 44100, dur = 0;
+      try { const m = await mm.parseFile(it.path, { duration: true, skipCovers: true }); sr = m.format.sampleRate || sr; dur = m.format.duration || 0; } catch {}
+      const af = [`asetrate=${Math.round(sr * rate)}`, `aresample=${sr}`];
+      if (fx.bass) af.push('bass=g=5:f=90');
+      if (fx.reverb) af.push('aecho=0.8:0.88:60|110|170:0.32|0.22|0.12');
+      af.push('alimiter=limit=0.95');
+      const base = `${it.artist ? it.artist + ' - ' : ''}${it.title} (${label})`.replace(/[\\/:*?"<>|]/g, '').slice(0, 150);
+      let out = path.join(dir, base + '.mp3'); let n = 2; while (fs.existsSync(out)) out = path.join(dir, `${base} ${n++}.mp3`);
+      const run = withCover => new Promise((ok, bad) => {
+        const args = ['-hide_banner', '-y', '-i', it.path, '-map', '0:a:0'];
+        if (withCover) args.push('-map', '0:v?', '-c:v', 'copy', '-disposition:v', 'attached_pic');
+        args.push('-af', af.join(','), '-c:a', 'libmp3lame', '-q:a', '2', '-map_metadata', '0', '-id3v2_version', '3',
+          '-metadata', `title=${it.title} (${label})`, '-metadata', `artist=${it.artist || ''}`, out);
+        const p = job.proc = spawn(bin, args, { windowsHide: true });
+        let err = '';
+        p.stderr.on('data', d => {
+          const s = d.toString(); err = (err + s).slice(-2000);
+          const m = /time=(\d+):(\d+):(\d+\.?\d*)/.exec(s);
+          if (m && dur) send({ i, n: items.length, pct: Math.min(99, ((+m[1] * 3600 + +m[2] * 60 + +m[3]) * rate) / dur * 100) });
+        });
+        p.on('close', code => code === 0 ? ok() : bad(new Error(err.split('\n').filter(Boolean).pop() || 'erro ' + code)));
+        p.on('error', bad);
+      });
+      try { await run(true); } catch (e) { if (job.stop) throw e; try { fs.unlinkSync(out); } catch {} await run(false); }
+      done.push(out); send({ i, n: items.length, pct: 100, file: out });
+    } catch (e) { if (job.stop) break; send({ i, n: items.length, err: String(e.message || e) }); }
+  }
+  exportJob = null;
+  return { files: done, dir, stopped: job.stop };
+}
+ipcMain.handle('export-fx', (e, items, fx) => exportFx(e.sender, items || [], fx || {}).catch(err => ({ files: [], err: String(err.message || err) })));
+ipcMain.handle('export-stop', () => { if (exportJob) { exportJob.stop = true; try { exportJob.proc && exportJob.proc.kill(); } catch {} } return true; });
+ipcMain.handle('music-dir', () => app.getPath('music'));
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });
