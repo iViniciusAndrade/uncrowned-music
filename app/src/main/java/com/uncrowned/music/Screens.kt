@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -575,7 +576,13 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     ToolBtn(Icons.Rounded.FormatQuote, "Letra", showLyrics) { showLyrics = !showLyrics }
                     ToolBtn(Icons.Rounded.Timer, if (Sleep.endsAt.longValue > 0) "Timer ✓" else "Timer", Sleep.endsAt.longValue > 0) { showSleep = true }
-                    ToolBtn(Icons.Rounded.Speed, "${"%.2f".format(Prefs.speed)}x", Prefs.speed != 1f || Prefs.pitch != 1f) { showSpeed = true }
+                    val onRadio = ui.mediaId?.startsWith("au:radio-") == true
+                    val ctxR = LocalContext.current
+                    Box(Modifier.alpha(if (onRadio) 0.35f else 1f)) {
+                        ToolBtn(Icons.Rounded.Speed, if (onRadio) "Ao vivo" else "${"%.2f".format(Prefs.speed)}x", !onRadio && (Prefs.speed != 1f || Prefs.pitch != 1f)) {
+                            if (onRadio) android.widget.Toast.makeText(ctxR, "A velocidade fica desligada na rádio ao vivo", android.widget.Toast.LENGTH_SHORT).show() else showSpeed = true
+                        }
+                    }
                     ToolBtn(Icons.Rounded.QueueMusic, "Fila", false) { showQueue = true }
                 }
             }
@@ -617,10 +624,10 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
     if (showSpeed) ModalBottomSheet(onDismissRequest = { showSpeed = false }) {
         Column(Modifier.padding(vertical = 12.dp)) {
             Text("Velocidade e tom", Modifier.padding(horizontal = 20.dp), fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            SliderRow("Velocidade", Prefs.speed, 0.5f..2f, "%.2fx", steps = 29) { Prefs.speed = it }
+            SliderRow("Velocidade (o tom muda junto)", Prefs.speed, 0.5f..2f, "%.2fx", steps = 29) { Prefs.speed = it; Prefs.pitch = it }
             SliderRow("Tom (pitch)", Prefs.pitch, 0.5f..2f, "%.2f", steps = 29) { Prefs.pitch = it }
             Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Slowed" to (0.85f to 0.85f), "Normal" to (1f to 1f), "Nightcore" to (1.25f to 1.25f), "Sped up" to (1.2f to 1f)).forEach { (n, v) ->
+                listOf("Slowed" to (0.85f to 0.85f), "Normal" to (1f to 1f), "Nightcore" to (1.25f to 1.25f), "Sped up" to (1.15f to 1.15f)).forEach { (n, v) ->
                     AssistChip({ Prefs.speed = v.first; Prefs.pitch = v.second }, { Text(n) })
                 }
             }
@@ -826,7 +833,7 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
         }
 
         Group("Reprodução") {
-            SliderRow("Velocidade", Prefs.speed, 0.5f..2f, "%.2fx", steps = 29) { Prefs.speed = it }
+            SliderRow("Velocidade (o tom muda junto)", Prefs.speed, 0.5f..2f, "%.2fx", steps = 29) { Prefs.speed = it; Prefs.pitch = it }
             Div()
             SliderRow("Tom (pitch)", Prefs.pitch, 0.5f..2f, "%.2f", steps = 29) { Prefs.pitch = it }
             Div()

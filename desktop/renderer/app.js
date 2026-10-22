@@ -48,7 +48,7 @@ const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="$
 const DEF = {
   theme: 'dark', accent: '#fa2d48', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
-  hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: false, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
+  hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
   adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
@@ -662,6 +662,7 @@ function menu(t, list, i, ctxName) {
       <div class="opt" data-m="next" style="cursor:pointer">Tocar a seguir</div>
       <div class="opt" data-m="queue" style="cursor:pointer">Adicionar à fila</div>
       <div class="opt" data-m="radio" style="cursor:pointer">${t.src === 'local' ? 'Mix offline (parecidas do seu PC)' : 'Tocar parecidas (rádio)'}</div>
+      ${!['local', 'radio'].includes(t.src) ? '<div class="opt" data-m="sync" style="cursor:pointer">Sincronizar (salvar no PC)</div>' : ''}
       <div class="opt" data-m="info" style="cursor:pointer">Informações</div>
       ${t.src === 'local' ? '<div class="opt" data-m="show" style="cursor:pointer">Mostrar no Explorador</div><div class="opt" data-m="fx" style="cursor:pointer">Fazer versão slowed / nightcore</div>' : ''}
       ${t.url || ['yt', 'vm'].includes(t.src) ? '<div class="opt" data-m="web" style="cursor:pointer">Abrir no navegador</div>' : ''}
@@ -677,6 +678,7 @@ function menu(t, list, i, ctxName) {
     if (m === 'next') { st.queue.splice(st.idx + 1, 0, t); toast('Vai tocar a seguir'); }
     if (m === 'queue') { st.queue.push(t); toast('Adicionada à fila'); }
     if (m === 'radio') startRadio(t, false);
+    if (m === 'sync') syncTrack(t);
     if (m === 'info') return showInfo(t);
     if (m === 'show') U.openPath(t.path);
     if (m === 'fx') { exSel = new Set([t.path]); exFilter = ''; closeModal(); go({ name: 'export' }); return; }
@@ -703,6 +705,8 @@ const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'
 const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
   const radioOn = st.kind === 'radio' && st.playing;
+  // na rádio: velocidade e sincronizar ficam desligados
+  for (const id of ['#bSpeed', '#bSync']) { const b = $(id); if (b) { b.disabled = st.kind === 'radio'; b.title = st.kind === 'radio' ? 'Desligado na rádio ao vivo' : id === '#bSpeed' ? 'Velocidade' : 'Sincronizar (salvar no PC)'; } }
   const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''} ${k === 'export' && radioOn ? 'off' : ''}" ${k === 'export' && radioOn ? 'title="Desativado enquanto a rádio toca"' : ''}>${ico(i)}<span>${l}</span></a>`;
   $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline · no seu PC</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
   renderPlNav();
@@ -1064,7 +1068,7 @@ views.settings = () => {
   ytAcc();
   $('#vmTok').onchange = e => { S().vimeoToken = e.target.value.trim(); save(); };
 };
-function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'videoSize'].includes(k)) applyLook(); if (k === 'speed') applyRate(true); if (['bass', 'gainBoost'].includes(k)) applyEq(); if (k === 'videoSize') layoutEmbed(); }
+function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'videoSize'].includes(k)) applyLook(); if (k === 'speed') { S().pitchWithSpeed = true; const t = document.querySelector('[data-sw="pitchWithSpeed"]'); if (t) t.classList.add('on'); applyRate(true); } if (['bass', 'gainBoost'].includes(k)) applyEq(); if (k === 'videoSize') layoutEmbed(); }
 function changed(k, keepView) {
   save(); applyLook(); applyRate(); applyEq(); updateNowPlaying(); layoutEmbed();
   if (['hideVoice', 'minDur'].includes(k)) rescan();
@@ -1073,6 +1077,17 @@ function changed(k, keepView) {
   if (!keepView) render();
 }
 
+/* ---------------- sincronizar: salvar a música no PC (pasta Música/Uncrowned) ---------------- */
+async function syncTrack(t) {
+  if (!t) return;
+  if (t.src === 'radio') return toast('Na rádio use o botão Gravar');
+  if (t.src === 'local') return toast('Essa já está no seu PC');
+  if (t.src === 'yt' || t.src === 'vm') return toast(`${t.src === 'yt' ? 'YouTube' : 'Vimeo'} não permite salvar as músicas. Dá pra sincronizar do Audius, Internet Archive e do SoundCloud quando o artista libera.`);
+  toast(`Sincronizando "${t.title}"…`);
+  const res = t.src === 'sc' ? await U.scDownload(t.id) : t.download ? await U.download(t.download, `${t.artist} - ${t.title}`) : { ok: false, error: 'o artista não liberou o download dessa música' };
+  toast(res.ok ? `"${t.title}" salva na pasta Música/Uncrowned` : 'Não deu pra sincronizar: ' + res.error);
+  if (res.ok) rescan();
+}
 /* ---------------- rádio ---------------- */
 let recState = null, recTimer = null;
 function recLabel() { if (!recState) return ''; const s = Math.floor((Date.now() - recState.start) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
@@ -1234,14 +1249,17 @@ function openQueue() {
   const c = p.querySelector('.cur'); if (c) c.scrollIntoView({ block: 'center' });
 }
 $('#bQueue').onclick = () => { const p = $('#panel'); if (!p.classList.contains('hidden') && p.dataset.kind === 'queue') p.classList.add('hidden'); else openQueue(); };
+$('#bSync').innerHTML = ico('dl');
+$('#bSync').onclick = () => syncTrack(cur());
 $('#bSpeed').onclick = () => {
+  if (st.kind === 'radio') return toast('A velocidade fica desligada na rádio ao vivo');
   if (!panel('speed', `<h3>Velocidade</h3>
     <div class="rng" style="margin:6px 4px"><input type="range" id="spR" min="0.5" max="2" step="0.05" value="${S().speed}" style="flex:1"><span id="spV">${S().speed.toFixed(2)}x</span></div>
     <div class="opt" style="padding:10px 4px"><div class="l">Mudar o tom junto<small>slowed / nightcore</small></div>${sw('pitchWithSpeed')}</div>
-    <div class="chips">${[['Slowed', 0.85, true], ['Normal', 1, false], ['Nightcore', 1.25, true], ['Sped up', 1.2, false], ['Lento', 0.75, false]].map(([n, v, p]) => `<button class="chip ${Math.abs(S().speed - v) < 0.001 && (v === 1 || S().pitchWithSpeed === p) ? 'on' : ''}" data-sp="${v}" data-pp="${p}">${n}</button>`).join('')}</div>`)) return;
+    <div class="chips">${[['Slowed', 0.85, true], ['Normal', 1, true], ['Nightcore', 1.25, true], ['Sped up', 1.15, true], ['Lento', 0.75, true]].map(([n, v, p]) => `<button class="chip ${Math.abs(S().speed - v) < 0.001 && (v === 1 || S().pitchWithSpeed === p) ? 'on' : ''}" data-sp="${v}" data-pp="${p}">${n}</button>`).join('')}</div>`)) return;
   const p = $('#panel');
   const syncChips = () => p.querySelectorAll('[data-sp]').forEach(x => x.classList.toggle('on', Math.abs(S().speed - +x.dataset.sp) < 0.001 && (+x.dataset.sp === 1 || S().pitchWithSpeed === (x.dataset.pp === 'true'))));
-  $('#spR').oninput = e => { p.querySelectorAll('[data-sp]').forEach(x => x.classList.remove('on')); S().speed = +e.target.value; $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(true); save(); updateModeBtns(); syncChips(); };
+  $('#spR').oninput = e => { p.querySelectorAll('[data-sp]').forEach(x => x.classList.remove('on')); S().speed = +e.target.value; S().pitchWithSpeed = true; p.querySelector('[data-sw]').classList.add('on'); $('#spV').textContent = S().speed.toFixed(2) + 'x'; applyRate(true); save(); updateModeBtns(); syncChips(); };
   p.querySelector('[data-sw]').onclick = e => { S().pitchWithSpeed = !S().pitchWithSpeed; e.target.classList.toggle('on', S().pitchWithSpeed); applyRate(true); save(); syncChips(); };
   p.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => {
     S().speed = +b.dataset.sp; S().pitchWithSpeed = b.dataset.pp === 'true'; rateWarned = ''; applyRate(true); save(); updateModeBtns();
@@ -1341,6 +1359,7 @@ async function rescan() {
   if (!D.folders.length && !D.foldersInit) { D.folders = await U.defaultFolders(); D.foldersInit = true; save(); }
   applyLook(); updateModeBtns(); setPlaying(false); setVolume(S().volume);
   if (!D.startMig) { S().startView = 'discover'; D.startMig = 1; save(); }
+  if (!D.pitchMig) { S().pitchWithSpeed = true; D.pitchMig = 1; save(); }
   view = { name: S().startView };
   renderNav(); render();
   if (D.lastQueue && D.lastQueue.q && D.lastQueue.q.length) { st.queue = D.lastQueue.q; st.idx = Math.min(D.lastQueue.i, st.queue.length - 1); updateNowPlaying(); }

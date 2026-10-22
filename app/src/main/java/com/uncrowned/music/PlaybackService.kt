@@ -61,7 +61,7 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refresh()
             override fun onRepeatModeChanged(repeatMode: Int) = refresh()
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refresh()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { refresh(); applyParams() }
         })
 
         notif = DefaultMediaNotificationProvider.Builder(this).setChannelName(R.string.app_name).build()
@@ -94,8 +94,10 @@ class PlaybackService : MediaSessionService() {
         player.seekTo(idx, pos)
         player.playWhenReady = pwr
     }
+    // rádio ao vivo toca sempre na velocidade normal
+    private fun isRadio() = player.currentMediaItem?.mediaId?.startsWith("au:radio-") == true
     private val applyRunnable = Runnable {
-        val p = PlaybackParameters(Prefs.speed, Prefs.pitch)
+        val p = if (isRadio()) PlaybackParameters(1f, 1f) else PlaybackParameters(Prefs.speed, Prefs.pitch)
         if (player.playbackParameters != p) rebuild(p)
     }
     // vigia: se está "tocando" mas o tempo não anda por ~3s, reconstrói o áudio sozinho

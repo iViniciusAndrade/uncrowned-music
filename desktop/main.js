@@ -853,6 +853,20 @@ ipcMain.handle('rec-stop', () => {
   return r.out;
 });
 
+/* sincronizar do SoundCloud: só quando o artista liberou o download oficial */
+ipcMain.handle('sc-download', async (_, id) => {
+  try {
+    const cid = await scClientId(false); if (!cid) throw new Error('SoundCloud indisponível agora');
+    const tr = await getJSON(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent('https://soundcloud.com/' + id)}&client_id=${cid}`);
+    if (!tr || !tr.downloadable) return { ok: false, error: 'o artista não liberou o download dessa música no SoundCloud' };
+    const j = await getJSON(`https://api-v2.soundcloud.com/tracks/${tr.id}/download?client_id=${cid}`);
+    if (!j || !j.redirectUri) return { ok: false, error: 'o artista não liberou o download dessa música no SoundCloud' };
+    const artist = (tr.publisher_metadata && tr.publisher_metadata.artist) || (tr.user && tr.user.username) || '';
+    const f = await download(j.redirectUri, `${artist ? artist + ' - ' : ''}${tr.title}`);
+    return { ok: true, file: f };
+  } catch (e) { return { ok: false, error: e.status === 404 || e.status === 401 ? 'o artista não liberou o download dessa música no SoundCloud' : String(e.message || e) }; }
+});
+
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });

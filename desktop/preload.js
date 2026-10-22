@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('U', {
   lyrics: (a, t, d, s) => ipcRenderer.invoke('lyrics', a, t, d, s),
   info: (t, a) => ipcRenderer.invoke('info', t, a),
   download: (u, n) => ipcRenderer.invoke('download', u, n),
+  scDownload: id => ipcRenderer.invoke('sc-download', id),
   openPath: p => ipcRenderer.invoke('open-path', p),
   openUrl: u => ipcRenderer.invoke('open-url', u),
   titleColor: c => ipcRenderer.invoke('title-color', c),
