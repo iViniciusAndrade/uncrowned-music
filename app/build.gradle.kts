@@ -13,12 +13,21 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    val ksFile = System.getenv("KEYSTORE_FILE")
+    val ksPass = System.getenv("KEYSTORE_PASS")
+    val ownKey = !ksFile.isNullOrBlank() && !ksPass.isNullOrBlank() && file(ksFile).exists()
+    signingConfigs {
+        if (ownKey) create("own") {
+            storeFile = file(ksFile!!); storePassword = ksPass
+            keyAlias = "uncrowned"; keyPassword = ksPass
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (ownKey) "own" else "debug")
         }
     }
     compileOptions {

@@ -17,7 +17,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+      - name: Chave de assinatura (se cadastrada)
+        env:
+          KS: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then echo "$KS" | base64 -d > $RUNNER_TEMP/release.jks; echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> $GITHUB_ENV; echo "Assinando com a chave própria"; else echo "Sem chave própria: usando a de teste"; fi
       - run: gradle assembleRelease --no-daemon
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
       - run: cp app/build/outputs/apk/release/app-release.apk UncrownedMusic.apk
       - uses: actions/upload-artifact@v4
         with:
