@@ -718,7 +718,7 @@ fun LyricsView(ui: PlayerUi, position: () -> Long) {
 @Composable
 fun SwitchRow(title: String, sub: String? = null, value: Boolean, onChange: (Boolean) -> Unit) {
     ListItem(headlineContent = { Text(title, fontSize = 16.sp) }, supportingContent = if (sub != null) { { Text(sub, fontSize = 13.sp) } } else null,
-        trailingContent = { Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF34C759), checkedThumbColor = Color.White, checkedBorderColor = Color.Transparent)) },
+        trailingContent = { Switch(value, onChange, colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary, checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedBorderColor = Color.Transparent)) },
         modifier = Modifier.clickable { onChange(!value) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent))
 }

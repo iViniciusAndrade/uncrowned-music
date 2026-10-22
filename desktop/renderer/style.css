@@ -96,7 +96,7 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .seg button{padding:5px 12px;border-radius:7px;font-size:13px} .seg button.on{background:var(--accent);color:#fff}
 .sw{width:46px;height:28px;border-radius:14px;background:var(--card2);position:relative;transition:.2s;flex:none}
 .sw::after{content:"";position:absolute;width:24px;height:24px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.2s;box-shadow:0 2px 4px rgba(0,0,0,.3)}
-.sw.on{background:#34c759} .sw.on::after{left:20px}
+.sw.on{background:var(--accent)} .sw.on::after{left:20px;background:var(--sw-knob,#fff)}
 .rng{display:flex;align-items:center;gap:10px} .rng input{width:200px;accent-color:var(--accent)} .rng span{color:var(--dim);width:52px;text-align:right;font-variant-numeric:tabular-nums}
 .dots{display:flex;gap:9px;flex-wrap:wrap} .dot{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent} .dot.on{border-color:var(--text)}
 .txt{background:var(--card2);border:0;border-radius:8px;padding:7px 10px;outline:none;width:240px}

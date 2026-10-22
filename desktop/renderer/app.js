@@ -72,6 +72,9 @@ function applyLook() {
   r.classList.toggle('black', s.theme === 'black');
   r.classList.toggle('compact', s.density === 'compact');
   r.style.setProperty('--accent', s.accent);
+  // bolinha das chaves: escura quando a cor do tema é muito clara (ex: branco), pra continuar visível
+  { const h = (s.accent || '#fa2d48').replace('#', ''); const v = h.length >= 6 ? [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) / 255) : [1, 0, 0];
+    const L = 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; r.style.setProperty('--sw-knob', L > 0.75 ? '#1c1c1e' : '#fff'); }
   r.style.setProperty('--r', s.radius + 'px');
   r.style.setProperty('--fs', (14 * s.fontScale) + 'px');
   r.style.setProperty('--tile', s.tile + 'px');
