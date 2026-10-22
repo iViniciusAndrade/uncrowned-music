@@ -768,7 +768,23 @@ views.group = () => {
   if ($('#grpRadio')) $('#grpRadio').onclick = () => startLocalRadio(view.list[Math.floor(Math.random() * view.list.length)]);
 };
 views.favs = () => { const l = Object.values(D.favs); $('#view').innerHTML = `<h1>Favoritas</h1>${l.length ? playBtns('favs') : ''}${rows(l, 'favs', { empty: 'Toque no coração das músicas pra salvar aqui.' })}`; };
-views.history = () => { $('#view').innerHTML = `<h1>Ouvidas online</h1>${rows(D.history, 'history')}`; };
+views.history = () => {
+  const l = D.history;
+  const SRC = { yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Archive' };
+  rowsCtx.history = l;
+  $('#view').innerHTML = `<h1>Ouvidas online</h1><div class="sub">${l.length} músicas que você ouviu por último</div>
+    ${l.length ? `<div class="btns"><button class="btn" data-play="history">${ico('play')} Tocar</button><button class="btn" data-shuf="history">${ico('shuffle')} Aleatório</button><button class="btn" id="histClr">Limpar histórico</button></div>` : ''}
+    ${l.length ? `<div class="grid hgrid">${l.map((t, i) => `<div class="htile ${keyOf(t) === keyOf(cur()) ? 'cur' : ''}" data-hi="${i}">
+      <div class="hart"><img loading="lazy" src="${esc(artOf(t))}" onerror="this.src='logo.png'"><span class="hsrc ${t.src}">${SRC[t.src] || ''}</span>
+        <button class="hplay" title="Tocar">${ico('play')}</button><button class="hmore" title="Mais">${ico('more')}</button></div>
+      <div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('')}</div>` : '<div class="empty">As músicas que você ouvir online aparecem aqui.</div>'}`;
+  $('#view').querySelectorAll('[data-hi]').forEach(d => d.onclick = e => {
+    const i = +d.dataset.hi;
+    if (e.target.closest('.hmore')) return menu(l[i], l, i, 'history');
+    play(l, i);
+  });
+  if ($('#histClr')) $('#histClr').onclick = () => { D.history = []; save(); render(); };
+};
 views.playlist = () => {
   const l = D.playlists[view.pl] || [];
   $('#view').innerHTML = `<h1>${esc(view.pl)}</h1><div class="btns">${l.length ? `<button class="btn" data-play="pl">${ico('play')} Tocar</button><button class="btn" data-shuf="pl">${ico('shuffle')} Aleatório</button>` : ''}<button class="btn" id="delPl" style="color:#ff453a">Apagar playlist</button></div>${rows(l, 'pl', { empty: 'Use o botão ••• numa música pra adicionar aqui.' })}`;
