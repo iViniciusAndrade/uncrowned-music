@@ -1067,8 +1067,11 @@ views.discover = async () => {
   }
   const g = topOf(D.taste.g, 6), a = topOf(D.taste.a, 5), max = g.length ? g[0][1] : 1;
   $('#view').innerHTML = `<h1>Descobrir</h1>
-    <div class="hero" id="wkPlay"><b>Descobertas da Semana</b><span id="wkSub">Montando sua lista…</span></div>
-    <div class="btns"><button class="btn" id="wkNew">Gerar de novo</button><button class="btn" id="wkShuf">${ico('shuffle')} Aleatório</button><button class="btn" id="tasteReset">Ajustar gosto</button></div>
+    <div class="hero wk" id="wkHero">
+      <div class="wkTxt"><span class="wkTag">FEITA PRA VOCÊ</span><b>Descobertas da Semana</b><span id="wkSub">Montando sua lista…</span><span id="wkArts" class="wkArts"></span>
+        <div class="wkActs"><button class="wkPlay" id="wkPlay" title="Tocar">${ico('play')}</button><button class="wkIc" id="wkShuf" title="Aleatório">${ico('shuffle')}</button><button class="wkIc" id="wkNew" title="Gerar de novo">${ico('history')}</button><button class="wkTxtBtn" id="tasteReset">Ajustar gosto</button></div></div>
+      <div class="wkCol" id="wkCol"></div>
+    </div>
     <div class="hscroll" id="wkRow"></div>
     <div id="wkArt"></div>
     <h2 class="chH">Mais tocadas da semana <span class="chips inline">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="chip ${chartsGl === k ? 'on' : ''}" data-gl="${k}">${n}</button>`).join('')}</span></h2>
@@ -1087,15 +1090,19 @@ views.discover = async () => {
     if (!$('#wkRow')) return;
     rowsCtx.weekly = l;
     $('#wkSub').textContent = `${l.length} músicas novas pra você · renova toda semana`;
+    const arts = [...new Set(l.map(t => t.artist).filter(Boolean))].slice(0, 3);
+    $('#wkArts').textContent = arts.length ? `Com ${arts.join(', ')} e mais` : '';
+    $('#wkCol').innerHTML = l.slice(0, 5).map((t, i) => `<img style="--i:${i};--d:${Math.abs(i - 2)}" src="${esc(t.art || 'logo.png')}" onerror="this.src='logo.png'">`).join('');
     $('#wkRow').innerHTML = l.map((t, i) => `<div class="tile" data-wi="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('');
     $('#wkRow').querySelectorAll('[data-wi]').forEach(d => d.onclick = () => play(l, +d.dataset.wi));
     const ar = (D.weekly && D.weekly.artists) || [];
     $('#wkArt').innerHTML = ar.length ? `<h2>Artistas pra você conhecer</h2><div class="hscroll">${ar.map((a, i) => `<div class="tile round" data-ar="${i}"><img loading="lazy" src="${esc(a.pic || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.name)}</div><div class="ta">${a.because && a.because.length ? 'Porque você ouve ' + esc(a.because[0]) : ''}</div></div>`).join('')}</div>` : '';
     $('#wkArt').querySelectorAll('[data-ar]').forEach(d => d.onclick = () => searchFor(ar[+d.dataset.ar].name));
   };
-  $('#wkPlay').onclick = () => rowsCtx.weekly && rowsCtx.weekly.length && play(rowsCtx.weekly, 0);
-  $('#wkShuf').onclick = () => rowsCtx.weekly && (st.queue = shuffleArr(rowsCtx.weekly.slice()), playAt(0));
-  $('#wkNew').onclick = async () => { $('#wkSub').textContent = 'Montando…'; fill(await weekly(true)); };
+  $('#wkPlay').onclick = e => { e.stopPropagation(); if (rowsCtx.weekly && rowsCtx.weekly.length) { st.shuffle = false; updateModeBtns(); play(rowsCtx.weekly, 0); } };
+  $('#wkHero').onclick = e => { if (!e.target.closest('button') && rowsCtx.weekly && rowsCtx.weekly.length) play(rowsCtx.weekly, 0); };
+  $('#wkShuf').onclick = e => { e.stopPropagation(); rowsCtx.weekly && (st.queue = shuffleArr(rowsCtx.weekly.slice()), playAt(0)); };
+  $('#wkNew').onclick = async e => { e.stopPropagation(); $('#wkSub').textContent = 'Montando…'; fill(await weekly(true)); };
   weekly(false).then(l => { if (view.name === 'discover') fill(l); });
   // mais tocadas da semana: Audius, YouTube Music e SoundCloud, cada um carrega sozinho
   const gl = chartsGl;
