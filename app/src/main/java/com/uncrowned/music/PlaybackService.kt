@@ -41,7 +41,13 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
-        player = ExoPlayer.Builder(this)
+        Listen.init(this); Eco.init(this)
+        // modo retrô (K7 / vinil) entra no caminho do áudio
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context).setAudioProcessors(arrayOf(RetroProcessor())).build()
+        }
+        player = ExoPlayer.Builder(this, renderers)
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true
             )
@@ -101,9 +107,24 @@ class PlaybackService : MediaSessionService() {
         if (player.playbackParameters != p) rebuild(p)
     }
     // vigia: se está "tocando" mas o tempo não anda por ~3s, reconstrói o áudio sozinho
-    private var lastPos = -1L; private var stuck = 0
+    private var lastPos = -1L; private var stuck = 0; private var listenN = 0
+    // o que está tocando, no formato do registro de "Mais ouvidas" (null = rádio ao vivo)
+    private fun listenTrack(): LTrack? {
+        val it = player.currentMediaItem ?: return null
+        val id = it.mediaId; val m = it.mediaMetadata
+        val title = m.title?.toString() ?: ""; val artist = m.artist?.toString() ?: ""; val art = m.artworkUri?.toString() ?: ""
+        val url = it.requestMetadata.mediaUri?.toString() ?: it.localConfiguration?.uri?.toString() ?: ""
+        return when {
+            id.startsWith("au:radio-") -> null
+            id.startsWith("au:") -> LTrack("au:" + id.removePrefix("au:"), "au", id.removePrefix("au:"), title, artist, art, url)
+            id.startsWith("off:") -> LTrack("yt:" + id.removePrefix("off:"), "yt", id.removePrefix("off:"), title, artist, art, "")
+            id.all { c -> c.isDigit() } -> LTrack("loc:$id", "loc", id, title, artist, art, "")
+            else -> null
+        }
+    }
     private val watchdog = object : Runnable {
         override fun run() {
+            if (player.isPlaying && ++listenN >= 5) { listenN = 0; runCatching { Listen.tick(listenTrack(), 5) } }
             if (player.isPlaying) {
                 val pos = player.currentPosition
                 stuck = if (pos == lastPos) stuck + 1 else 0
@@ -184,6 +205,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        Listen.save()
         Prefs.sp.unregisterOnSharedPreferenceChangeListener(prefListener)
         handler.removeCallbacks(applyRunnable)
         handler.removeCallbacks(watchdog)

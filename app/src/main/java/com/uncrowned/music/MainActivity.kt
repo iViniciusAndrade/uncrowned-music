@@ -3,6 +3,7 @@ package com.uncrowned.music
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -43,11 +44,23 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= 33) { add(Manifest.permission.READ_MEDIA_AUDIO); add(Manifest.permission.POST_NOTIFICATIONS) }
             else add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
+        Eco.init(this); Listen.init(this)
+        handleIntent(intent)
         setContent { UncrownedTheme { App(ui, perms) } }
     }
 
     override fun onStart() { super.onStart(); ui.connect() }
-    override fun onStop() { ui.disconnect(); super.onStop() }
+    override fun onStop() {
+        val busy = ui.playing || YtPlayer.playing || RadioRecorder.recording != null || Exporter.running || Importer.busy
+        runCatching { Listen.save() }
+        ui.disconnect(); super.onStop()
+        // ícone do tema: troca agora que você saiu do app (se nada estiver tocando)
+        if (!busy) runCatching { Skins.applyPendingIcon(this) }
+    }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }
+    private fun handleIntent(i: Intent?) {
+        i?.getStringExtra("hunt_station")?.let { runCatching { Hunter.pendingPlay = Track.from(org.json.JSONObject(it)) } }
+    }
 }
 
 /* Ponte entre a tela e o serviço de reprodução */
@@ -112,12 +125,12 @@ class PlayerUi(private val ctx: Context) {
 
     fun play(list: List<Song>, start: Int) {
         val c = controller ?: return
-        YtPlayer.js("player.pauseVideo()")
+        YtPlayer.close()
         c.setMediaItems(list.map { it.toItem() }, start, 0); c.prepare(); c.play()
     }
     fun playOnline(list: List<Track>, start: Int) {
         val c = controller ?: return
-        YtPlayer.js("player.pauseVideo()")
+        YtPlayer.close()
         c.setMediaItems(list.map { it.toItem() }, start, 0); c.prepare(); c.play()
     }
     // toca um arquivo do celular no lugar da música online (versão sincronizada)
@@ -125,8 +138,11 @@ class PlayerUi(private val ctx: Context) {
         val c = controller ?: return
         val item = MediaItem.Builder().setMediaId("off:" + v.id).setUri(uri)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(v.title).setArtist(v.channel).setArtworkUri(v.thumb.takeIf { it.isNotBlank() }?.let(Uri::parse)).build()).build()
+        YtPlayer.close()
         c.setMediaItem(item); c.prepare(); c.play()
     }
+    // fecha o player de baixo quando começa a tocar online (um player só por vez)
+    fun stopLocal() { controller?.let { it.stop(); it.clearMediaItems() } }
     fun playNext(s: Song) { controller?.let { it.addMediaItem((it.currentMediaItemIndex + 1).coerceAtMost(it.mediaItemCount), s.toItem()) } }
     fun enqueue(s: Song) { controller?.addMediaItem(s.toItem()) }
     fun toggle() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } } }
@@ -177,7 +193,12 @@ fun UncrownedTheme(content: @Composable () -> Unit) {
                 small = RoundedCornerShape(r / 2), medium = RoundedCornerShape(r),
                 large = RoundedCornerShape(r * 1.5f), extraLarge = RoundedCornerShape(r * 2)
             ),
-            content = content
-        )
+            typography = Skins.font?.let { f -> Typography().let { t -> t.copy(displayLarge = t.displayLarge.copy(fontFamily = f), displayMedium = t.displayMedium.copy(fontFamily = f),
+                headlineLarge = t.headlineLarge.copy(fontFamily = f), headlineMedium = t.headlineMedium.copy(fontFamily = f), headlineSmall = t.headlineSmall.copy(fontFamily = f),
+                titleLarge = t.titleLarge.copy(fontFamily = f)) } } ?: Typography()
+        ) {
+            // texto sempre na cor do tema (antes ficava preto em algumas telas)
+            CompositionLocalProvider(LocalContentColor provides scheme.onBackground) { content() }
+        }
     }
 }

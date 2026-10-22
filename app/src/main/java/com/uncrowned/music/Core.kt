@@ -51,7 +51,7 @@ object Prefs {
     var fontScale: Float get() = sp.getFloat("fontscale", 1f); set(v) = pf("fontscale", v)
     var gridColumns: Int get() = sp.getInt("gridcols", 2); set(v) = pi("gridcols", v)
     var showArtInList: Boolean get() = sp.getBoolean("listart", true); set(v) = pb("listart", v)
-    var startTab: Int get() = sp.getInt("starttab", 0); set(v) = pi("starttab", v)
+    var startTab: Int get() = sp.getInt("starttab2", 0); set(v) = pi("starttab2", v)   // 0 Descobrir, 1 Buscar, 2 Rádio, 3 Biblioteca
 
     // Tela do player
     var artShape: String get() = s("artshape", "rounded"); set(v) = ps("artshape", v)  // square/rounded/circle/disc

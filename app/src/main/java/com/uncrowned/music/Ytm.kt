@@ -119,6 +119,52 @@ object Ytm {
         }.getOrDefault(emptyList())
     }
 
+    /* playlist inteira (segue as páginas), com nome e capa — usado no Importar */
+    data class Full(val title: String, val cover: String, val tracks: List<YtVideo>)
+    private fun contTok(j: Any?): String? = (find(j, "continuationCommand") as? JSONObject)?.optString("token")?.ifBlank { null }
+        ?: (find(j, "nextContinuationData") as? JSONObject)?.optString("continuation")?.ifBlank { null }
+    suspend fun fullPlaylist(id: String): Full = withContext(Dispatchers.IO) {
+        val bid = if (Regex("^(VL|MPRE|OLAK)").containsMatchIn(id)) id else "VL$id"
+        val j = browse(bid)
+        val head = (find(j, "musicResponsiveHeaderRenderer") ?: find(j, "musicDetailHeaderRenderer") ?: find(j, "musicEditablePlaylistDetailHeaderRenderer")) as? JSONObject
+        val title = runs(head?.optJSONObject("title")).ifBlank { runs(find(head, "title") as? JSONObject) }
+        val cover = thumb(head?.opt("thumbnail") ?: head)
+        val songs = ArrayList(parse(j).first.map { it.first })
+        var tok = contTok(j); var n = 0
+        while (tok != null && n++ < 40) {
+            val k = runCatching { post("browse", JSONObject().put("continuation", tok)) }.getOrNull() ?: break
+            val more = parse(k).first.map { it.first }; if (more.isEmpty()) break
+            songs += more; tok = contTok(k)
+        }
+        Full(title, cover, songs.distinctBy { it.id })
+    }
+    /* Mix do YouTube (lista RD...): o YouTube monta na hora a partir de um vídeo */
+    suspend fun mix(videoId: String): List<YtVideo> = withContext(Dispatchers.IO) {
+        runCatching {
+            val ver = "2.20250101.00.00"
+            val body = JSONObject().put("context", JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", ver).put("hl", "pt").put("gl", "BR")))
+                .put("videoId", videoId).put("playlistId", "RD$videoId")
+            val c = URL("https://www.youtube.com/youtubei/v1/next?prettyPrint=false").openConnection() as HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 10000; c.readTimeout = 15000
+            c.setRequestProperty("Content-Type", "application/json"); c.setRequestProperty("Origin", "https://www.youtube.com")
+            c.setRequestProperty("X-Youtube-Client-Name", "1"); c.setRequestProperty("X-Youtube-Client-Version", ver)
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36")
+            val j = try { c.outputStream.use { it.write(body.toString().toByteArray()) }; JSONObject(c.inputStream.bufferedReader().readText()) } finally { c.disconnect() }
+            val out = ArrayList<YtVideo>()
+            fun walk(x: Any?) {
+                when (x) {
+                    is JSONArray -> for (i in 0 until x.length()) walk(x.get(i))
+                    is JSONObject -> {
+                        val v = x.optJSONObject("playlistPanelVideoRenderer")
+                        if (v != null) { val id = v.optString("videoId"); if (id.isNotBlank()) out += YtVideo(id, runs(v.optJSONObject("title")), runs(v.optJSONObject("longBylineText") ?: v.optJSONObject("shortBylineText")).replace(Regex(" - Topic$"), ""), "https://i.ytimg.com/vi/$id/hqdefault.jpg") }
+                        else for (k in x.keys()) walk(x.get(k))
+                    }
+                }
+            }
+            walk(j); out.distinctBy { it.id }
+        }.getOrDefault(emptyList())
+    }
+
     data class Search(val artists: List<YtmArtistHit>, val albums: List<YtmAlbumHit>, val songs: List<YtVideo>)
     suspend fun search(q: String): Search = withContext(Dispatchers.IO) {
         runCatching {

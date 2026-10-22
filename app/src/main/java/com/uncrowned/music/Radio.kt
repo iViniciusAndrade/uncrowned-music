@@ -123,58 +123,70 @@ object RadioRecorder {
             val r = runCatching { record(app, t) }
             withContext(Dispatchers.Main) {
                 recording = null
-                Toast.makeText(app, r.fold({ "Gravação salva em Música/Uncrowned: $it" }, { "A gravação não deu certo: ${it.message ?: "sem conexão"}" }), Toast.LENGTH_LONG).show()
+                Toast.makeText(app, r.fold({ "Gravação salva: $it" }, { "A gravação não deu certo: ${it.message ?: "sem conexão"}" }), Toast.LENGTH_LONG).show()
             }
         }
     }
     fun stop() { stopFlag = true }
 
-    private fun open(url: String): HttpURLConnection {
-        var u = url
-        repeat(6) {
-            val c = URL(u).openConnection() as HttpURLConnection
-            c.instanceFollowRedirects = false; c.connectTimeout = 10000; c.readTimeout = 20000
-            c.setRequestProperty("User-Agent", "UncrownedMusic/1.0"); c.setRequestProperty("Icy-MetaData", "0")
-            val code = c.responseCode
-            if (code in 300..399) { u = URL(URL(u), c.getHeaderField("Location")).toString(); c.disconnect() } else if (code in 200..299) return c else throw Exception("a rádio respondeu $code")
-        }
-        throw Exception("redirecionamentos demais")
-    }
+    var split: Boolean get() = Prefs.sp.getBoolean("recsplit", true); set(v) = Prefs.sp.edit().putBoolean("recsplit", v).apply()
+    var song by mutableStateOf(""); private set
+    var parts by mutableIntStateOf(0); private set
 
-    private fun record(ctx: Context, t: Track): String {
-        val c = open(t.url)
-        val type = (c.contentType ?: "audio/mpeg").lowercase()
-        val (ext, mime) = when { "aac" in type || "mp4" in type -> "aac" to "audio/aac"; "ogg" in type -> "ogg" to "audio/ogg"; else -> "mp3" to "audio/mpeg" }
-        val stamp = SimpleDateFormat("dd-MM-yyyy HH'h'mm", Locale("pt", "BR")).format(Date())
-        val name = "${t.title} - $stamp".replace(Regex("[\\/:*?\"<>|]"), "").take(120) + ".$ext"
-        val resolver = ctx.contentResolver
-        var itemUri: android.net.Uri? = null; var file: File? = null
-        val out = if (Build.VERSION.SDK_INT >= 29) {
+    private class Out(val os: java.io.OutputStream, val uri: android.net.Uri?, val file: File?, var bytes: Long = 0)
+    private fun create(ctx: Context, folder: String, name: String, mime: String, title: String, artist: String, album: String): Out {
+        val r = ctx.contentResolver
+        return if (Build.VERSION.SDK_INT >= 29) {
             val v = ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, name); put(MediaStore.Audio.Media.MIME_TYPE, mime)
-                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Uncrowned")
-                put(MediaStore.Audio.Media.TITLE, "${t.title} ($stamp)"); put(MediaStore.Audio.Media.ARTIST, t.title); put(MediaStore.Audio.Media.ALBUM, "Gravações de rádio")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/Uncrowned" + if (folder.isNotBlank()) "/$folder" else "")
+                put(MediaStore.Audio.Media.TITLE, title); put(MediaStore.Audio.Media.ARTIST, artist); put(MediaStore.Audio.Media.ALBUM, album)
                 put(MediaStore.Audio.Media.IS_MUSIC, 1); put(MediaStore.Audio.Media.IS_PENDING, 1)
             }
-            itemUri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v) ?: throw Exception("não deu pra criar o arquivo")
-            resolver.openOutputStream(itemUri!!) ?: throw Exception("não deu pra abrir o arquivo")
+            val u = r.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, v) ?: throw Exception("não deu pra criar o arquivo")
+            Out(r.openOutputStream(u) ?: throw Exception("não deu pra abrir o arquivo"), u, null)
         } else {
-            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Uncrowned").apply { mkdirs() }
-            file = File(dir, name); file!!.outputStream()
+            val dir = File(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Uncrowned"), folder).apply { mkdirs() }
+            val f = File(dir, name); Out(f.outputStream(), null, f)
         }
-        var total = 0L
+    }
+    private fun finish(ctx: Context, o: Out, mime: String): Boolean {
+        runCatching { o.os.close() }
+        val r = ctx.contentResolver
+        if (o.bytes < 16000) { o.uri?.let { r.delete(it, null, null) }; o.file?.delete(); return false }
+        o.uri?.let { r.update(it, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null) }
+        o.file?.let { MediaScannerConnection.scanFile(ctx, arrayOf(it.absolutePath), arrayOf(mime), null) }
+        return true
+    }
+
+    /* grava a rádio; com "separar por música" cada música vira um arquivo (usa o nome que a rádio manda) */
+    private fun record(ctx: Context, t: Track): String {
+        val c = Icy.connect(t.url)
+        val type = (c.headers["content-type"] ?: "audio/mpeg").lowercase()
+        val (ext, mime) = when { "aac" in type || "mp4" in type -> "aac" to "audio/aac"; "ogg" in type -> "ogg" to "audio/ogg"; else -> "mp3" to "audio/mpeg" }
+        val stamp = SimpleDateFormat("dd-MM-yyyy HH'h'mm", Locale("pt", "BR")).format(Date())
+        val clean = { x: String -> x.replace(Regex("[\\/:*?\"<>|]"), "").replace(Regex("\\s+"), " ").trim().take(120) }
+        val doSplit = split && (c.headers["icy-metaint"]?.toIntOrNull() ?: 0) > 0
+        val folder = if (doSplit) clean("Rádio ${t.title} - $stamp") else ""
+        var cur: Out? = null; var curTitle: String? = null; var saved = 0; var n = 0
+        fun open(title: String?) {
+            cur?.let { if (finish(ctx, it, mime)) saved++ }
+            n++; curTitle = title
+            val base = if (doSplit) clean("%02d - %s".format(n, title ?: t.title)) else clean("${t.title} - $stamp")
+            val parts2 = title?.split(" - ", limit = 2)
+            cur = create(ctx, folder, "$base.$ext", mime, if (doSplit) (parts2?.getOrNull(1) ?: title ?: t.title) else "${t.title} ($stamp)",
+                if (doSplit) (parts2?.getOrNull(0) ?: t.title) else t.title, if (doSplit) "Rádio ${t.title}" else "Gravações de rádio")
+            song = title ?: ""; parts = n
+        }
+        open(null)
         try {
-            c.inputStream.use { inp ->
-                out.use { o ->
-                    val buf = ByteArray(16 * 1024)
-                    while (!stopFlag) { val n = inp.read(buf); if (n < 0) break; o.write(buf, 0, n); total += n }
-                }
+            Icy.pump(c, { stopFlag }, { b, len -> cur?.let { o -> o.os.write(b, 0, len); o.bytes += len } }) { title ->
+                if (doSplit && title != curTitle) open(title) else if (curTitle == null) { curTitle = title; song = title }
             }
-        } catch (e: Exception) { if (total < 8000) throw e } finally { c.disconnect() }
-        if (total < 8000) { itemUri?.let { resolver.delete(it, null, null) }; file?.delete(); throw Exception("a rádio não mandou áudio") }
-        itemUri?.let { resolver.update(it, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null) }
-        file?.let { MediaScannerConnection.scanFile(ctx, arrayOf(it.absolutePath), arrayOf(mime), null) }
-        return name
+        } catch (e: Exception) { if ((cur?.bytes ?: 0) < 8000 && saved == 0) { cur?.let { finish(ctx, it, mime) }; throw e } } finally { c.close() }
+        cur?.let { if (finish(ctx, it, mime)) saved++ }
+        if (saved == 0) throw Exception("a rádio não mandou áudio")
+        return if (doSplit) "$saved ${if (saved == 1) "música" else "músicas"} em Música/Uncrowned/$folder" else "Música/Uncrowned"
     }
 }
 
@@ -182,8 +194,8 @@ private val RTAGS = listOf("" to "Mais ouvidas", "funk" to "Funk", "sertanejo" t
     "hip hop" to "Rap", "electronic" to "Eletrônica", "gospel" to "Gospel", "mpb" to "MPB", "news" to "Notícias", "sports" to "Esportes")
 
 @Composable
-fun RadioScreen(ui: PlayerUi, onBack: () -> Unit) {
-    BackHandler { onBack() }
+fun RadioScreen(ui: PlayerUi, onBack: (() -> Unit)?) {
+    if (onBack != null) BackHandler { onBack() }
     val ctx = LocalContext.current
     var country by remember { mutableStateOf("BR") }
     var tag by remember { mutableStateOf("") }
@@ -214,6 +226,8 @@ fun RadioScreen(ui: PlayerUi, onBack: () -> Unit) {
             }
         }
         item { RecordCard(ui) }
+        item { if (RadioRecorder.lastStation != null && ui.mediaId == RadioRecorder.lastStation?.mediaId) RadioNowLine(RadioRecorder.lastStation) }
+        item { HunterCard(ui) }
         item {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 placeholder = { Text("Procurar rádio (Jovem Pan, Antena 1...)") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -275,8 +289,12 @@ private fun RecordCard(ui: PlayerUi) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(if (rec != null) "Gravando: ${rec.title}" else "Tocando agora: ${st!!.title}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (rec != null) "● %d:%02d · salva em Música/Uncrowned quando parar".format(secs / 60, secs % 60) else "Grave o que está passando e ouça depois sem internet",
-                    fontSize = 12.5.sp, color = if (rec != null) red else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (rec != null) "● %d:%02d · %s".format(secs / 60, secs % 60, if (RadioRecorder.parts > 1 || RadioRecorder.song.isNotBlank()) "música ${RadioRecorder.parts}: ${RadioRecorder.song}" else "salva em Música/Uncrowned quando parar") else "Grave o que está passando e ouça depois sem internet",
+                    fontSize = 12.5.sp, color = if (rec != null) red else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                if (rec == null) Row(verticalAlignment = Alignment.CenterVertically) {
+                    var sp by remember { mutableStateOf(RadioRecorder.split) }
+                    Checkbox(sp, { sp = it; RadioRecorder.split = it }); Text("Um arquivo por música", fontSize = 12.sp)
+                }
             }
             Spacer(Modifier.width(10.dp))
             if (rec != null) OutlinedButton(onClick = { RadioRecorder.stop() }) { Text("Parar", color = red) }

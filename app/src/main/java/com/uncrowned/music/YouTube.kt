@@ -184,6 +184,7 @@ object YtPlayer {
             if (u != null && Sync.playLocal != null) { js("player.pauseVideo()"); Sync.playLocal?.invoke(u, target); return }
             runCatching { android.widget.Toast.makeText(Sync.app, "Sem internet: essa ainda não foi sincronizada", android.widget.Toast.LENGTH_SHORT).show() }
         }
+        stopOther?.invoke()
         queue = list; index = i
         val v = current ?: return
         YtStore.addHistory(v)
@@ -202,15 +203,26 @@ object YtPlayer {
     fun prev() { if (time > 5) seek(0f) else if (index > 0) play(queue, index - 1) }
     fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
     fun seek(s: Float) = js("player.seekTo($s, true)")
+    private var ticks = 0
+    var stopOther: (() -> Unit)? = null
+    // fecha o player online (quando começa a tocar uma música offline)
+    fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false } }
+    // modo retrô dentro do player do YouTube/SoundCloud
+    fun applyRetro() { web?.evaluateJavascript(Retro.js(Retro.mode), null) }
     fun js(code: String) { web?.evaluateJavascript("if(window.player&&player.loadVideoById){$code}", null) }
 
     private val h = Handler(Looper.getMainLooper())
     class Bridge {
         @JavascriptInterface fun state(s: Int) = h.post {
             playing = s == 1
+            if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 0 && YtStore.autoNext) next()
         }.let {}
-        @JavascriptInterface fun time(t: Float, d: Float) = h.post { time = t; duration = d }.let {}
+        @JavascriptInterface fun time(t: Float, d: Float) = h.post {
+            time = t; duration = d
+            // conta o tempo ouvido (Mais ouvidas / Momentos)
+            if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
+        }.let {}
         @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
     }
 
@@ -385,7 +397,7 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 }
             }
             // O player oficial precisa ficar visível na tela (regra do YouTube)
-            val showVid = expanded && YtStore.showVideo
+            val showVid = expanded && YtStore.showVideo && !Eco.on
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 YtWebPlayer(
                     if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp)
@@ -426,6 +438,25 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                     }
                     IconButton(onClick = { YtPlayer.next() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
                     IconButton(onClick = { YtPlayer.seek(YtPlayer.time + Prefs.seekStep) }) { Icon(Icons.Rounded.Forward10, null) }
+                }
+                // som retrô (K7 / vinil) e adicionar à playlist
+                var addOpen by remember { mutableStateOf(false) }
+                var retro by remember { mutableStateOf(Retro.mode) }
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                    Retro.NAMES.forEach { (k, n) -> FilterChip(retro == k, { retro = k; Retro.mode = k }, { Text(n) }) }
+                    IconButton(onClick = { addOpen = true }) { Icon(Icons.Rounded.PlaylistAdd, "Adicionar à playlist") }
+                }
+                if (addOpen) {
+                    var nome by remember { mutableStateOf("") }
+                    val ctxA = androidx.compose.ui.platform.LocalContext.current
+                    AlertDialog(onDismissRequest = { addOpen = false }, title = { Text("Adicionar à playlist") },
+                        text = { Column {
+                            OPlaylists.list().take(12).forEach { p -> Text(p.name, Modifier.fillMaxWidth().clickable { OPlaylists.add(p.name, v); addOpen = false
+                                android.widget.Toast.makeText(ctxA, "Adicionada em ${p.name}", android.widget.Toast.LENGTH_SHORT).show() }.padding(vertical = 10.dp)) }
+                            OutlinedTextField(nome, { nome = it }, placeholder = { Text("Nova playlist") }, singleLine = true)
+                        } },
+                        confirmButton = { TextButton(onClick = { if (nome.isNotBlank()) { OPlaylists.save(nome.trim(), listOf(v), v.thumb, ""); addOpen = false } }) { Text("Criar") } },
+                        dismissButton = { TextButton(onClick = { addOpen = false }) { Text("Fechar") } })
                 }
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Text("Tocar a próxima sozinho"); Spacer(Modifier.width(8.dp))

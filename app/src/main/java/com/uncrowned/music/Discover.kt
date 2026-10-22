@@ -164,6 +164,7 @@ object Taste {
     fun onLike(genre: String, artist: String) { bump("tgenre", genre, 3.0); bump("tartist", artist, 3.0) }
     fun onSkip(genre: String, artist: String) { bump("tgenre", genre, -0.5); bump("tartist", artist, -1.0) }
     fun pickGenre(g: String) = bump("tgenre", g, 5.0)
+    fun learn(artist: String, w: Double) = bump("tartist", artist, w)
     fun reset() = Prefs.sp.edit().remove("tgenre").remove("tartist").remove("theard").remove("weekly").apply()
 
     private fun weeklyDecay() {
@@ -221,26 +222,11 @@ fun DiscoverTab(ui: PlayerUi) {
     LaunchedEffect(trendGenre) { trending = Audius.trending(trendGenre).getOrDefault(emptyList()) }
 
     if (onboarding) { GenrePicker { onboarding = false }; return }
-    var radioOpen by remember { mutableStateOf(false) }
-    if (radioOpen) { RadioScreen(ui) { radioOpen = false }; return }
     var ytListOpen by remember { mutableStateOf<YtmList?>(null) }
     ytListOpen?.let { l -> YtmListScreen(ui, l) { ytListOpen = null }; return }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Descobrir") }
-        item {
-            Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clickable { radioOpen = true }) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Radio, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Rádio", fontWeight = FontWeight.Bold)
-                        Text("Rádio FM sem internet e estações ao vivo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.Rounded.ChevronRight, null)
-                }
-            }
-        }
+        item { Header("Descobrir") { IconButton(onClick = { Nav.page = "themes" }) { Icon(Icons.Rounded.Palette, "Temas", tint = MaterialTheme.colorScheme.primary) } } }
         item {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 placeholder = { Text("Buscar e baixar músicas") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },

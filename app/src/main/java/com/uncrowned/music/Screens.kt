@@ -84,27 +84,31 @@ fun App(ui: PlayerUi, perms: List<String>) {
     LaunchedEffect(granted, Prefs.hideVoice, Prefs.minDurationSec) { if (granted) Library.load(ctx) }
 
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) } }
-    var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 4)) }
+    LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) }; YtPlayer.stopOther = { ui.stopLocal() } }
+    var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 3)) }
+    LaunchedEffect(Unit) { Listen.init(ctx); Eco.init(ctx); Hunter.start(ctx) }
+    // conta o tempo ouvido do player do YouTube também quando o app está aberto
+    val hp = Hunter.pendingPlay
+    LaunchedEffect(hp) { if (hp != null) { RadioRecorder.lastStation = hp; ui.playOnline(listOf(hp), 0); tab = 2; Hunter.pendingPlay = null } }
     var expanded by remember { mutableStateOf(false) }
     var showEq by remember { mutableStateOf(false) }
     var ytExpanded by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     var playlistDetail by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null || Nav.album != null || Nav.artist != null || Nav.page != null || Nav.sim != null) {
-        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; Nav.sim != null -> Nav.sim = null; Nav.page != null -> Nav.page = null; Nav.album != null -> Nav.album = null; Nav.artist != null -> Nav.artist = null; detail != null -> detail = null; else -> playlistDetail = null }
+    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null || Nav.album != null || Nav.artist != null || Nav.page != null || Nav.sim != null || tab != Prefs.startTab.coerceIn(0, 3)) {
+        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; Nav.sim != null -> Nav.sim = null; Nav.page != null -> Nav.page = Nav.back(); Nav.album != null -> Nav.album = null; Nav.artist != null -> Nav.artist = null; detail != null -> detail = null; playlistDetail != null -> playlistDetail = null; else -> tab = Prefs.startTab.coerceIn(0, 3) }
     }
 
     val tabs = listOf(
-        Icons.Rounded.MusicNote to "Músicas", Icons.Rounded.Album to "Álbuns", Icons.Rounded.Person to "Artistas",
-        Icons.Rounded.QueueMusic to "Playlists", Icons.Rounded.Explore to "Descobrir", Icons.Rounded.Settings to "Ajustes"
+        Icons.Rounded.Explore to "Descobrir", Icons.Rounded.Search to "Buscar", Icons.Rounded.Radio to "Rádio",
+        Icons.Rounded.LibraryMusic to "Biblioteca", Icons.Rounded.Settings to "Ajustes"
     )
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SkinBackground()
         Scaffold(
-            containerColor = Color.Transparent,
+            containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground,
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
@@ -113,8 +117,8 @@ fun App(ui: PlayerUi, perms: List<String>) {
                     NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
                         tabs.forEachIndexed { i, (ic, label) ->
                             NavigationBarItem(
-                                selected = tab == i, onClick = { tab = i; detail = null; playlistDetail = null },
-                                icon = { Icon(ic, null, Modifier.size(24.dp)) }, label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+                                selected = tab == i, onClick = { tab = i; detail = null; playlistDetail = null; Nav.clear() },
+                                icon = { Icon(ic, null, Modifier.size(24.dp)) }, label = { Text(label, fontSize = 10.sp, maxLines = 1, fontFamily = Skins.font) },
                                 colors = NavigationBarItemDefaults.colors(
                                     indicatorColor = Color.Transparent,
                                     selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -127,7 +131,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
             }
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
-                if (!granted && tab < 3) {
+                if (!granted && (Nav.page in listOf("songs", "albums", "artists", "export"))) {
                     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(Icons.Rounded.LibraryMusic, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(16.dp))
@@ -139,21 +143,31 @@ fun App(ui: PlayerUi, perms: List<String>) {
                     val d = detail
                     val pd = playlistDetail
                     val na = Nav.album; val nr = Nav.artist; val ns = Nav.sim; val np = Nav.page
+                    val back = { Nav.page = Nav.back() }
                     when {
                         ns != null -> SimilarScreen(ui, ns) { Nav.sim = null }
                         np == "pend" -> PendingScreen(ui) { Nav.page = null }
                         np == "kept" -> KeptScreen(ui) { Nav.page = null }
+                        d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
+                        np == "songs" -> AllSongsScreen(ui, back)
+                        np == "albums" -> Column { Header("Álbuns", onBack = back); Box(Modifier.weight(1f)) { AlbumsTab { detail = it } } }
+                        np == "artists" -> Column { Header("Artistas", onBack = back); Box(Modifier.weight(1f)) { ArtistsTab { detail = it } } }
+                        np == "playlists" -> PlaylistsTab(ui) { playlistDetail = it }
+                        np == "themes" -> ThemesScreen(back)
+                        np == "stats" -> StatsScreen(ui, back)
+                        np == "moments" -> MomentsScreen(ui, back)
+                        np == "import" -> ImportScreen(back)
+                        np == "export" -> ExportScreen(ui, back)
+                        np != null && np.startsWith("op:") -> OnlinePlaylistScreen(ui, np.removePrefix("op:"), back)
                         na != null -> AlbumScreen(ui, na) { Nav.album = null }
                         nr != null -> ArtistScreen(ui, nr) { Nav.artist = null }
-                        d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
                         pd == ONLINE_FAVS -> OnlineList(ui, "Favoritos online", YtStore.favs()) { playlistDetail = null }
                         pd == ONLINE_HIST -> RecentGrid(ui, YtStore.history()) { playlistDetail = null }
                         pd != null -> PlaylistDetail(ui, pd) { playlistDetail = null }
-                        tab == 0 -> SongsTab(ui)
-                        tab == 1 -> AlbumsTab { detail = it }
-                        tab == 2 -> ArtistsTab { detail = it }
-                        tab == 3 -> PlaylistsTab(ui) { playlistDetail = it }
-                        tab == 4 -> DiscoverTab(ui)
+                        tab == 0 -> DiscoverTab(ui)
+                        tab == 1 -> SongsTab(ui)
+                        tab == 2 -> RadioScreen(ui, null)
+                        tab == 3 -> LibraryTab(ui) { playlistDetail = it }
                         else -> SettingsScreen(ui, onEq = { showEq = true }, onRescan = { if (granted) scope.launch { Library.load(ctx) } })
                     }
                 }
@@ -181,14 +195,14 @@ fun Header(title: String, onBack: (() -> Unit)? = null, actions: @Composable Row
             Spacer(Modifier.weight(1f))
             actions()
         }
-        Text(title, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold,
+        Text(title, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp), fontSize = 34.sp, fontWeight = FontWeight.Bold, fontFamily = Skins.font,
             letterSpacing = (-0.5).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 fun Section(title: String) {
-    Text(title.uppercase(), Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Text(title.uppercase(), Modifier.padding(start = 20.dp, top = 22.dp, bottom = 6.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = Skins.font,
         fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.3.sp)
 }
 
@@ -238,6 +252,7 @@ fun SongsTab(ui: PlayerUi) {
         online = emptyList(); dl = emptyList(); loading = false; ytm = null
         if (q.length < 2) return@LaunchedEffect
         delay(300)
+        Recent.add(q)
         scope.launch { val r = Ytm.search(q); if (query.trim() == q) ytm = r }
         loading = true
         val r = OnlineSearch.search(q)
@@ -253,9 +268,11 @@ fun SongsTab(ui: PlayerUi) {
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header("Músicas") }
+        item { Header("Buscar") }
         item { SearchField(query) { query = it } }
         if (q.isEmpty()) {
+            item { SearchHome { query = it } }
+        } else if (false) {
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(favOnly, { favOnly = !favOnly }, { Text("Favoritas") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(16.dp)) })
@@ -635,6 +652,7 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                         }
                     }
                     ToolBtn(Icons.Rounded.QueueMusic, "Fila", false) { showQueue = true }
+                    if (!onRadio) { Prefs.version.intValue; ToolBtn(Icons.Rounded.Album, Retro.NAMES[Retro.mode] ?: "Normal", Retro.mode.isNotEmpty()) { Retro.next(); Prefs.version.intValue++ } }
                     // faixa de fonte aberta (Audius/Archive): guardar dentro do app pra tocar sem internet
                     val mid = ui.mediaId
                     if (mid != null && mid.startsWith("au:") && !onRadio) {
@@ -837,6 +855,10 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 40.dp)) {
         Header("Ajustes")
         SkinGallery()
+        TextButton(onClick = { Nav.page = "themes" }, Modifier.padding(start = 12.dp)) { Icon(Icons.Rounded.Palette, null); Text("  Ver todos os temas em tela cheia") }
+        Group("Economia de bateria", footer = if (Eco.bySystem) "Ligado agora porque o celular está em economia de bateria." else "Corta o que gasta à toa (fundo do tema, vídeo, fontes, borrão) sem mexer em tocar, buscar, baixar ou gravar.") {
+            ChoiceRow("Modo economia", listOf("auto" to "Automático", "on" to "Sempre", "off" to "Nunca"), Eco.mode) { Eco.mode = it; Prefs.version.intValue++ }
+        }
 
         Group("Aparência") {
             ChoiceRow("Fundo", listOf("system" to "Sistema", "light" to "Claro", "dark" to "Escuro", "amoled" to "Preto total"), Prefs.themeMode) { Prefs.themeMode = it }
@@ -892,7 +914,7 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
         Group("Biblioteca", footer = "Notas de voz e áudios do WhatsApp, Telegram e gravações ficam de fora.") {
             SwitchRow("Mostrar só músicas", "Esconde áudios de WhatsApp e gravações", Prefs.hideVoice) { Prefs.hideVoice = it }
             Div()
-            ChoiceRow("Aba inicial", listOf("0" to "Músicas", "1" to "Álbuns", "2" to "Artistas", "3" to "Playlists", "4" to "Descobrir"), Prefs.startTab.toString()) { Prefs.startTab = it.toInt() }
+            ChoiceRow("Aba inicial", listOf("0" to "Descobrir", "1" to "Buscar", "2" to "Rádio", "3" to "Biblioteca"), Prefs.startTab.toString()) { Prefs.startTab = it.toInt() }
             Div()
             ChoiceRow("Colunas de álbuns", listOf("2" to "2", "3" to "3", "4" to "4"), Prefs.gridColumns.toString()) { Prefs.gridColumns = it.toInt() }
             Div()
@@ -946,7 +968,8 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
         }
 
-        Text("Uncrowned Music 1.3", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AboutCard()
+        Text("Uncrowned Music 1.4", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1020,7 +1043,14 @@ fun RecentGrid(ui: PlayerUi, list: List<YtVideo>, onBack: () -> Unit) {
 object Nav {
     var artist by mutableStateOf<YtmArtistHit?>(null)
     var album by mutableStateOf<YtmAlbumHit?>(null)
-    var page by mutableStateOf<String?>(null)     // "pend" = Pra sincronizar, "kept" = Guardadas no app
+    private val stack = ArrayList<String>()
+    private var pageS = mutableStateOf<String?>(null)
+    // páginas internas (biblioteca, temas, mais ouvidas...): guardam o caminho pra voltar
+    var page: String?
+        get() = pageS.value
+        set(v) { if (v != null && pageS.value != null && pageS.value != v) stack.add(pageS.value!!); if (v == null) stack.clear(); pageS.value = v }
+    fun back(): String? { val p = stack.removeLastOrNull(); pageS.value = p; return p }
+    fun clear() { stack.clear(); pageS.value = null; artist = null; album = null; sim = null }
     var sim by mutableStateOf<YtVideo?>(null)       // parecidas que baixam
 }
 

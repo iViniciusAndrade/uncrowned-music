@@ -26,6 +26,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 
 /* Temas (estilos de turma): mesmas cores, caveiras e artes da versão de PC.
    O ícone da tela inicial troca junto (atalhos do app, um por tema). */
@@ -57,12 +66,39 @@ object Skins {
     )
     val current: Skin? get() = all.firstOrNull { it.id == Prefs.skin }
 
+    // fonte dos títulos de cada tema (a mesma da versão de PC)
+    private val FONTS = mapOf("edgy" to R.font.font_oxanium, "fadinha" to R.font.font_quicksand, "otaku" to R.font.font_mplusrounded,
+        "oldmoney" to R.font.font_cormorant, "alternativo" to R.font.font_spacegrotesk, "punk" to R.font.font_bungee, "pulseirinhas" to R.font.font_fredoka,
+        "ninja" to R.font.font_shojumaru, "deserto" to R.font.font_cinzel, "ouro" to R.font.font_playfair, "cela" to R.font.font_anton,
+        "rock" to R.font.font_specialelite, "pavor" to R.font.font_creepster, "julie" to R.font.font_quicksand, "nino" to R.font.font_baloo2, "divino" to R.font.font_cinzeldeco)
+    private val VARIABLE = setOf("edgy", "fadinha", "oldmoney", "alternativo", "pulseirinhas", "deserto", "ouro", "julie", "nino")
+    private val cacheF = HashMap<String, FontFamily>()
+    @OptIn(ExperimentalTextApi::class)
+    fun fontOf(id: String?): FontFamily? {
+        val res = FONTS[id ?: return null] ?: return null
+        return cacheF.getOrPut(id) {
+            if (id in VARIABLE) FontFamily(
+                Font(res, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+                Font(res, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+                Font(res, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+                Font(res, FontWeight.Black, variationSettings = FontVariation.Settings(FontVariation.weight(900))))
+            else FontFamily(Font(res, FontWeight.Normal), Font(res, FontWeight.Bold), Font(res, FontWeight.Black))
+        }
+    }
+    val font: FontFamily? get() = if (Eco.on) null else fontOf(Prefs.skin)
+
     fun apply(ctx: Context, s: Skin) {
         Prefs.skin = s.id
         Prefs.accent = s.accent.toInt()
         Prefs.themeMode = if (s.dark) "amoled" else "light"
         Prefs.dynamicColor = false
-        setLauncherIcon(ctx, s.id)
+        // o Android fecha o app quando troca o ícone; então troca só quando você sair do app (e nada estiver tocando)
+        Prefs.sp.edit().putString("iconpending", s.id).apply()
+    }
+    fun applyPendingIcon(ctx: Context) {
+        val id = Prefs.sp.getString("iconpending", null) ?: return
+        Prefs.sp.edit().remove("iconpending").apply()
+        setLauncherIcon(ctx, id)
     }
 
     // troca o ícone da tela inicial: liga o atalho do tema e desliga os outros
@@ -80,7 +116,7 @@ object Skins {
 @Composable
 fun SkinBackground() {
     val s = Skins.current ?: return
-    if (s.artAlpha <= 0f) return
+    if (s.artAlpha <= 0f || Eco.on) return
     Image(painterResource(s.art), null, Modifier.fillMaxSize().alpha(s.artAlpha), contentScale = ContentScale.Crop, alignment = Alignment.TopCenter)
 }
 
@@ -105,6 +141,44 @@ fun SkinGallery() {
                     Text(s.desc, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 13.sp)
                     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf(s.bg, s.card2, s.accent).forEach { c -> Box(Modifier.size(12.dp).clip(CircleShape).background(Color(c)).border(0.5.dp, Color.Gray.copy(alpha = .4f), CircleShape)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* tela de temas: todos com a arte, a caveira e as cores, igual ao PC */
+@Composable
+fun ThemesScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    Prefs.version.intValue
+    LazyVerticalGrid(GridCells.Fixed(2), Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+            Column {
+                Header("Temas", onBack = onBack)
+                Text("Cada tema muda as cores, a fonte e o fundo na hora. O ícone da tela inicial troca quando você sair do app (o Android fecha o app pra trocar ícone, então esperamos você sair).", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        gridItems(Skins.all, key = { it.id }) { s ->
+            val on = Prefs.skin == s.id
+            Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Color(s.bg))
+                .border(3.dp, if (on) Color(s.accent) else Color.Gray.copy(alpha = .25f), RoundedCornerShape(18.dp))
+                .clickable { Skins.apply(ctx, s) }) {
+                Box(Modifier.fillMaxWidth().height(150.dp)) {
+                    if (s.artAlpha > 0f) Image(painterResource(s.art), null, Modifier.fillMaxSize().alpha(.55f), contentScale = ContentScale.Crop)
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(s.bg)))))
+                    Image(painterResource(s.icon), null, Modifier.size(84.dp).align(Alignment.Center).clip(RoundedCornerShape(20.dp)))
+                    if (on) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(10.dp)).background(Color(s.accent)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                        Text("EM USO", fontSize = 10.sp, fontWeight = FontWeight.Black, color = if (s.dark || s.id == "apagao") Color.Black else Color.White)
+                    }
+                }
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                    Text(s.name, fontFamily = Skins.fontOf(s.id), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(s.text), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(s.desc, fontSize = 11.sp, color = Color(s.dim), maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        listOf(s.card, s.card2, s.accent).forEach { c -> Box(Modifier.size(14.dp).clip(CircleShape).background(Color(c)).border(0.5.dp, Color.Gray.copy(alpha = .4f), CircleShape)) }
                     }
                 }
             }
