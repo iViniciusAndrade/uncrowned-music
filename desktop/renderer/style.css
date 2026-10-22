@@ -407,3 +407,49 @@ h2{font-size:20px;font-weight:700;margin:28px 0 12px}
 .htile.cur .tt{color:var(--accent)}
 .htile .tt{margin-top:9px;font-weight:600;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3}
 .htile .ta{color:var(--dim);font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* caçador de rádio */
+.hunt{background:var(--card);border-radius:14px;padding:16px;margin:0 0 18px;border:1px solid rgba(255,255,255,.06)}
+.hunt.on{border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 12%,var(--card)),var(--card) 60%)}
+.huntTop{display:flex;align-items:center;gap:16px;justify-content:space-between}
+.huntTop b{display:block;font-size:16px}
+.huntTop span{display:block;font-size:12.5px;color:var(--dim);margin-top:3px}
+.huntTop i{font-style:normal;color:var(--accent);font-weight:700}
+.huntTop .sw{cursor:pointer}
+.huntArts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;align-items:center}
+.huntArts .chip{display:inline-flex;align-items:center;gap:6px}
+.huntArts .chip i{display:grid;place-items:center;opacity:.5;cursor:pointer} .huntArts .chip i:hover{opacity:1}
+.huntArts .chip svg{width:12px;height:12px;fill:currentColor}
+.huntArts .txt{width:130px;padding:6px 10px;border-radius:999px;background:var(--card2);border:0;outline:none;color:var(--text);font-size:13px}
+.huntHits{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.huntHits small{grid-column:1/-1;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.hhit{background:var(--card2);border-radius:10px;padding:9px 12px;cursor:pointer}
+.hhit:hover{background:color-mix(in srgb,var(--accent) 18%,var(--card2))}
+.hhit b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hhit span{display:block;font-size:11.5px;color:var(--dim);margin-top:2px}
+.stnNow{color:var(--accent)!important;font-weight:600}
+.stnNow:empty{display:none!important}
+.ck.small{font-size:12px;color:var(--dim);margin-top:8px}
+.recInfo em{font-style:normal;color:var(--text)}
+
+/* música do momento */
+.momCards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin:8px 0 6px}
+.momCard{position:relative;min-height:120px;border-radius:16px;padding:16px;cursor:pointer;overflow:hidden;color:#fff;transition:transform .2s;background:linear-gradient(135deg,var(--g1),var(--g2))}
+.momCard:hover{transform:translateY(-2px) scale(1.01)}
+.momCard b{display:block;font-size:18px;font-weight:800;line-height:1.2;max-width:85%}
+.momCard span{display:block;font-size:12.5px;opacity:.85;margin-top:6px;max-width:85%}
+.momCard svg{position:absolute;right:14px;bottom:14px;width:40px;height:40px;padding:9px;border-radius:50%;background:rgba(0,0,0,.28);fill:#fff;opacity:0;transition:.2s}
+.momCard:hover svg{opacity:1}
+.momCard.c0{--g1:#8e2de2;--g2:#4a00e0} .momCard.c1{--g1:#f7971e;--g2:#d4380d} .momCard.c2{--g1:#11998e;--g2:#0b5f57}
+.momCard.c3{--g1:#ee0979;--g2:#8a0548} .momCard.c4{--g1:#2b5876;--g2:#1a2a3a} .momCard.c5{--g1:#c31432;--g2:#240b36}
+.heat{display:grid;grid-template-columns:44px repeat(4,1fr);gap:6px;max-width:640px;margin-top:8px}
+.heat .hh{font-size:11px;color:var(--dim);text-align:center;text-transform:capitalize}
+.heat .hd{font-size:12px;color:var(--dim);align-self:center;text-transform:capitalize}
+.heat .hc{height:38px;border-radius:8px;background:color-mix(in srgb,var(--accent) calc(var(--a) * 100%),var(--card2));display:grid;place-items:center;font-size:11px;font-weight:700;cursor:pointer;transition:transform .15s}
+.heat .hc:hover{transform:scale(1.06)}
+.placeAsk{display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between;background:var(--card);border:1px solid color-mix(in srgb,var(--accent) 50%,transparent);border-radius:14px;padding:14px 16px;margin:6px 0 18px}
+.placeAsk b{display:block} .placeAsk span{font-size:12.5px;color:var(--dim)}
+.placeAsk .btns{margin:0} .placeAsk .txt,.netRow .txt{padding:8px 12px;border-radius:9px;background:var(--card2);border:0;outline:none;color:var(--text)}
+.nets{display:grid;gap:8px;max-width:640px}
+.netRow{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border-radius:10px;padding:8px 12px}
+.netRow span{font-size:14px}

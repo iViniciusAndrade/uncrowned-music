@@ -39,6 +39,8 @@ const P = {
   eq: 'M10 20h4V4h-4v16zm-6 0h4v-8H4v8zM16 9v11h4V9h-4z',
   search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   wave: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
+  cassette: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-1.4l-1.6-3H7l-1.6 3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm3.5 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm9 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM10 10.25v1.5h4v-1.5h-4z',
+  cal: 'M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7z',
   radio: 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z',
   close: 'M18.3 5.71a.996.996 0 0 0-1.41 0L12 10.59 7.11 5.7A.996.996 0 1 0 5.7 7.11L10.59 12 5.7 16.89a.996.996 0 1 0 1.41 1.41L12 13.41l4.89 4.89a.996.996 0 1 0 1.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z'
 };
@@ -86,6 +88,47 @@ function applyLook() {
   U.titleColor(r.classList.contains('light') ? '#000000' : '#ffffff');
 }
 
+/* modo retrô: fita K7 ou vinil, montado com Web Audio (o mesmo código roda no PC e dentro do YouTube/SoundCloud) */
+const RETRO_SRC = `function(c, mode) {
+  const inp = c.createGain(), out = c.createGain();
+  if (!mode) { inp.connect(out); return { input: inp, output: out, mode: '', stop() {} }; }
+  const tape = mode === 'k7';
+  const bq = (type, f, g, q) => { const b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; if (g != null) b.gain.value = g; if (q != null) b.Q.value = q; return b; };
+  const hp = bq('highpass', tape ? 70 : 35), ls = bq('lowshelf', 180, tape ? -4 : -2), mid = bq('peaking', 1500, tape ? 2 : 1.5, 0.7), lp = bq('lowpass', tape ? 7000 : 11000, null, 0.5);
+  const ws = c.createWaveShaper(), k = tape ? 2.2 : 1.4, n = 1024, cv = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; cv[i] = Math.tanh(k * x) / Math.tanh(k); } ws.curve = cv;
+  const dl = c.createDelay(0.05); dl.delayTime.value = 0.012;
+  const osc = (f, depth) => { const o = c.createOscillator(), g = c.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(dl.delayTime); o.start(); return o; };
+  const wow = osc(0.55, tape ? 0.0016 : 0.0006), flut = osc(6.5, tape ? 0.00018 : 0.00004);
+  inp.connect(hp); hp.connect(ls); ls.connect(mid); mid.connect(ws); ws.connect(lp); lp.connect(dl); dl.connect(out);
+  const len = c.sampleRate * 4, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+  if (tape) { let b = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b = 0.97 * b + 0.03 * w; d[i] = (w * 0.6 + b * 2) * 0.5; } }
+  else for (let i = 0; i < len; i++) {
+    d[i] += (Math.random() * 2 - 1) * 0.06;
+    if (Math.random() < 0.0003) d[i] += (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.6);
+    if (Math.random() < 0.00002) for (let j = 0; j < 40 && i + j < len; j++) d[i + j] += (Math.random() * 2 - 1) * 0.6 * (1 - j / 40);
+  }
+  const ns = c.createBufferSource(); ns.buffer = buf; ns.loop = true;
+  const nf = bq(tape ? 'bandpass' : 'highpass', tape ? 4000 : 1200), ng = c.createGain(); ng.gain.value = tape ? 0.022 : 0.05;
+  ns.connect(nf); nf.connect(ng); ng.connect(out); ns.start();
+  return { input: inp, output: out, mode, stop() { try { wow.stop(); flut.stop(); ns.stop(); } catch (e) {} } };
+}`;
+const makeRetro = new Function('return ' + RETRO_SRC)();
+let retro = null;
+function applyRetroLocal() {
+  if (!ctx || !gainN || !ctx.createGain) return;
+  const m = S().retro || '';
+  if (retro && retro.mode === m) return;
+  try { gainN.disconnect(); } catch {}
+  if (retro) { try { retro.output.disconnect(); } catch {} retro.stop(); }
+  retro = makeRetro(ctx, m); gainN.connect(retro.input); retro.output.connect(ctx.destination);
+}
+const RETRO_NAMES = { '': 'Normal', k7: 'Fita K7', vinil: 'Vinil' };
+function setRetro(m) {
+  S().retro = m; save(); applyRetroLocal(); try { embedEq(); } catch {}
+  const b = $('#bRetro'); if (b) { b.classList.toggle('on', !!m); b.title = 'Modo retrô: ' + RETRO_NAMES[m]; }
+  toast(m ? `Modo ${RETRO_NAMES[m]} ligado` : 'Modo retrô desligado');
+}
 /* ---------------- motor de áudio (arquivos + streams) com equalizador ---------------- */
 const audio = $('#audio');
 const FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -101,22 +144,23 @@ function buildGraph() {
   bassF = ctx.createBiquadFilter(); bassF.type = 'lowshelf'; bassF.frequency.value = 90;
   gainN = ctx.createGain();
   let n = src; for (const f of [...filters, bassF, gainN]) { n.connect(f); n = f; }
-  n.connect(ctx.destination);
+  applyRetroLocal();
   applyEq();
 }
 /* equalizador também no YouTube e no SoundCloud: liga os mesmos filtros dentro do player deles */
-const EQ_JS = () => { const s = S(); const cfg = JSON.stringify({ on: !!s.eqOn, g: s.eq, b: s.bass, k: s.gainBoost }); return `(()=>{const C=${cfg};
+const EQ_JS = () => { const s = S(); const cfg = JSON.stringify({ on: !!s.eqOn, g: s.eq, b: s.bass, k: s.gainBoost, fx: s.retro || '' }); return `(()=>{const C=${cfg};const R=${RETRO_SRC};
   window.__uncEls=window.__uncEls||new Set();
   if(!window.__uncEqPatched){window.__uncEqPatched=true;const op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){try{window.__uncEls.add(this)}catch(e){}return op.apply(this,arguments)};}
   const F=[31,62,125,250,500,1000,2000,4000,8000,16000];
   const els=new Set([...document.querySelectorAll('video,audio'),...(window.__uncEls||[])]); let n=0;
   els.forEach(m=>{
-    if(!m.__uncEq){ if(!C.on) return; const src=m.currentSrc||m.src||''; if(!src.startsWith('blob:')) return;
+    if(!m.__uncEq){ if(!C.on && !C.fx) return; const src=m.currentSrc||m.src||''; if(!src.startsWith('blob:')) return;
       try{const c=window.__uncAC||(window.__uncAC=new AudioContext());const sr=c.createMediaElementSource(m);
         const fs=F.map((f,i)=>{const x=c.createBiquadFilter();x.type=i==0?'lowshelf':i==9?'highshelf':'peaking';x.frequency.value=f;x.Q.value=1.1;return x});
         const bf=c.createBiquadFilter();bf.type='lowshelf';bf.frequency.value=90;const gn=c.createGain();
-        let x=sr;for(const y of [...fs,bf,gn]){x.connect(y);x=y}x.connect(c.destination);m.__uncEq={fs,bf,gn};}catch(e){m.__uncEq={err:1};return}}
+        let x=sr;for(const y of [...fs,bf,gn]){x.connect(y);x=y}m.__uncEq={fs,bf,gn,c,rm:null};m.addEventListener('pause',()=>{if(m.__uncEq.rm&&m.__uncEq.rm.mode)c.suspend()});m.addEventListener('play',()=>c.resume());}catch(e){m.__uncEq={err:1};return}}
     const q=m.__uncEq; if(q.err) return; n++;
+    if(q.rm===null||q.rm.mode!==C.fx){ try{q.gn.disconnect()}catch(e){} if(q.rm){try{q.rm.output.disconnect()}catch(e){} q.rm.stop()} q.rm=R(q.c,C.fx); q.gn.connect(q.rm.input); q.rm.output.connect(q.c.destination); }
     q.fs.forEach((f,i)=>f.gain.value=C.on?(C.g[i]||0):0); q.bf.gain.value=C.on?C.b:0; q.gn.gain.value=Math.pow(10,(C.on?C.k:0)/20);
   });
   if(window.__uncAC&&window.__uncAC.state==='suspended')window.__uncAC.resume();
@@ -150,8 +194,8 @@ function applyRate(user) {
 audio.addEventListener('loadedmetadata', () => applyRate());
 audio.addEventListener('playing', () => { if (audio.playbackRate !== S().speed) applyRate(); });
 audio.addEventListener('timeupdate', () => { if (st.kind === 'audio') { st.time = audio.currentTime * 1000; st.dur = (audio.duration || 0) * 1000; tick(); } });
-audio.addEventListener('play', () => setPlaying(true));
-audio.addEventListener('pause', () => setPlaying(false));
+audio.addEventListener('play', () => { setPlaying(true); if (ctx && ctx.resume && ctx.state === 'suspended') ctx.resume(); });
+audio.addEventListener('pause', () => { setPlaying(false); if (ctx && ctx.suspend && S().retro) ctx.suspend(); });
 audio.addEventListener('ended', () => ended());
 audio.addEventListener('error', () => { if (st.kind === 'audio' && audio.src) { toast('Não deu pra tocar essa faixa. Pulando…'); setTimeout(next, 800); } });
 // recupera sozinho se o áudio travar (tocando, mas o tempo não anda)
@@ -221,7 +265,7 @@ async function playYT(t) {
   startPoll(async () => {
     if (st.kind !== 'yt') return;
     const s = S();
-    if (s.eqOn && ++eqTick % 5 === 0) embedEq();
+    if ((s.eqOn || s.retro) && ++eqTick % 5 === 0) embedEq();
     const r = await ytExec(`(()=>{const v=${V};
       const err=document.querySelector('.ytp-error, yt-playability-error-supported-renderers, #player-error-message-container');
       const errTxt=err&&err.offsetParent!==null?err.innerText.slice(0,160):'';
@@ -279,7 +323,7 @@ async function playSC(t) {
     sc.w.bind(SC.Widget.Events.FINISH, () => ended());
     sc.w.bind(SC.Widget.Events.READY, () => sc.w.setVolume(S().volume * 100));
   }
-  startPoll(() => { if (S().eqOn && ++eqTick % 5 === 0) embedEq(); if (sc.w) sc.w.getPosition(p => sc.w.getDuration(d => { st.time = p; st.dur = d; tick(); })); });
+  startPoll(() => { if ((S().eqOn || S().retro) && ++eqTick % 5 === 0) embedEq(); if (sc.w) sc.w.getPosition(p => sc.w.getDuration(d => { st.time = p; st.dur = d; tick(); })); });
 }
 let scRetry = 0;
 async function scApplyRate() {
@@ -324,7 +368,7 @@ async function playAt(i) {
     D.radioRecent = [t, ...(D.radioRecent || []).filter(x => x.id !== t.id)].slice(0, 12); save();
     updateNowPlaying(); markCurrent(); $('#tDur').textContent = 'AO VIVO'; $('#tCur').textContent = '';
     if (view.name === 'radio') render(); else paintRec();
-    renderNav();
+    renderNav(); radioNow = ''; setTimeout(pollRadioNow, 2500);
     return;
   }
   if (recState) recStop(true);
@@ -459,6 +503,7 @@ function tasteDecay() {
 }
 function onTrackChange(t) {
   if (t && t.src === 'radio') return;
+  logMoment(t);
   // quanto da música anterior você ouviu: pulou rápido = não curtiu; ouviu quase inteira = curtiu
   if (lastKey && lastMeta) {
     const el = Date.now() - startedAt, dur = lastMeta.duration || 0;
@@ -704,12 +749,12 @@ function prompt2(label, cb) {
 }
 
 /* ---------------- navegação ---------------- */
-const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio']];
+const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio'], ['moments', 'Momentos', 'cal']];
 const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
   const radioOn = st.kind === 'radio' && st.playing;
   // na rádio: velocidade e sincronizar ficam desligados
-  for (const id of ['#bSpeed', '#bSync']) { const b = $(id); if (b) { b.disabled = st.kind === 'radio'; b.title = st.kind === 'radio' ? 'Desligado na rádio ao vivo' : id === '#bSpeed' ? 'Velocidade' : 'Sincronizar (salvar no PC)'; } }
+  for (const id of ['#bSpeed', '#bSync', '#bRetro']) { const b = $(id); if (b) { b.disabled = st.kind === 'radio'; b.title = st.kind === 'radio' ? 'Desligado na rádio ao vivo' : id === '#bSpeed' ? 'Velocidade' : id === '#bRetro' ? 'Modo retrô: ' + RETRO_NAMES[S().retro || ''] : 'Sincronizar (salvar no PC)'; } }
   const a = ([k, l, i]) => `<a data-v="${k}" class="${view.name === k ? 'on' : ''} ${k === 'export' && radioOn ? 'off' : ''}" ${k === 'export' && radioOn ? 'title="Desativado enquanto a rádio toca"' : ''}>${ico(i)}<span>${l}</span></a>`;
   $('#nav').innerHTML = NAV.map(a).join('') + `<div class="navlabel">Offline · no seu PC</div>` + NAV_OFF.map(a).join('') + `<div class="navsep"></div>` + a(['settings', 'Ajustes', 'gear']);
   renderPlNav();
@@ -1096,6 +1141,81 @@ function changed(k, keepView) {
   if (!keepView) render();
 }
 
+/* ---------------- música do momento: quando e onde você ouviu cada música ---------------- */
+let netNow = '';
+async function refreshNet() { netNow = await U.netName().catch(() => '') || ''; }
+setInterval(refreshNet, 10 * 60e3); setTimeout(refreshNet, 2000);
+function logMoment(t) {
+  if (!t) return;
+  const k = keyOf(t); if (!k) return;
+  D.moments = D.moments || []; D.mtr = D.mtr || {};
+  D.mtr[k] = { src: t.src, id: t.id, title: t.title, artist: t.artist, art: t.art, duration: t.duration, path: t.path, stream: t.stream, url: t.url, genre: t.genre, album: t.album, download: t.download };
+  D.moments.push([Math.floor(Date.now() / 1000), k, netNow]);
+  if (D.moments.length > 30000) D.moments.splice(0, D.moments.length - 30000);
+}
+const placeOf = net => (D.places || {})[net] || '';
+const PERIODS = [['madrugada', 'de madrugada', 0, 5], ['manha', 'de manhã', 6, 11], ['tarde', 'à tarde', 12, 17], ['noite', 'à noite', 18, 23]];
+const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const periodOf = h => PERIODS.find(p => h >= p[2] && h <= p[3]);
+// monta a playlist com as mais ouvidas no recorte escolhido
+function momentList(filter) {
+  const cnt = new Map();
+  for (const [ts, k, net] of D.moments || []) { const d = new Date(ts * 1000); if (filter(d, net) && D.mtr[k]) cnt.set(k, (cnt.get(k) || 0) + 1); }
+  return [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k, n]) => ({ ...D.mtr[k], _n: n }));
+}
+function openMoment(title, filter) {
+  const l = momentList(filter);
+  if (!l.length) return toast('Ainda não tem músicas nesse momento');
+  const total = l.reduce((a, t) => a + t._n, 0);
+  go({ name: 'group', title, list: l, sub: `${l.length} músicas · ouvidas ${total} vezes nesse momento` });
+}
+views.moments = () => {
+  const M = D.moments || [];
+  const now = new Date(), per = periodOf(now.getHours());
+const seenM = new Set(M.map(m => { const d = new Date(m[0] * 1000); return d.getFullYear() * 100 + d.getMonth(); }));
+  const months = [...seenM].sort((a, b) => b - a).slice(0, 12).map(k => [Math.floor(k / 100), k % 100]);
+  const nets = [...new Set(M.map(m => m[2]).filter(Boolean))];
+  const places = [...new Set(nets.map(placeOf).filter(Boolean))];
+  const grid = Array.from({ length: 7 }, () => [0, 0, 0, 0]); let gmax = 1;
+  for (const [ts] of M) { const d = new Date(ts * 1000); const pi = PERIODS.indexOf(periodOf(d.getHours())); grid[d.getDay()][pi]++; gmax = Math.max(gmax, grid[d.getDay()][pi]); }
+  const unknown = netNow && !placeOf(netNow);
+  const cards = [
+    ['agora', `Suas músicas de ${DIAS[now.getDay()]} ${per[1]}`, 'O que você costuma ouvir nesse dia e horário'],
+    ['mes', `O que eu ouvia em ${MESES[now.getMonth()]}`, 'As mais ouvidas deste mês'],
+    ['mespass', `O que eu ouvia em ${MESES[(now.getMonth() + 11) % 12]}`, 'As mais ouvidas do mês passado'],
+    ['fds', 'Fins de semana', 'Sábados e domingos'],
+    ['madru', 'Madrugadas', 'Da meia-noite às 6h'],
+    ...places.map(p => ['pl:' + p, p === 'Casa' ? 'Em casa' : p === 'Trampo' ? 'No trampo' : p, 'Quando você estava ' + (p === 'Casa' ? 'em casa' : p === 'Trampo' ? 'no trampo' : 'em ' + p)])
+  ];
+  $('#view').innerHTML = `<h1>Música do momento</h1><div class="sub">O app lembra quando e onde você ouviu cada música e monta playlists dos seus momentos. ${M.length ? `${M.length} músicas registradas.` : 'Começa a contar a partir de agora.'}</div>
+    ${unknown ? `<div class="placeAsk"><div><b>Você está na rede “${esc(netNow)}”.</b><span>Que lugar é esse? Assim o app separa suas músicas por lugar.</span></div>
+      <div class="btns">${['Casa', 'Trampo', 'Na rua'].map(p => `<button class="btn" data-place="${p}">${p}</button>`).join('')}<input class="txt" id="placeOther" placeholder="Outro (ex: Academia)"></div></div>` : ''}
+    <div class="momCards">${cards.map(([k, t, sub], i) => `<div class="momCard c${i % 6}" data-mom="${esc(k)}"><b>${esc(t)}</b><span>${esc(sub)}</span>${ico('play')}</div>`).join('')}</div>
+    ${months.length ? `<h2>Por mês</h2><div class="chips">${months.map(([y, m]) => `<button class="chip" data-mm="${y}-${m}">${MESES[m][0].toUpperCase() + MESES[m].slice(1)}${y !== now.getFullYear() ? ' ' + y : ''}</button>`).join('')}</div>` : ''}
+    <h2>Dia e horário</h2><div class="sub">Quanto mais forte a cor, mais música você ouve nesse horário. Clique pra tocar.</div>
+    <div class="heat"><span></span>${PERIODS.map(p => `<span class="hh">${p[0] === 'manha' ? 'manhã' : p[0]}</span>`).join('')}
+      ${grid.map((row, d) => `<span class="hd">${DIAS[d].slice(0, 3)}</span>${row.map((v, pi) => `<div class="hc" data-hc="${d}:${pi}" style="--a:${v ? 0.15 + 0.85 * v / gmax : 0}" title="${v} músicas">${v || ''}</div>`).join('')}`).join('')}</div>
+    ${nets.length ? `<h2>Lugares</h2><div class="sub">Redes em que você ouviu música. Dê um nome pra cada uma.</div><div class="nets">${nets.map(n => `<div class="netRow"><span>${esc(n)}</span><input class="txt" data-net="${esc(n)}" value="${esc(placeOf(n))}" placeholder="Nome do lugar"></div>`).join('')}</div>` : ''}`;
+  const v = $('#view');
+  v.querySelectorAll('[data-place]').forEach(b => b.onclick = () => { D.places = D.places || {}; D.places[netNow] = b.dataset.place; save(); render(); });
+  const po = $('#placeOther'); if (po) po.onkeydown = e => { if (e.key === 'Enter' && po.value.trim()) { D.places = D.places || {}; D.places[netNow] = po.value.trim(); save(); render(); } };
+  v.querySelectorAll('[data-net]').forEach(i => i.onchange = () => { D.places = D.places || {}; if (i.value.trim()) D.places[i.dataset.net] = i.value.trim(); else delete D.places[i.dataset.net]; save(); render(); });
+  v.querySelectorAll('[data-mom]').forEach(c => c.onclick = () => {
+    const k = c.dataset.mom, t = c.querySelector('b').textContent;
+    const ym = (d, y, m) => d.getFullYear() === y && d.getMonth() === m;
+    const f = k === 'agora' ? d => d.getDay() === now.getDay() && periodOf(d.getHours()) === per
+      : k === 'mes' ? d => ym(d, now.getFullYear(), now.getMonth())
+      : k === 'mespass' ? (() => { const p = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d => ym(d, p.getFullYear(), p.getMonth()); })()
+      : k === 'fds' ? d => d.getDay() === 0 || d.getDay() === 6
+      : k === 'madru' ? d => d.getHours() < 6
+      : k.startsWith('pl:') ? (d, net) => placeOf(net) === k.slice(3) : () => false;
+    openMoment(t, f);
+  });
+  v.querySelectorAll('[data-mm]').forEach(b => b.onclick = () => { const [y, m] = b.dataset.mm.split('-').map(Number); openMoment(`O que eu ouvia em ${MESES[m]}${y !== now.getFullYear() ? ' de ' + y : ''}`, d => d.getFullYear() === y && d.getMonth() === m); });
+  v.querySelectorAll('[data-hc]').forEach(c => c.onclick = () => { const [d, pi] = c.dataset.hc.split(':').map(Number); const p = PERIODS[pi]; openMoment(`Suas músicas de ${DIAS[d]} ${p[1]}`, x => x.getDay() === d && periodOf(x.getHours()) === p); });
+};
+
 /* ---------------- sincronizar: salvar a música no PC (pasta Música/Uncrowned) ---------------- */
 async function syncTrack(t) {
   if (!t) return;
@@ -1108,21 +1228,72 @@ async function syncTrack(t) {
   if (res.ok) rescan();
 }
 /* ---------------- rádio ---------------- */
-let recState = null, recTimer = null;
+let recState = null, recTimer = null, radioNow = '', radioNowT = null, huntNow = {};
+/* nome da música que está passando na rádio (lido do sinal da própria rádio) */
+async function pollRadioNow() {
+  clearTimeout(radioNowT);
+  const t = cur(); if (!t || t.src !== 'radio' || st.kind !== 'radio') { radioNow = ''; return; }
+  const title = await U.icyNow(t.stream);
+  if (cur() !== t) return;
+  if (title !== null && title !== radioNow) {
+    radioNow = title || '';
+    $('#barArtist').textContent = radioNow ? '♪ ' + radioNow : t.artist;
+    if (view.name === 'radio' && !recState) paintRec();
+  }
+  radioNowT = setTimeout(pollRadioNow, 25000);
+}
+/* Caçador de rádio */
+function huntArtists() {
+  const h = D.hunt || {};
+  const auto = h.auto !== false ? topOf(D.taste.a, 15).map(e => e[0]) : [];
+  return [...new Set([...(h.extra || []), ...auto])].filter(a => !(h.off || []).includes(a));
+}
+async function huntSync() {
+  const h = D.hunt || (D.hunt = { on: false });
+  const r = await U.huntConfig({ on: !!h.on, artists: huntArtists(), stations: D.radioFavs || [], useTop: true, country: h.country || 'BR', max: 45 });
+  h.count = r.stations; if (view.name === 'radio') { const c = $('#huntCount'); if (c) c.textContent = r.stations; }
+}
+U.onHuntNow(m => { huntNow = m || {}; if (view.name === 'radio') document.querySelectorAll('[data-now]').forEach(el => { const n = huntNow[el.dataset.now]; el.textContent = n ? '♪ ' + n.title : ''; }); });
+U.onHuntHit(hit => {
+  D.huntHits = [hit, ...(D.huntHits || [])].slice(0, 30); save();
+  const go2 = () => { U.focusWin(); play([hit.station], 0); };
+  try { const n = new Notification(`Tocando agora na ${hit.station.title}`, { body: hit.title, icon: 'logo.png', silent: false }); n.onclick = go2; } catch {}
+  toast(`🎯 ${hit.station.title} está tocando ${hit.title}`);
+  if (view.name === 'radio') render();
+});
+function huntCard() {
+  const h = D.hunt || {}, arts = huntArtists(), hits = (D.huntHits || []).slice(0, 6);
+  return `<div class="hunt ${h.on ? 'on' : ''}">
+    <div class="huntTop"><div><b>🎯 Caçador de rádio</b><span>${h.on ? `Vigiando <i id="huntCount">${h.count || '…'}</i> rádios a cada 2 minutos. Quando tocar quem você curte, chega um aviso.` : 'Liga e o app fica de olho nas rádios pra você. Quando tocar um artista que você curte, ele avisa.'}</span></div><div class="sw ${h.on ? 'on' : ''}" id="huntSw"></div></div>
+    ${h.on ? `<div class="huntArts">${arts.map(a => `<span class="chip">${esc(a)}<i data-hx="${esc(a)}">${ico('close')}</i></span>`).join('') || '<span class="sub">Ouça umas músicas ou adicione artistas.</span>'}
+      <input id="huntAdd" class="txt" placeholder="+ artista"></div>
+      ${hits.length ? `<div class="huntHits"><small>Achados recentes</small>${hits.map((x, i) => `<div class="hhit" data-hh="${i}"><b>${esc(x.title)}</b><span>${esc(x.station.title)} · ${new Date(x.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></div>`).join('')}</div>` : ''}` : ''}
+  </div>`;
+}
+function bindHunt() {
+  const h = D.hunt || (D.hunt = { on: false });
+  const sw2 = $('#huntSw'); if (sw2) sw2.onclick = () => { h.on = !h.on; save(); huntSync(); render(); if (h.on && Notification.permission === 'default') Notification.requestPermission(); };
+  document.querySelectorAll('[data-hx]').forEach(x => x.onclick = () => { const a = x.dataset.hx; h.extra = (h.extra || []).filter(e => e !== a); if (!(h.extra || []).includes(a)) h.off = [...new Set([...(h.off || []), a])]; save(); huntSync(); render(); });
+  const add = $('#huntAdd'); if (add) add.onkeydown = e => { if (e.key === 'Enter' && add.value.trim()) { const a = add.value.trim(); h.extra = [...new Set([a, ...(h.extra || [])])]; h.off = (h.off || []).filter(x => x !== a); save(); huntSync(); render(); } };
+  document.querySelectorAll('[data-hh]').forEach(x => x.onclick = () => play([(D.huntHits || [])[+x.dataset.hh].station], 0));
+}
 function recLabel() { if (!recState) return ''; const s = Math.floor((Date.now() - recState.start) / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 async function recStart() {
   const t = cur(); if (!t || t.src !== 'radio' || st.kind !== 'radio') return toast('Toque uma rádio primeiro');
-  const r = await U.recStart({ title: t.title, stream: t.stream });
+  const r = await U.recStart({ title: t.title, stream: t.stream }, { split: D.recSplit !== false });
   if (r.err) return toast('Não deu pra gravar: ' + r.err);
-  recState = { id: t.id, title: t.title, start: Date.now() };
+  recState = { id: t.id, title: t.title, start: Date.now(), split: r.split, song: '', parts: 0 };
   clearInterval(recTimer); recTimer = setInterval(() => { const el = $('#recTime'); if (el) el.textContent = recLabel(); const b = $('#barRec'); if (b) b.textContent = '● REC ' + recLabel(); }, 1000);
   toast('Gravando ' + t.title + '…'); paintRec();
 }
 async function recStop(quiet) { if (!recState) return; await U.recStop(); if (!quiet) toast('Salvando a gravação…'); }
 U.onRecDone(r => {
   recState = null; clearInterval(recTimer); paintRec();
-  if (r.file) { toast('Gravação salva na pasta Música'); rescan(); } else toast('A gravação não deu certo: ' + (r.err || '').slice(0, 90));
+  const n = (r.files || []).length;
+  if (n) { toast(r.split ? `${n} ${n === 1 ? 'música salva' : 'músicas salvas'}, uma por arquivo, na pasta Música` : 'Gravação salva na pasta Música'); rescan(); }
+  else toast('A gravação não deu certo: ' + (r.err || 'sem áudio').slice(0, 90));
 });
+U.onRecSong(r => { if (!recState) return; recState.song = r.title; recState.parts = r.part; const el = $('#recSong'); if (el) el.textContent = r.title ? '♪ ' + r.title : ''; });
 function paintRec() {
   const box = $('#recBox'); if (box) box.outerHTML = recBoxHtml();
   bindRec();
@@ -1134,10 +1305,12 @@ function recBoxHtml() {
   const t = cur(); const live = t && t.src === 'radio' && st.kind === 'radio';
   if (!live && !recState) return '<div id="recBox"></div>';
   return `<div id="recBox" class="recBox ${recState ? 'on' : ''}">
-    <div class="recInfo"><b>${recState ? 'Gravando' : 'Tocando agora'}: ${esc(recState ? recState.title : t.title)}</b><span>${recState ? `<i id="recTime">${recLabel()}</i> · vai pra sua pasta Música quando você parar` : 'Grave o que está passando e ouça depois, até sem internet'}</span></div>
+    <div class="recInfo"><b>${recState ? 'Gravando' : 'Tocando agora'}: ${esc(recState ? recState.title : t.title)}</b>
+      <span>${recState ? `<i id="recTime">${recLabel()}</i> · <em id="recSong">${recState.song ? '♪ ' + esc(recState.song) : ''}</em>` : (radioNow ? '♪ ' + esc(radioNow) : 'Grave o que está passando e ouça depois, até sem internet')}</span>
+      ${recState ? '' : `<label class="ck small"><input type="checkbox" id="recSplit" ${D.recSplit !== false ? 'checked' : ''}> Separar um arquivo por música (quando a rádio informa o nome)</label>`}</div>
     <button class="btn ${recState ? '' : 'fill'} recBtn" id="recBtn">${recState ? '■ Parar e salvar' : '● Gravar'}</button></div>`;
 }
-function bindRec() { const b = $('#recBtn'); if (b) b.onclick = () => recState ? recStop() : recStart(); }
+function bindRec() { const b = $('#recBtn'); if (b) b.onclick = () => recState ? recStop() : recStart(); const c = $('#recSplit'); if (c) c.onchange = () => { D.recSplit = c.checked; save(); }; }
 const RTAGS = [['', 'Mais ouvidas'], ['funk', 'Funk'], ['sertanejo', 'Sertanejo'], ['pagode', 'Pagode'], ['pop', 'Pop'], ['rock', 'Rock'], ['hip hop', 'Rap / Hip Hop'], ['electronic', 'Eletrônica'], ['gospel', 'Gospel'], ['mpb', 'MPB'], ['news', 'Notícias'], ['sports', 'Esportes'], ['80s', 'Anos 80'], ['lofi', 'Lo-fi']];
 let rCountry = 'BR', rTag = '', rQ = '', rList = null, rLoadKey = '', rQT = null;
 function stationCard(t, i, ctx) {
@@ -1145,7 +1318,7 @@ function stationCard(t, i, ctx) {
   const fav = (D.radioFavs || []).some(x => x.id === t.id);
   return `<div class="stn ${on ? 'on' : ''}" data-st="${ctx}:${i}">
     <div class="stnArt">${t.art ? `<img loading="lazy" src="${esc(t.art)}" onerror="this.remove()">` : ''}${ico('radio')}</div>
-    <div class="stnTxt"><b>${esc(t.title)}</b><span>${esc(t.artist || '')}${t.bitrate ? ` · ${t.bitrate} kbps` : ''}</span></div>
+    <div class="stnTxt"><b>${esc(t.title)}</b><span>${esc(t.artist || '')}${t.bitrate ? ` · ${t.bitrate} kbps` : ''}</span><span class="stnNow" data-now="${esc(t.id)}">${huntNow[t.id] ? '♪ ' + esc(huntNow[t.id].title) : ''}</span></div>
     ${on ? '<i class="live">AO VIVO</i>' : ''}
     <button class="stnFav" data-sf="${ctx}:${i}" title="Favoritar">${ico(fav ? 'heart' : 'heartO')}</button></div>`;
 }
@@ -1154,6 +1327,7 @@ views.radio = () => {
   const key = `${rCountry}|${rTag}|${rQ}`;
   $('#view').innerHTML = `<h1>Rádio</h1><div class="sub">Estações ao vivo pela internet, do Brasil e do mundo.</div>
     ${recBoxHtml()}
+    ${huntCard()}
     <div class="exTools"><div class="search mini">${ico('search')}<input id="rQ" placeholder="Procurar rádio (ex: Jovem Pan, Antena 1, 89 FM)" value="${esc(rQ)}"></div>
       <div class="seg">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="${rCountry === k ? 'on' : ''}" data-rc="${k}">${n}</button>`).join('')}</div></div>
     <div class="chips">${RTAGS.map(([k, n]) => `<button class="chip ${rTag === k ? 'on' : ''}" data-rt="${k}">${n}</button>`).join('')}</div>
@@ -1162,7 +1336,7 @@ views.radio = () => {
     <h2>${rQ ? `Resultados pra "${esc(rQ)}"` : (RTAGS.find(x => x[0] === rTag) || ['', ''])[1] + (rCountry === 'BR' ? ' no Brasil' : ' no mundo')}</h2>
     <div class="stns" id="rList">${rList && rLoadKey === key ? (rList.length ? rList.map((t, i) => stationCard(t, i, 'l')).join('') : '<div class="empty">Nenhuma rádio encontrada.</div>') : '<span class="spinner"></span>'}</div>`;
   const lists = { f: favs, r: rec, l: rList || [] };
-  bindRec();
+  bindRec(); bindHunt();
   $('#view').querySelectorAll('[data-rc]').forEach(b => b.onclick = () => { rCountry = b.dataset.rc; render(); });
   $('#view').querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { rTag = b.dataset.rt; rQ = ''; render(); });
   $('#rQ').oninput = e => { clearTimeout(rQT); rQT = setTimeout(() => { rQ = e.target.value.trim(); render(); const i = $('#rQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 350); };
@@ -1180,7 +1354,7 @@ views.radio = () => {
 
 /* ---------------- exportar slowed / nightcore ---------------- */
 const EX_PRE = { slowed: ['Slowed', 0.85, false], slowrev: ['Slowed + Reverb', 0.8, true], nightcore: ['Nightcore', 1.25, false], custom: ['Personalizado', null, null] };
-let exPreset = 'slowrev', exRate = 0.8, exReverb = true, exBass = false, exFilter = '', exSel = new Set(), exRun = null, exPrev = null;
+let exRetro = '', exPreset = 'slowrev', exRate = 0.8, exReverb = true, exBass = false, exFilter = '', exSel = new Set(), exRun = null, exPrev = null;
 function exLabel() {
   if (exPreset !== 'custom') return EX_PRE[exPreset][0];
   return (exRate < 1 ? 'Slowed' : exRate > 1 ? 'Nightcore' : 'Edit') + (exReverb ? ' + Reverb' : '');
@@ -1197,6 +1371,7 @@ views.export = () => {
       <div class="seg exSeg">${Object.entries(EX_PRE).map(([k, [n]]) => `<button class="${exPreset === k ? 'on' : ''}" data-ep="${k}">${n}</button>`).join('')}</div>
       <div class="exRow"><span>Velocidade e tom</span><input type="range" id="exRate" min="0.5" max="1.5" step="0.01" value="${exRate}"><b id="exRateV"></b></div>
       <div class="exRow"><label class="ck"><input type="checkbox" id="exRev" ${exReverb ? 'checked' : ''}> Reverb (eco de ambiente)</label><label class="ck"><input type="checkbox" id="exBass" ${exBass ? 'checked' : ''}> Graves extra</label>
+        <span class="ck">Som: <span class="seg exRetro">${[['', 'Normal'], ['k7', 'Fita K7'], ['vinil', 'Vinil']].map(([k, n]) => `<button class="${exRetro === k ? 'on' : ''}" data-er="${k}">${n}</button>`).join('')}</span></span>
         <button class="btn" id="exPrev">${ico('play')} Ouvir prévia</button></div>
     </div>
     <div class="exTools"><div class="search mini">${ico('search')}<input id="exQ" placeholder="Filtrar músicas do PC" value="${esc(exFilter)}"></div>
@@ -1215,6 +1390,7 @@ views.export = () => {
   $('#exRate').oninput = e => { exRate = +e.target.value; exPreset = 'custom'; $('#view').querySelectorAll('[data-ep]').forEach(b => b.classList.toggle('on', b.dataset.ep === 'custom')); if (exPrev) { exPrev.playbackRate = exRate; } upd(); };
   $('#exRev').onchange = e => { exReverb = e.target.checked; if (exPreset !== 'custom' && exReverb !== EX_PRE[exPreset][2]) { exPreset = 'custom'; render(); } else upd(); };
   $('#exBass').onchange = e => { exBass = e.target.checked; };
+  $('#view').querySelectorAll('[data-er]').forEach(b => b.onclick = () => { exRetro = b.dataset.er; render(); });
   $('#exQ').oninput = e => { exFilter = e.target.value; clearTimeout(exQT); exQT = setTimeout(() => { render(); const i = $('#exQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 200); };
   $('#view').querySelectorAll('[data-ex]').forEach(c => c.onchange = () => { c.checked ? exSel.add(c.dataset.ex) : exSel.delete(c.dataset.ex); c.closest('.exr').classList.toggle('sel', c.checked); upd(); });
   $('#exAll').onclick = () => { vis.forEach(t => exSel.add(t.path)); render(); };
@@ -1238,7 +1414,7 @@ views.export = () => {
     if (!items.length) return;
     exRun = { n: items.length, ok: 0, err: 0 };
     $('#exGo').textContent = 'Cancelar'; $('#exGo').disabled = false;
-    const r = await U.exportFx(items, { rate: exRate, reverb: exReverb, bass: exBass, label: exLabel() });
+    const r = await U.exportFx(items, { rate: exRate, reverb: exReverb, bass: exBass, retro: exRetro, label: exLabel() + (exRetro ? ' ' + RETRO_NAMES[exRetro] : '') });
     const run = exRun; exRun = null;
     if (r.err) toast('Não deu pra exportar: ' + r.err);
     else toast(`${r.files.length} ${r.files.length === 1 ? 'música exportada' : 'músicas exportadas'} pra pasta Música${r.stopped ? ' (cancelado)' : ''}`);
@@ -1269,6 +1445,8 @@ function openQueue() {
 }
 $('#bQueue').onclick = () => { const p = $('#panel'); if (!p.classList.contains('hidden') && p.dataset.kind === 'queue') p.classList.add('hidden'); else openQueue(); };
 $('#bSync').innerHTML = ico('dl');
+$('#bRetro').innerHTML = ico('cassette');
+$('#bRetro').onclick = () => { if (st.kind === 'radio') return toast('O modo retrô não funciona na rádio ao vivo'); const order = ['', 'k7', 'vinil']; setRetro(order[(order.indexOf(S().retro || '') + 1) % 3]); };
 $('#bSync').onclick = () => syncTrack(cur());
 $('#bSpeed').onclick = () => {
   if (st.kind === 'radio') return toast('A velocidade fica desligada na rádio ao vivo');
@@ -1378,12 +1556,14 @@ async function rescan() {
   if (!D.folders.length && !D.foldersInit) { D.folders = await U.defaultFolders(); D.foldersInit = true; save(); }
   applyLook(); updateModeBtns(); setPlaying(false); setVolume(S().volume);
   if (!D.startMig) { S().startView = 'discover'; D.startMig = 1; save(); }
+  setTimeout(() => { const b = $('#bRetro'); if (b) { b.classList.toggle('on', !!S().retro); b.title = 'Modo retrô: ' + RETRO_NAMES[S().retro || '']; } }, 0);
   if (!D.pitchMig) { S().pitchWithSpeed = true; D.pitchMig = 1; save(); }
   view = { name: S().startView };
   renderNav(); render();
   if (D.lastQueue && D.lastQueue.q && D.lastQueue.q.length) { st.queue = D.lastQueue.q; st.idx = Math.min(D.lastQueue.i, st.queue.length - 1); updateNowPlaying(); }
   if (S().notifications && Notification.permission === 'default') Notification.requestPermission();
   rescan();
+  setTimeout(huntSync, 4000);
 })();
 
 /* libera memória quando o app fica minimizado ou no fundo */

@@ -711,13 +711,21 @@ async function exportFx(sender, items, fx) {
       const af = [`asetrate=${Math.round(sr * rate)}`, `aresample=${sr}`];
       if (fx.bass) af.push('bass=g=5:f=90');
       if (fx.reverb) af.push('aecho=0.8:0.88:60|110|170:0.32|0.22|0.12');
+      if (fx.retro === 'k7') af.push('highpass=f=70', 'equalizer=f=180:t=q:w=1:g=-4', 'equalizer=f=1500:t=q:w=0.7:g=2', 'lowpass=f=7000', 'vibrato=f=0.55:d=0.05', 'vibrato=f=6.5:d=0.012');
+      if (fx.retro === 'vinil') af.push('highpass=f=35', 'equalizer=f=180:t=q:w=1:g=-2', 'lowpass=f=11000', 'vibrato=f=0.55:d=0.02');
       af.push('alimiter=limit=0.95');
+      // chiado da fita / estalos do vinil misturados por baixo
+      const noise = fx.retro === 'k7' ? `anoisesrc=color=pink:amplitude=0.03:sample_rate=${sr},bandpass=f=4000:w=6000,volume=0.6`
+        : fx.retro === 'vinil' ? `aevalsrc='lt(random(0)\,0.0004)*(random(1)-0.5)*1.4+(random(2)-0.5)*0.03':s=${sr},highpass=f=1200` : '';
       const base = `${it.artist ? it.artist + ' - ' : ''}${it.title} (${label})`.replace(/[\\/:*?"<>|]/g, '').slice(0, 150);
       let out = path.join(dir, base + '.mp3'); let n = 2; while (fs.existsSync(out)) out = path.join(dir, `${base} ${n++}.mp3`);
       const run = withCover => new Promise((ok, bad) => {
-        const args = ['-hide_banner', '-y', '-i', it.path, '-map', '0:a:0'];
+        const args = ['-hide_banner', '-y', '-i', it.path];
+        if (!noise) args.push('-map', '0:a:0');
         if (withCover) args.push('-map', '0:v?', '-c:v', 'copy', '-disposition:v', 'attached_pic');
-        args.push('-af', af.join(','), '-c:a', 'libmp3lame', '-q:a', '2', '-map_metadata', '0', '-id3v2_version', '3',
+        if (noise) args.push('-filter_complex', `[0:a:0]${af.join(',')}[m];${noise}[n];[m][n]amix=inputs=2:duration=first:normalize=0[o]`, '-map', '[o]');
+        else args.push('-af', af.join(','));
+        args.push('-c:a', 'libmp3lame', '-q:a', '2', '-map_metadata', '0', '-id3v2_version', '3',
           '-metadata', `title=${it.title} (${label})`, '-metadata', `artist=${it.artist || ''}`, out);
         const p = job.proc = spawn(bin, args, { windowsHide: true });
         let err = '';
@@ -818,40 +826,6 @@ async function radios({ q = '', tag = '', country = 'BR', limit = 80 } = {}) {
 ipcMain.handle('radios', (_, o) => radios(o || {}).catch(() => []));
 ipcMain.handle('radio-click', (_, id) => rb('/json/url/' + encodeURIComponent(id)).then(() => true).catch(() => false));
 
-/* gravar a rádio que está tocando (mp3 na pasta Música) */
-let rec = null;
-ipcMain.handle('rec-start', async (e, station) => {
-  if (rec) return { err: 'Já está gravando' };
-  const bin = ffmpegPath(); if (!bin || !fs.existsSync(bin)) return { err: 'ffmpeg não encontrado' };
-  const { spawn } = require('child_process');
-  const d = new Date(), pad = n => String(n).padStart(2, '0');
-  const stamp = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}h${pad(d.getMinutes())}`;
-  const base = `${station.title} - ${stamp}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 150);
-  let out = path.join(app.getPath('music'), base + '.mp3'); let n = 2; while (fs.existsSync(out)) out = path.join(app.getPath('music'), `${base} ${n++}.mp3`);
-  const args = ['-hide_banner', '-y', '-user_agent', UA, '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-    '-i', station.stream, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-id3v2_version', '3',
-    '-metadata', `title=${station.title} (${stamp})`, '-metadata', `artist=${station.title}`, '-metadata', 'album=Gravações de rádio', '-metadata', 'genre=Rádio', out];
-  const p = spawn(bin, args, { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
-  let err = '';
-  p.stderr.on('data', x => { err = (err + x.toString()).slice(-1500); });
-  const sender = e.sender;
-  rec = { proc: p, out, start: Date.now() };
-  p.on('close', code => {
-    const ok = fs.existsSync(out) && fs.statSync(out).size > 8000;
-    if (!ok) try { fs.unlinkSync(out); } catch {}
-    rec = null;
-    try { if (!sender.isDestroyed()) sender.send('rec-done', { file: ok ? out : null, err: ok ? '' : (err.split('\n').filter(Boolean).pop() || 'erro ' + code) }); } catch {}
-  });
-  p.on('error', er => { rec = null; try { sender.send('rec-done', { file: null, err: String(er) }); } catch {} });
-  return { ok: true, file: out };
-});
-ipcMain.handle('rec-stop', () => {
-  if (!rec) return null;
-  const r = rec;
-  try { r.proc.stdin.write('q'); r.proc.stdin.end(); } catch {}
-  setTimeout(() => { try { if (rec === r) r.proc.kill(); } catch {} }, 5000);
-  return r.out;
-});
 
 /* sincronizar do SoundCloud: só quando o artista liberou o download oficial */
 ipcMain.handle('sc-download', async (_, id) => {
@@ -866,6 +840,170 @@ ipcMain.handle('sc-download', async (_, id) => {
     return { ok: true, file: f };
   } catch (e) { return { ok: false, error: e.status === 404 || e.status === 401 ? 'o artista não liberou o download dessa música no SoundCloud' : String(e.message || e) }; }
 });
+
+/* ---------------- sinal ICY das rádios: lê o nome da música que está tocando ----------------
+   As rádios mandam, no meio do áudio, um pedacinho com "StreamTitle='Artista - Música'".
+   Conexão feita na mão porque muitas rádios respondem "ICY 200 OK", que o Node não entende. */
+const net = require('net'), tls = require('tls');
+function icyConnect(url, onHead, redirects = 4) {
+  return new Promise((resolve, reject) => {
+    let u; try { u = new URL(url); } catch (e) { return reject(e); }
+    const secure = u.protocol === 'https:';
+    const port = +u.port || (secure ? 443 : 80);
+    const sock = secure ? tls.connect({ host: u.hostname, port, servername: u.hostname }) : net.connect({ host: u.hostname, port });
+    sock.setTimeout(12000, () => sock.destroy(new Error('tempo esgotado')));
+    sock.once('error', reject);
+    sock.once(secure ? 'secureConnect' : 'connect', () => {
+      sock.write(`GET ${u.pathname || '/'}${u.search} HTTP/1.0\r\nHost: ${u.host}\r\nUser-Agent: ${UA}\r\nIcy-MetaData: 1\r\nAccept: */*\r\nConnection: close\r\n\r\n`);
+    });
+    let head = Buffer.alloc(0);
+    const onData = d => {
+      head = Buffer.concat([head, d]);
+      const i = head.indexOf('\r\n\r\n'); if (i < 0) { if (head.length > 16384) sock.destroy(new Error('cabeçalho inválido')); return; }
+      sock.removeListener('data', onData);
+      const lines = head.slice(0, i).toString('latin1').split('\r\n');
+      const code = +((lines[0].match(/\s(\d{3})/) || [])[1] || 0);
+      const h = {}; lines.slice(1).forEach(l => { const k = l.indexOf(':'); if (k > 0) h[l.slice(0, k).trim().toLowerCase()] = l.slice(k + 1).trim(); });
+      const rest = head.slice(i + 4);
+      if (code >= 300 && code < 400 && h.location && redirects > 0) { sock.destroy(); return resolve(icyConnect(new URL(h.location, u).toString(), onHead, redirects - 1)); }
+      if (code < 200 || code >= 300) { sock.destroy(); return reject(new Error('a rádio respondeu ' + code)); }
+      resolve({ sock, headers: h, rest });
+    };
+    sock.on('data', onData);
+  });
+}
+// separa o áudio dos pedacinhos de informação; chama onAudio(bytes) e onTitle(título)
+function icyReader(metaint, onAudio, onTitle) {
+  let left = metaint, metaLen = -1, meta = [];
+  return chunk => {
+    let i = 0;
+    while (i < chunk.length) {
+      if (!metaint) { onAudio(chunk.slice(i)); return; }
+      if (metaLen < 0 && left > 0) { const n = Math.min(left, chunk.length - i); onAudio(chunk.slice(i, i + n)); i += n; left -= n; continue; }
+      if (metaLen < 0) { metaLen = chunk[i++] * 16; meta = []; if (metaLen === 0) { metaLen = -1; left = metaint; } continue; }
+      const n = Math.min(metaLen, chunk.length - i); meta.push(chunk.slice(i, i + n)); i += n; metaLen -= n;
+      if (metaLen === 0) {
+        metaLen = -1; left = metaint;
+        const txt = Buffer.concat(meta).toString('utf8').replace(/\0+$/, '');
+        const m = /StreamTitle='(.*?)';/s.exec(txt);
+        if (m) onTitle(fixMojibake(m[1].trim()));
+      }
+    }
+  };
+}
+const fixMojibake = s => /Ã.|Â./.test(s) ? Buffer.from(s, 'latin1').toString('utf8') : s;
+// só pega o título atual e desconecta (usado pelo Caçador de rádio)
+async function icyNow(stream) {
+  const { sock, headers, rest } = await icyConnect(stream);
+  const metaint = +headers['icy-metaint'] || 0;
+  if (!metaint) { sock.destroy(); return null; }
+  return new Promise(resolve => {
+    let done = false, got = 0;
+    const finish = v => { if (done) return; done = true; sock.destroy(); resolve(v); };
+    const rd = icyReader(metaint, b => { got += b.length; if (got > metaint * 3) finish(null); }, t => finish(t || null));
+    sock.on('data', rd); sock.on('close', () => finish(null)); sock.on('error', () => finish(null));
+    setTimeout(() => finish(null), 15000);
+    if (rest.length) rd(rest);
+  });
+}
+ipcMain.handle('icy-now', (_, stream) => icyNow(stream).catch(() => null));
+
+/* ---------------- Caçador de rádio: vigia várias rádios e avisa quando tocar quem você curte ---------------- */
+const hunt = { on: false, artists: [], stations: [], timer: null, seen: new Map(), sender: null, now: {} };
+const normT = x => (x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+async function huntCycle() {
+  if (!hunt.on || !hunt.stations.length || !hunt.artists.length) return;
+  const arts = hunt.artists.map(a => ({ a, n: normT(a) })).filter(x => x.n.length >= 3);
+  let i = 0;
+  const worker = async () => {
+    while (i < hunt.stations.length && hunt.on) {
+      const stn = hunt.stations[i++];
+      const title = await icyNow(stn.stream).catch(() => null);
+      if (!title) continue;
+      hunt.now[stn.id] = { title, at: Date.now() };
+      const nt = ' ' + normT(title) + ' ';
+      const hit = arts.find(x => nt.includes(' ' + x.n + ' '));
+      if (!hit) continue;
+      const key = stn.id + '|' + normT(title);
+      if (Date.now() - (hunt.seen.get(key) || 0) < 40 * 60e3) continue;
+      hunt.seen.set(key, Date.now());
+      try { if (hunt.sender && !hunt.sender.isDestroyed()) hunt.sender.send('hunt-hit', { station: stn, title, artist: hit.a, at: Date.now() }); } catch {}
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  try { if (hunt.sender && !hunt.sender.isDestroyed()) hunt.sender.send('hunt-now', hunt.now); } catch {}
+}
+ipcMain.handle('hunt-config', async (e, cfg) => {
+  hunt.sender = e.sender; hunt.on = !!cfg.on; hunt.artists = (cfg.artists || []).slice(0, 40);
+  let st = (cfg.stations || []).filter(s => s && s.stream);
+  if (cfg.useTop) { const top = await radios({ country: cfg.country || 'BR', limit: 60 }).catch(() => []); st = [...st, ...top]; }
+  hunt.stations = st.filter((s, i, a) => a.findIndex(o => o.id === s.id) === i).slice(0, cfg.max || 40);
+  clearInterval(hunt.timer);
+  if (hunt.on) { hunt.timer = setInterval(huntCycle, 2 * 60e3); setTimeout(huntCycle, 3000); }
+  return { stations: hunt.stations.length };
+});
+ipcMain.handle('hunt-scan', () => huntCycle().then(() => hunt.now));
+
+/* ---------------- gravar a rádio, cortando um arquivo por música ---------------- */
+let rec = null;
+ipcMain.handle('rec-start', async (e, station, opts = {}) => {
+  if (rec) return { err: 'Já está gravando' };
+  const sender = e.sender;
+  const send = (c, d) => { try { if (!sender.isDestroyed()) sender.send(c, d); } catch {} };
+  let conn;
+  try { conn = await icyConnect(station.stream); } catch (er) { return { err: String(er.message || er) }; }
+  const { sock, headers, rest } = conn;
+  const ct = (headers['content-type'] || 'audio/mpeg').toLowerCase();
+  const ext = /aac|mp4/.test(ct) ? 'aac' : /ogg/.test(ct) ? 'ogg' : 'mp3';
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const stamp = `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}h${pad(d.getMinutes())}`;
+  const safeName = x => x.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  const split = opts.split !== false && +headers['icy-metaint'] > 0;
+  const dir = split ? path.join(app.getPath('music'), safeName(`Rádio ${station.title} - ${stamp}`)) : app.getPath('music');
+  fs.mkdirSync(dir, { recursive: true });
+  const files = [];
+  let cur = null, part = 0;
+  const openFile = title => {
+    if (cur) { cur.ws.end(); if (cur.bytes < 16000) { const f = cur.file; cur.ws.on('close', () => { try { fs.unlinkSync(f); } catch {} }); } else files.push(cur.file); }
+    part++;
+    const base = split ? safeName(`${String(part).padStart(2, '0')} - ${title || station.title}`) : safeName(`${station.title} - ${stamp}`);
+    let file = path.join(dir, base + '.' + ext), n = 2; while (fs.existsSync(file)) file = path.join(dir, `${base} ${n++}.${ext}`);
+    cur = { file, ws: fs.createWriteStream(file), bytes: 0, title };
+    send('rec-song', { title: title || '', part });
+  };
+  openFile(null);
+  const rd = icyReader(+headers['icy-metaint'] || 0, b => { if (cur) { cur.ws.write(b); cur.bytes += b.length; } }, t => {
+    if (rec) rec.title = t;
+    if (split && t && (!cur || t !== cur.title)) openFile(t);
+    else if (cur && !cur.title) cur.title = t;
+  });
+  rec = { sock, start: Date.now(), dir, title: '' };
+  sock.on('data', rd);
+  sock.on('close', () => {
+    if (cur) { const c = cur; cur = null; c.ws.end(() => { if (c.bytes < 16000) { try { fs.unlinkSync(c.file); } catch {} } else files.push(c.file); rec = null; send('rec-done', { file: files[files.length - 1] || null, files, dir, split, err: files.length ? '' : 'a rádio não mandou áudio' }); }); }
+    else { rec = null; send('rec-done', { files, dir, split }); }
+  });
+  if (rest.length) rd(rest);
+  return { ok: true, split, dir };
+});
+ipcMain.handle('rec-stop', () => { if (!rec) return null; try { rec.sock.destroy(); } catch {} return rec.dir; });
+
+ipcMain.handle('focus-win', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
+/* nome da rede em que o PC está (pra saber se é casa, trampo...). Funciona com Wi-Fi e cabo no Windows. */
+let netCache = { at: 0, name: '' };
+function netName() {
+  if (Date.now() - netCache.at < 10 * 60e3) return Promise.resolve(netCache.name);
+  if (process.platform !== 'win32') return Promise.resolve('');
+  const { execFile } = require('child_process');
+  const run = (cmd, args) => new Promise(r => execFile(cmd, args, { windowsHide: true, timeout: 6000 }, (e, out) => r(e ? '' : String(out || ''))));
+  return (async () => {
+    let name = (await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '(Get-NetConnectionProfile | Where-Object { $_.IPv4Connectivity -eq "Internet" } | Select-Object -First 1).Name'])).trim();
+    if (!name) { const w = await run('netsh', ['wlan', 'show', 'interfaces']); const m = /^\s*SSID\s*:\s*(.+)$/m.exec(w); if (m) name = m[1].trim(); }
+    netCache = { at: Date.now(), name };
+    return name;
+  })();
+}
+ipcMain.handle('net-name', () => netName().catch(() => ''));
 
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
