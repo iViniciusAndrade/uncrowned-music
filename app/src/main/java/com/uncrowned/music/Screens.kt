@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -90,8 +91,8 @@ fun App(ui: PlayerUi, perms: List<String>) {
     var detail by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     var playlistDetail by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null) {
-        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; detail != null -> detail = null; else -> playlistDetail = null }
+    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null || Nav.album != null || Nav.artist != null) {
+        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; Nav.album != null -> Nav.album = null; Nav.artist != null -> Nav.artist = null; detail != null -> detail = null; else -> playlistDetail = null }
     }
 
     val tabs = listOf(
@@ -136,7 +137,10 @@ fun App(ui: PlayerUi, perms: List<String>) {
                 } else {
                     val d = detail
                     val pd = playlistDetail
+                    val na = Nav.album; val nr = Nav.artist
                     when {
+                        na != null -> AlbumScreen(ui, na) { Nav.album = null }
+                        nr != null -> ArtistScreen(ui, nr) { Nav.artist = null }
                         d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
                         pd == ONLINE_FAVS -> OnlineList(ui, "Favoritos online", YtStore.favs()) { playlistDetail = null }
                         pd == ONLINE_HIST -> RecentGrid(ui, YtStore.history()) { playlistDetail = null }
@@ -221,13 +225,16 @@ fun SongsTab(ui: PlayerUi) {
     var online by remember { mutableStateOf<List<YtVideo>>(emptyList()) }
     var dl by remember { mutableStateOf<List<Track>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
+    var ytm by remember { mutableStateOf<Ytm.Search?>(null) }
     Prefs.version.intValue
     val q = query.trim()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(q) {
-        online = emptyList(); dl = emptyList(); loading = false
+        online = emptyList(); dl = emptyList(); loading = false; ytm = null
         if (q.length < 2) return@LaunchedEffect
-        delay(650)
+        delay(300)
+        scope.launch { val r = Ytm.search(q); if (query.trim() == q) ytm = r }
         loading = true
         val r = OnlineSearch.search(q)
         online = r.stream; dl = r.downloadable; loading = false
@@ -254,11 +261,40 @@ fun SongsTab(ui: PlayerUi) {
                 }
             }
             if (local.isNotEmpty()) item { PlayShuffleRow(ui, local) }
-            if (local.isEmpty()) item { Empty("Nenhuma música no aparelho ainda. Use a busca pra ouvir online.") }
+            if (local.isEmpty()) item { Empty("Nenhuma música offline ainda. Use a busca pra ouvir online.") }
             itemsIndexed(local, key = { _, s -> s.id }) { i, s -> SongRow(ui, s) { ui.play(local, i) } }
         } else {
+            val y = ytm
+            if (y != null && y.artists.isNotEmpty()) {
+                item { Section("Artistas") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        items(y.artists, key = { it.id }) { a ->
+                            Column(Modifier.width(104.dp).clickable { Nav.artist = a }, horizontalAlignment = Alignment.CenterHorizontally) {
+                                Art(a.art.ifBlank { null }, Modifier.size(104.dp), CircleShape)
+                                Text(a.name, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Artista", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            if (y != null && y.albums.isNotEmpty()) {
+                item { Section("Álbuns") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(y.albums, key = { it.id }) { a ->
+                            Column(Modifier.width(130.dp).clickable { Nav.album = a }) {
+                                Art(a.art.ifBlank { null }, Modifier.size(130.dp), RoundedCornerShape(10.dp))
+                                Text(a.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(listOf(a.year, a.artist.ifBlank { a.type }).filter { it.isNotBlank() }.joinToString(" • "), maxLines = 1, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
             if (local.isNotEmpty()) {
-                item { Section("No seu aparelho") }
+                item { Section("Offline") }
                 itemsIndexed(local.take(30), key = { _, s -> "l" + s.id }) { i, s -> SongRow(ui, s) { ui.play(local, i) } }
             }
             item {
@@ -940,5 +976,103 @@ fun RecentGrid(ui: PlayerUi, list: List<YtVideo>, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+
+/* ---------- Página do artista e do álbum (YouTube Music) ---------- */
+object Nav {
+    var artist by mutableStateOf<YtmArtistHit?>(null)
+    var album by mutableStateOf<YtmAlbumHit?>(null)
+}
+
+@Composable
+fun ArtistScreen(ui: PlayerUi, hit: YtmArtistHit, onBack: () -> Unit) {
+    var a by remember(hit.id) { mutableStateOf<YtmArtist?>(null) }
+    var failed by remember(hit.id) { mutableStateOf(false) }
+    var all by remember(hit.id) { mutableStateOf(false) }
+    LaunchedEffect(hit.id) { a = Ytm.artist(hit.id); failed = a == null }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            Box(Modifier.fillMaxWidth().height(300.dp)) {
+                Art((a?.art ?: hit.art).ifBlank { null }, Modifier.fillMaxSize().graphicsLayer(alpha = .55f).blur(30.dp), RoundedCornerShape(0.dp))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
+                IconButton(onClick = onBack, Modifier.statusBarsPadding().padding(8.dp)) { Icon(Icons.Rounded.ArrowBackIosNew, null) }
+                Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
+                    Art((a?.art ?: hit.art).ifBlank { null }, Modifier.size(120.dp), CircleShape)
+                    Text("ARTISTA", Modifier.padding(top = 10.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(a?.name?.ifBlank { null } ?: hit.name, fontSize = 34.sp, fontWeight = FontWeight.Black, lineHeight = 36.sp)
+                    a?.subs?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+        }
+        val ar = a
+        if (ar == null) { item { if (failed) Empty("Não deu pra abrir esse artista agora.") else LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }; return@LazyColumn }
+        if (ar.top.isNotEmpty()) item {
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(54.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).clickable { ui.controller?.pause(); YtPlayer.play(ar.top, 0) }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.PlayArrow, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+                OutlinedButton(onClick = { ui.controller?.pause(); YtPlayer.play(ar.top.shuffled(), 0) }) { Icon(Icons.Rounded.Shuffle, null); Text(" Aleatório") }
+            }
+        }
+        if (ar.top.isNotEmpty()) {
+            item { Section("Populares") }
+            itemsIndexed(if (all) ar.top else ar.top.take(10), key = { i, v -> "t$i" + v.id }) { i, v -> RankYtRow(i + 1, v) { ui.controller?.pause(); YtPlayer.play(ar.top, i) } }
+            if (ar.top.size > 10) item { TextButton(onClick = { all = !all }, Modifier.padding(start = 8.dp)) { Text(if (all) "Mostrar menos" else "Ver mais (${ar.top.size})") } }
+        }
+        listOf("Álbuns" to ar.albums, "Singles e EPs" to ar.singles).forEach { (title, l) ->
+            if (l.isNotEmpty()) {
+                item { Section(title) }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(l, key = { it.id }) { x ->
+                            Column(Modifier.width(130.dp).clickable { Nav.album = YtmAlbumHit(x.id, x.title, title, ar.name, "", x.art) }) {
+                                Art(x.art.ifBlank { null }, Modifier.size(130.dp), RoundedCornerShape(10.dp))
+                                Text(x.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text(x.sub, maxLines = 1, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (ar.videos.isNotEmpty()) {
+            item { Section("Vídeos") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    itemsIndexed(ar.videos, key = { _, v -> "v" + v.id }) { i, v ->
+                        Column(Modifier.width(220.dp).clickable { ui.controller?.pause(); YtPlayer.play(ar.videos, i) }) {
+                            Art(v.thumb, Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(10.dp))
+                            Text(v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AlbumScreen(ui: PlayerUi, hit: YtmAlbumHit, onBack: () -> Unit) {
+    var al by remember(hit.id) { mutableStateOf<YtmAlbum?>(null) }
+    var failed by remember(hit.id) { mutableStateOf(false) }
+    LaunchedEffect(hit.id) { al = Ytm.album(hit.id); failed = al == null || al!!.tracks.isEmpty() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item { Header(hit.title, onBack = onBack) }
+        item {
+            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Art((al?.art ?: hit.art).ifBlank { null }, Modifier.size(220.dp).shadow(16.dp, RoundedCornerShape(12.dp)), RoundedCornerShape(12.dp))
+                Text((al?.type ?: hit.type).uppercase(), Modifier.padding(top = 14.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(al?.title?.ifBlank { null } ?: hit.title, fontSize = 24.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                Text(listOf(al?.artist ?: hit.artist, al?.year ?: hit.year, al?.tracks?.let { "${it.size} músicas" } ?: "").filter { it.isNotBlank() }.joinToString(" • "), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val t = al?.tracks
+                if (!t.isNullOrEmpty()) Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { ui.controller?.pause(); YtPlayer.play(t, 0) }) { Icon(Icons.Rounded.PlayArrow, null); Text(" Tocar") }
+                    OutlinedButton(onClick = { ui.controller?.pause(); YtPlayer.play(t.shuffled(), 0) }) { Icon(Icons.Rounded.Shuffle, null) }
+                }
+            }
+        }
+        val t = al?.tracks
+        if (t == null) item { if (failed) Empty("Não deu pra abrir esse álbum agora.") else LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }
+        else itemsIndexed(t, key = { i, v -> "a$i" + v.id }) { i, v -> RankYtRow(i + 1, v) { ui.controller?.pause(); YtPlayer.play(t, i) } }
     }
 }

@@ -62,6 +62,34 @@ object SoundCloudApi {
         }.filter { !it.id.contains("/sets/") }.distinctBy { it.id }.take(30).toList()
     }
 
+    private fun mapTrack(t: JSONObject): YtVideo? {
+        val link = t.optString("permalink_url").substringAfter("soundcloud.com/", ""); if (link.isBlank()) return null
+        val user = t.optJSONObject("user")
+        val art = t.optString("artwork_url").takeIf { it.isNotBlank() && it != "null" } ?: user?.optString("avatar_url").orEmpty()
+        val artist = t.optJSONObject("publisher_metadata")?.optString("artist")?.takeIf { it.isNotBlank() } ?: user?.optString("username").orEmpty()
+        return YtVideo(link, t.optString("title"), artist, art.replace("-large.", "-t500x500."), "sc")
+    }
+
+    /* mais tocadas da semana no SoundCloud (paradas oficiais; renova o código se vencer) */
+    suspend fun charts(region: String): List<YtVideo> = withContext(Dispatchers.IO) {
+        val reg = if (region == "ZZ") "" else "&region=soundcloud:regions:$region"
+        val tries = listOf("top" to reg, "trending" to reg, "top" to "", "trending" to "")
+        var id = runCatching { findClientId(false) }.getOrNull()
+        var renewed = false
+        for ((kind, r) in tries) {
+            if (id == null) break
+            val url = { cid: String -> "https://api-v2.soundcloud.com/charts?kind=$kind&genre=soundcloud:genres:all-music$r&high_tier_only=false&limit=50&client_id=$cid" }
+            var (code, body) = runCatching { http(url(id!!)) }.getOrDefault(0 to "")
+            if ((code == 401 || code == 403) && !renewed) { renewed = true; id = runCatching { findClientId(true) }.getOrNull() ?: break; val res = runCatching { http(url(id!!)) }.getOrDefault(0 to ""); code = res.first; body = res.second }
+            if (code in 200..299) {
+                val col = JSONObject(body).optJSONArray("collection") ?: continue
+                val out = (0 until col.length()).mapNotNull { i -> val o = col.getJSONObject(i); mapTrack(o.optJSONObject("track") ?: o) }
+                if (out.size >= 10) return@withContext out.distinctBy { it.id }
+            }
+        }
+        emptyList()
+    }
+
     suspend fun search(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
         runCatching {
             val api = runCatching { apiSearch(q, false) }.getOrNull()
