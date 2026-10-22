@@ -637,3 +637,30 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 :root[data-skin=pavor] body::after{animation:pavorFlicker 9s infinite steps(1)}
 @keyframes pavorFlicker{0%,100%{opacity:1}61%{opacity:1}62%{opacity:.35}63%{opacity:1}64%{opacity:.5}65%{opacity:1}88%{opacity:1}88.5%{opacity:.2}89%{opacity:1}}
 :root[data-skin=pavor] .row:hover{box-shadow:inset 3px 0 0 #c0001a}
+
+/* APAGÃO: preto total, minimalista, sem cor */
+:root[data-skin=apagao]{--bg:#000;--card:#0b0b0b;--card2:#161616;--line:rgba(255,255,255,.07);--text:#e6e6e6;--dim:#6e6e6e;--hfont:inherit;--tex:none;--texO:0}
+:root[data-skin=apagao] h1{font-weight:600;letter-spacing:-.03em;font-size:30px}
+:root[data-skin=apagao] h2{font-weight:500;letter-spacing:-.01em;color:#bdbdbd}
+:root[data-skin=apagao] #sidebar{background:#000!important;border-right:1px solid #141414}
+:root[data-skin=apagao] #sidebar::before,:root[data-skin=apagao] #sidebar::after{display:none}
+:root[data-skin=apagao] #sidebar nav a{color:#9a9a9a;text-shadow:none} :root[data-skin=apagao] #sidebar nav a svg{fill:#5a5a5a}
+:root[data-skin=apagao] #sidebar nav a.on{background:#0f0f0f;color:#fff;box-shadow:inset 1px 0 0 #fff} :root[data-skin=apagao] #sidebar nav a.on svg{fill:#fff}
+:root[data-skin=apagao] #bar{background:#000;border-top:1px solid #121212}
+:root[data-skin=apagao] .hero{background:#0b0b0b!important;border:1px solid #1c1c1c;box-shadow:none!important}
+:root[data-skin=apagao] .btn{background:#0f0f0f;color:#d0d0d0;border:1px solid #1e1e1e}
+:root[data-skin=apagao] .btn.fill,:root[data-skin=apagao] .chip.on,:root[data-skin=apagao] .seg button.on{background:#e6e6e6!important;color:#000!important}
+:root[data-skin=apagao] .chip{background:#0f0f0f;border:1px solid #1c1c1c}
+:root[data-skin=apagao] .badge{background:transparent;color:#6e6e6e!important;border:1px solid #222}
+:root[data-skin=apagao] .chartBox{--c:#e6e6e6!important;border-top:1px solid #2a2a2a}
+:root[data-skin=apagao] .chPlay svg,:root[data-skin=apagao] .bplay svg,:root[data-skin=apagao] .bigPlay svg,:root[data-skin=apagao] .hplay svg{fill:#000}
+:root[data-skin=apagao] .momCard{background:#0b0b0b!important;border:1px solid #1c1c1c;color:#e6e6e6}
+:root[data-skin=apagao] .row:hover{background:#0b0b0b}
+:root[data-skin=apagao] .sw.on{background:#e6e6e6}
+
+/* modo economia: sem animação, sem desfoque, sem textura */
+:root.eco *,:root.eco *::before,:root.eco *::after{animation:none!important;transition:none!important}
+:root.eco *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+:root.eco body::after,:root.eco #npAurora,:root.eco #npGrain{display:none!important}
+:root.eco #npBg{filter:none!important;opacity:.35}
+:root.eco .aBg{filter:brightness(.4)!important;transform:none!important}

@@ -51,7 +51,7 @@ const ico = (n, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}"><path d="$
 const DEF = {
   skin: 'edgy', theme: 'dark', accent: '#ff1f3d', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
-  hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
+  battery: 'auto', hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
   adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
@@ -82,7 +82,8 @@ const SKINS = {
   ouro: { name: 'Ouro Italiano', desc: 'Dourado, magenta e linhas de mangá', accent: '#f2b632', mode: 'dark', dots: ['#3a0b2e', '#ff4fa3', '#f2b632'] },
   cela: { name: 'Cela Esmeralda', desc: 'Verde-pedra, correntes e jade', accent: '#3ddc97', mode: 'dark', dots: ['#0e231c', '#2f6b55', '#3ddc97'] },
   rock: { name: 'Rock Tóquio', desc: 'Xadrez vermelho, renda e rosas', accent: '#e01e37', mode: 'dark', dots: ['#120607', '#7a0b16', '#e8c547'] },
-  pavor: { name: 'Pavor', desc: 'Terror pesado: olhos no escuro e arame', accent: '#c0001a', mode: 'dark', dots: ['#050406', '#2a2433', '#c0001a'] }
+  pavor: { name: 'Pavor', desc: 'Terror pesado: olhos no escuro e arame', accent: '#c0001a', mode: 'dark', dots: ['#050406', '#2a2433', '#c0001a'] },
+  apagao: { name: 'Apagão', desc: 'Preto total, minimalista, sem cor', accent: '#e6e6e6', mode: 'black', dots: ['#000000', '#1a1a1a', '#e6e6e6'] }
 };
 let logoV = Date.now();
 function refreshLogos() { logoV = Date.now(); document.querySelectorAll('img').forEach(i => { const a = i.getAttribute('src') || ''; if (/^logo\.png/.test(a)) i.src = 'logo.png?v=' + logoV; }); }
@@ -195,7 +196,7 @@ function embedEq() {
   if (st.kind === 'yt' && yt.wv) ytExec(EQ_JS());
   else if (st.kind === 'sc') U.frameEq(EQ_JS()).catch(() => {});
 }
-let eqTick = 0;
+let eqTick = 0, ecoTick = 0;
 function applyEq() {
   try { embedEq(); } catch {}
   if (!ctx || !filters.length) return;
@@ -239,7 +240,24 @@ setInterval(() => {
 const loadScript = src => new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
 const yt = { wv: null }, sc = { w: null }, vm = { player: null };
 let pollT = null;
-function startPoll(fn) { clearInterval(pollT); pollT = setInterval(fn, 400); }
+let pollFn = null;
+function startPoll(fn) { clearInterval(pollT); pollFn = fn; pollT = setInterval(fn, eco ? 1100 : 400); }
+/* modo economia de bateria: mesmas funções, menos trabalho pro PC */
+let eco = false, onBatt = false;
+function applyEco() {
+  const m = S().battery || 'auto';
+  const was = eco; eco = m === 'on' || (m === 'auto' && onBatt);
+  document.documentElement.classList.toggle('eco', eco);
+  if (was !== eco) {
+    if (pollFn) startPoll(pollFn);
+    if (st.kind === 'yt') ytQuality();
+    try { huntSync(); } catch {}
+    toast(eco ? 'Modo economia ligado' : 'Modo economia desligado');
+  }
+}
+function ytQuality() { ytExec(`(()=>{const p=document.querySelector('#movie_player');if(p&&p.setPlaybackQualityRange){const q=${eco ? "'tiny'" : "'auto'"};try{p.setPlaybackQualityRange(q,q);p.setPlaybackQuality&&p.setPlaybackQuality(q)}catch(e){}}})()`); }
+U.onPower(v => { onBatt = v; applyEco(); });
+U.onBattery().then(v => { onBatt = !!v; applyEco(); });
 function stopEmbeds(except) {
   clearTimeout(yt.dropT);
   if (except !== 'yt' && yt.wv) {
@@ -293,6 +311,7 @@ async function playYT(t) {
     if (st.kind !== 'yt') return;
     const s = S();
     if ((s.eqOn || s.retro) && ++eqTick % 5 === 0) embedEq();
+    if (eco && ++ecoTick % 8 === 0) ytQuality();
     const r = await ytExec(`(()=>{const v=${V};
       const err=document.querySelector('.ytp-error, yt-playability-error-supported-renderers, #player-error-message-container');
       const errTxt=err&&err.offsetParent!==null?err.innerText.slice(0,160):'';
@@ -1145,6 +1164,7 @@ views.settings = () => {
     ${opt('Velocidade', rng('speed', 0.5, 2, 0.05, v => (+v).toFixed(2) + 'x'))}
     ${opt('Mudar o tom junto com a velocidade', sw('pitchWithSpeed'), 'Ligado = efeito slowed/nightcore; desligado = só fica mais rápido/lento')}
     ${opt('Avisar quando trocar de música', sw('notifications'), 'Notificação do Windows quando o app está minimizado')}
+    ${opt('Economia de bateria', seg('battery', [['auto', 'Automático'], ['on', 'Sempre'], ['off', 'Nunca']]), 'Automático = liga sozinho quando o notebook sai da tomada. Tira animações, deixa o vídeo do YouTube na qualidade mais baixa (o som não muda) e confere as rádios com menos frequência. Todas as funções continuam.')}
   </div>
   <div class="gtitle">Equalizador</div><div class="group">
     ${opt('Ativar equalizador', sw('eqOn'), 'Funciona nas músicas do PC, YouTube, SoundCloud, Audius e Archive')}
@@ -1187,6 +1207,7 @@ function live(k) { if (['radius', 'fontScale', 'tile', 'blur', 'lyricsSize', 'vi
 function changed(k, keepView) {
   save(); applyLook(); applyRate(); applyEq(); updateNowPlaying(); layoutEmbed();
   if (['hideVoice', 'minDur'].includes(k)) rescan();
+  if (k === 'battery') applyEco();
   if (k === 'adblock') U.setAdblock(S().adblock).then(on => toast(S().adblock ? (on ? 'Bloqueador de anúncios ligado' : 'Bloqueador ligado (lista carrega na próxima abertura)') : 'Bloqueador de anúncios desligado'));
   if (k === 'lyricsSource') { lyKey = ''; }
   if (!keepView) render();
@@ -1568,7 +1589,7 @@ function huntArtists() {
 }
 async function huntSync() {
   const h = D.hunt || (D.hunt = { on: false });
-  const r = await U.huntConfig({ on: !!h.on, artists: huntArtists(), stations: D.radioFavs || [], useTop: true, country: h.country || 'BR', max: 45 });
+  const r = await U.huntConfig({ eco, on: !!h.on, artists: huntArtists(), stations: D.radioFavs || [], useTop: true, country: h.country || 'BR', max: 45 });
   h.count = r.stations; if (view.name === 'radio') { const c = $('#huntCount'); if (c) c.textContent = r.stations; }
 }
 U.onHuntNow(m => { huntNow = m || {}; if (view.name === 'radio') document.querySelectorAll('[data-now]').forEach(el => { const n = huntNow[el.dataset.now]; el.textContent = n ? '♪ ' + n.title : ''; }); });

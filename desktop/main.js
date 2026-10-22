@@ -1,5 +1,5 @@
 // Uncrowned Music — processo principal (janela, arquivos, busca online, letras, downloads)
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, session, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, session, nativeImage, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -944,7 +944,7 @@ ipcMain.handle('hunt-config', async (e, cfg) => {
   if (cfg.useTop) { const top = await radios({ country: cfg.country || 'BR', limit: 60 }).catch(() => []); st = [...st, ...top]; }
   hunt.stations = st.filter((s, i, a) => a.findIndex(o => o.id === s.id) === i).slice(0, cfg.max || 40);
   clearInterval(hunt.timer);
-  if (hunt.on) { hunt.timer = setInterval(huntCycle, 2 * 60e3); setTimeout(huntCycle, 3000); }
+  if (hunt.on) { hunt.timer = setInterval(huntCycle, (cfg.eco ? 10 : 2) * 60e3); setTimeout(huntCycle, 3000); }
   return { stations: hunt.stations.length };
 });
 ipcMain.handle('hunt-scan', () => huntCycle().then(() => hunt.now));
@@ -1232,10 +1232,16 @@ ipcMain.handle('import-resolve', async (e, items, tag) => {
 });
 
 /* temas: troca o ícone da janela/barra de tarefas junto */
-const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas', 'ninja', 'deserto', 'ouro', 'cela', 'rock', 'pavor'];
+const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas', 'ninja', 'deserto', 'ouro', 'cela', 'rock', 'pavor', 'apagao'];
 function skinNow() { const k = store.data && store.data.settings && store.data.settings.skin; return SKINS.includes(k) ? k : 'edgy'; }
 function applyWinSkin(k) { try { if (win && SKINS.includes(k)) win.setIcon(nativeImage.createFromPath(path.join(__dirname, 'renderer', 'themes', k + '.png'))); } catch {} }
 ipcMain.handle('set-skin', (_, k) => { applyWinSkin(k); return true; });
+/* bateria: avisa a tela quando o notebook sai/volta pra tomada */
+ipcMain.handle('on-battery', () => { try { return powerMonitor.isOnBatteryPower(); } catch { return false; } });
+app.whenReady().then(() => {
+  const tell = v => { try { if (win && !win.isDestroyed()) win.webContents.send('power', v); } catch {} };
+  powerMonitor.on('on-battery', () => tell(true)); powerMonitor.on('on-ac', () => tell(false));
+});
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
 ipcMain.handle('pick-folder', async () => { const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'multiSelections'] }); return r.canceled ? [] : r.filePaths; });

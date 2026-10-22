@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('U', {
   ytmLibrary: () => ipcRenderer.invoke('ytm-library'),
   ytmFullPlaylist: id => ipcRenderer.invoke('ytm-full-playlist', id),
   setSkin: k => ipcRenderer.invoke('set-skin', k),
+  onBattery: () => ipcRenderer.invoke('on-battery'),
+  onPower: cb => ipcRenderer.on('power', (_, v) => cb(v)),
   focusWin: () => ipcRenderer.invoke('focus-win'),
   recStop: () => ipcRenderer.invoke('rec-stop'),
   onRecDone: cb => ipcRenderer.on('rec-done', (_, r) => cb(r)),
