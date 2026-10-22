@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('U', {
   scan: (folders, opts) => ipcRenderer.invoke('scan', folders, opts),
   onScanProgress: cb => ipcRenderer.on('scan-progress', (_, p) => cb(p)),
   search: q => ipcRenderer.invoke('search', q),
+  searchLive: (q, rid) => ipcRenderer.send('search-live', q, rid),
+  onSearchPart: cb => ipcRenderer.on('search-part', (_, p) => cb(p)),
   scStream: id => ipcRenderer.invoke('sc-stream', id),
   trending: (g, t) => ipcRenderer.invoke('trending', g, t),
   audiusSearch: q => ipcRenderer.invoke('audius-search', q),

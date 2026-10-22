@@ -207,7 +207,10 @@ async function playYT(t) {
   ytWebview();
   ytEnded = false; ytWarned = '';
   const url = `https://www.youtube.com/watch?v=${t.id}`;
-  try { if (yt.ready) yt.wv.loadURL(url).catch(() => {}); else yt.wv.src = url; } catch { yt.wv.src = url; }
+  // já tem uma página do YouTube aberta: só troca o vídeo no player, sem recarregar tudo (bem mais rápido)
+  const fast = yt.ready && await ytExec(`(()=>{const p=document.querySelector('#movie_player');if(p&&p.loadVideoById&&location.pathname==='/watch'){p.loadVideoById('${t.id}');try{history.replaceState(null,'','/watch?v=${t.id}')}catch(e){}return true}return false})()`);
+  yt.switchAt = Date.now(); yt.fast = !!fast;
+  if (!fast) try { if (yt.ready) yt.wv.loadURL(url).catch(() => {}); else yt.wv.src = url; } catch { yt.wv.src = url; }
   startPoll(async () => {
     if (st.kind !== 'yt') return;
     const s = S();
@@ -226,7 +229,7 @@ async function playYT(t) {
       document.querySelectorAll('ytd-enforcement-message-view-model,tp-yt-paper-dialog:has(#dismiss-button)').forEach(d=>{const b=d.querySelector('#dismiss-button button,button');if(b)b.click();});
       if(!ad){ if(Math.abs(v.playbackRate-${s.speed})>0.01) v.playbackRate=${s.speed}; v.preservesPitch=${!s.pitchWithSpeed}; }
       if(Math.abs(v.volume-${S().volume})>0.02) v.volume=${S().volume};
-      return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,skipAt,err:errTxt,id:new URLSearchParams(location.search).get('v')};})()`);
+      return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,skipAt,err:errTxt,id:(()=>{try{return document.querySelector('#movie_player').getVideoData().video_id}catch(e){return new URLSearchParams(location.search).get('v')}})()};})()`);
     if (!r) return;
     // clique de verdade no "Pular" (o YouTube ignora clique simulado por script em alguns anúncios)
     if (r.skipAt && Date.now() - (yt.skipT || 0) > 1200) {
@@ -241,6 +244,11 @@ async function playYT(t) {
       return;
     }
     if (r.none) return;
+    if (r.id && r.id !== t.id && Date.now() - yt.switchAt < 6000) {
+      // troca rápida não pegou: abre a página do vídeo do jeito normal
+      if (yt.fast && Date.now() - yt.switchAt > 3500) { yt.fast = false; yt.switchAt = Date.now(); yt.wv.loadURL(`https://www.youtube.com/watch?v=${t.id}`).catch(() => {}); }
+      return;
+    }
     if (r.id && r.id !== t.id && !ytEnded) { ytEnded = true; return ended(); }   // o YouTube tentou pular sozinho
     if (!r.ad) { st.time = r.t * 1000; st.dur = r.d * 1000; tick(); }
     if (st.playing === r.p) setPlaying(!r.p);
@@ -566,8 +574,13 @@ function rows(list, ctxName, opts = {}) {
     </div>`).join('')}</div>`;
 }
 function markCurrent() { const k = keyOf(cur()); document.querySelectorAll('.row').forEach(r => r.classList.toggle('cur', r.dataset.k === k)); }
-document.addEventListener('dblclick', e => { const r = e.target.closest('.row'); if (r && !e.target.closest('[data-act]')) play(rowsCtx[r.dataset.ctx], +r.dataset.i); });
-document.addEventListener('click', e => { const c = e.target.closest('.row .n, .row img, .row .ph'); if (c) { const r = c.closest('.row'); play(rowsCtx[r.dataset.ctx], +r.dataset.i); } });
+// um clique em qualquer lugar da linha toca (menos nos botões de favoritar/baixar/mais)
+let lastRowClick = 0;
+document.addEventListener('click', e => {
+  const r = e.target.closest('.row'); if (!r || e.target.closest('[data-act], .acts, button, a, input')) return;
+  if (Date.now() - lastRowClick < 400) return; lastRowClick = Date.now();
+  play(rowsCtx[r.dataset.ctx], +r.dataset.i);
+});
 document.addEventListener('click', async e => {
   const b = e.target.closest('.row [data-act]'); if (!b) return;
   e.stopPropagation();
@@ -689,8 +702,29 @@ $('#q').addEventListener('input', e => {
   if (view.name !== 'search') { view = { name: 'search' }; openNp(false); renderNav(); }
   searchRes = null; render();
   const isLink = /^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(searchQ);
-  searchT = setTimeout(async () => { const q = searchQ; const r = await U.search(q); if (q === searchQ) { searchRes = r; render(); } }, isLink ? 50 : 600);
+  searchT = setTimeout(() => startLiveSearch(searchQ), isLink ? 0 : 220);
 });
+/* resultados entram na tela conforme cada fonte responde (YouTube primeiro) */
+let searchRid = 0, sParts = {}, sShowT = null, sRaf = 0;
+function startLiveSearch(q) {
+  searchRid++; sParts = { q }; clearTimeout(sShowT);
+  // espera o YouTube até 1,2 s pra lista não "pular" quando ele chegar por cima
+  sShowT = setTimeout(() => { sParts.show = true; paintSearch(); }, 1200);
+  U.searchLive(q, searchRid);
+}
+U.onSearchPart(p => {
+  if (p.rid !== searchRid) return;
+  sParts[p.src] = p.items; if (p.done) sParts.done = true;
+  if (p.src === 'yt' || p.src === 'link' || p.done) sParts.show = true;
+  paintSearch();
+});
+function paintSearch() {
+  if (!sParts.show || sParts.q !== searchQ) return;
+  const P = sParts;
+  searchRes = P.link ? { stream: P.link, downloadable: [], link: true }
+    : { stream: [...(P.yt || []).slice(0, 25), ...(P.sc || []).slice(0, 20), ...(P.vm || []).slice(0, 10)], downloadable: [...(P.au || []).filter(t => t.download), ...(P.ia || [])].slice(0, 15), audius: P.au || [], loading: !P.done };
+  cancelAnimationFrame(sRaf); sRaf = requestAnimationFrame(() => { if (view.name === 'search') { const y = $('#main').scrollTop; render(); $('#main').scrollTop = y; } });
+}
 views.search = () => {
   const q = searchQ.toLowerCase();
   const local = q && !/^(https?:|www\.)/.test(q) ? LIB.filter(t => (t.title + ' ' + t.artist + ' ' + t.album).toLowerCase().includes(q)).slice(0, 40) : [];
@@ -709,8 +743,8 @@ views.search = () => {
   }
   $('#view').innerHTML = `<h1>Resultados</h1>
     ${local.length ? `<h2>No seu PC</h2>${rows(local, 'sLocal')}` : ''}
-    <h2>Online ${searchRes ? '' : '<span class="spinner"></span>'}</h2>
-    ${searchRes ? rows(searchRes.stream, 'sOnline', { empty: `Nada online pra "${esc(searchQ)}".` }) : ''}
+    <h2>Online ${!searchRes || searchRes.loading ? '<span class="spinner"></span>' : ''}</h2>
+    ${searchRes && (searchRes.stream.length || !searchRes.loading) ? rows(searchRes.stream, 'sOnline', { empty: `Nada online pra "${esc(searchQ)}".` }) : ''}
     ${searchRes && searchRes.downloadable.length ? `<h2>Pra baixar</h2><div class="sub">Músicas liberadas pelos próprios artistas (Audius e Internet Archive).</div>${rows(searchRes.downloadable, 'sDl')}` : ''}`;
 };
 

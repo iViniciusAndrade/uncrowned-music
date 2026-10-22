@@ -24,11 +24,14 @@ function saveStore() {
 }
 
 /* ---------------- HTTP helpers ---------------- */
+// conexões ficam abertas e são reaproveitadas: cada busca não precisa "apertar a mão" do servidor de novo
+const agentS = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 24 });
+const agentH = new http.Agent({ keepAlive: true, maxSockets: 24 });
 function request(url, { headers = {}, method = 'GET', redirects = 5, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'http:' ? http : https;
-    const req = lib.request(u, { method, headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', ...headers }, timeout: 15000 }, res => {
+    const req = lib.request(u, { method, agent: u.protocol === 'http:' ? agentH : agentS, headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', ...headers }, timeout: 15000 }, res => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
         res.resume();
         return resolve(request(new URL(res.headers.location, u).toString(), { headers, method, redirects: redirects - 1 }));
@@ -336,6 +339,32 @@ async function searchAll(q) {
   return { stream: [...yt.slice(0, 25), ...sc.slice(0, 20), ...vm.slice(0, 10)], downloadable: [...au.filter(t => t.download), ...ia].slice(0, 15), audius: au };
 }
 
+/* busca ao vivo: cada fonte manda o resultado assim que responde (YouTube primeiro na tela),
+   com cache de 15 min e tempo máximo por fonte, então uma fonte lenta não segura as outras */
+const sCache = new Map();
+function cachedSearch(src, q, fn) {
+  const k = src + '|' + q.toLowerCase(); const c = sCache.get(k);
+  if (c && Date.now() - c.at < 15 * 60e3) return c.v;
+  const v = fn().then(r => { if (!r || !r.length) sCache.delete(k); return r || []; }).catch(() => { sCache.delete(k); return []; });
+  sCache.set(k, { at: Date.now(), v }); if (sCache.size > 400) sCache.delete(sCache.keys().next().value);
+  return v;
+}
+const within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r([]), ms))]);
+ipcMain.on('search-live', async (e, q, rid) => {
+  const send = (src, items, done) => { try { if (!e.sender.isDestroyed()) e.sender.send('search-part', { rid, src, items, done }); } catch {} };
+  q = (q || '').trim(); if (!q) return;
+  if (/^(https?:\/\/|www\.|youtu\.be|youtube\.com|m\.youtube|music\.youtube|soundcloud\.com|vimeo\.com)/i.test(q)) {
+    const r = await resolveLink(q).catch(() => null);
+    if (r) return send('link', r, true);
+  }
+  const s = (store.data && store.data.settings) || {};
+  const jobs = [['yt', () => youtube(q)], ['sc', () => soundcloud(q)], ['vm', () => vimeo(q, s.vimeoToken)], ['au', () => audiusSearch(q)], ['ia', () => archive(q)]];
+  let left = jobs.length;
+  jobs.forEach(([src, fn]) => within(cachedSearch(src, q, fn), 9000).then(items => send(src, items || [], --left === 0)));
+});
+// deixa as conexões com YouTube e SoundCloud já abertas pra primeira busca sair rápida
+function warmUp() { cachedSearch('yt', 'musica', () => youtube('musica')); soundcloud('a').catch(() => {}); }
+
 /* ---------------- letras ---------------- */
 const cleanName = s => (s || '').replace(/\s*[\(\[][^\)\]]*(official|oficial|video|v[ií]deo|lyric|audio|áudio|visualizer|prod|ft\.|feat)[^\)\]]*[\)\]]/gi, '').replace(/\s*-\s*topic$/i, '').trim();
 const slug = s => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/&/g, 'e').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -616,5 +645,6 @@ app.whenReady().then(async () => {
   setupAdblock(s0.adblock !== false);
   await startServer();
   createWindow();
+  setTimeout(warmUp, 1500);
 });
 app.on('window-all-closed', () => { try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.quit(); });
