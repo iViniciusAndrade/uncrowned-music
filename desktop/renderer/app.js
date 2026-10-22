@@ -73,10 +73,16 @@ const SKINS = {
   edgy: { name: 'Edgy', desc: 'Dark, vermelho sangue e glitch', accent: '#ff1f3d', mode: 'dark', dots: ['#050505', '#ff1f3d', '#f2f2f2'] },
   fadinha: { name: 'Fadinha', desc: 'Pastel, brilhinho e lacinho', accent: '#ff5fa8', mode: 'light', dots: ['#ffd6ec', '#e3c9ff', '#ff5fa8'] },
   otaku: { name: 'Otaku', desc: 'Neon, sakura e anime', accent: '#ff3fa4', mode: 'dark', dots: ['#1a1240', '#ff3fa4', '#25f4ee'] },
-  oldmoney: { name: 'Old Money', desc: 'Creme, verde e dourado', accent: '#a67c2a', mode: 'light', dots: ['#f1e9d6', '#1f3b2d', '#b08a2e'] },
+  oldmoney: { name: 'Old Money', desc: 'Linho, marinho, caramelo e cartola', accent: '#a8763e', mode: 'light', dots: ['#f4eee1', '#1d2b44', '#b5895a'] },
   alternativo: { name: 'Alternativo', desc: 'Terroso, granulado e fone', accent: '#e76f51', mode: 'dark', dots: ['#1d2b2a', '#e9c46a', '#e76f51'] },
   punk: { name: 'Punk', desc: 'Preto, verde neon e retícula', accent: '#39ff14', mode: 'dark', dots: ['#0b0b0b', '#39ff14', '#ff2fa0'] },
-  pulseirinhas: { name: 'Pulseirinhas', desc: 'Glitter colorido e miçangas', accent: '#c77dff', mode: 'dark', dots: ['#5b2a86', '#b8336a', '#2b59c3'] }
+  pulseirinhas: { name: 'Pulseirinhas', desc: 'Glitter colorido e miçangas', accent: '#c77dff', mode: 'dark', dots: ['#5b2a86', '#b8336a', '#2b59c3'] },
+  ninja: { name: 'Ninja Renegado', desc: 'Preto, carmesim e traço de pincel', accent: '#d62839', mode: 'dark', dots: ['#0a0809', '#8c0f1c', '#f3efe9'] },
+  deserto: { name: 'Deserto Estelar', desc: 'Noite no deserto, ouro e turquesa', accent: '#2ec4b6', mode: 'dark', dots: ['#0f1a3a', '#c8923a', '#2ec4b6'] },
+  ouro: { name: 'Ouro Italiano', desc: 'Dourado, magenta e linhas de mangá', accent: '#f2b632', mode: 'dark', dots: ['#3a0b2e', '#ff4fa3', '#f2b632'] },
+  cela: { name: 'Cela Esmeralda', desc: 'Verde-pedra, correntes e jade', accent: '#3ddc97', mode: 'dark', dots: ['#0e231c', '#2f6b55', '#3ddc97'] },
+  rock: { name: 'Rock Tóquio', desc: 'Xadrez vermelho, renda e rosas', accent: '#e01e37', mode: 'dark', dots: ['#120607', '#7a0b16', '#e8c547'] },
+  pavor: { name: 'Pavor', desc: 'Terror pesado: olhos no escuro e arame', accent: '#c0001a', mode: 'dark', dots: ['#050406', '#2a2433', '#c0001a'] }
 };
 let logoV = Date.now();
 function refreshLogos() { logoV = Date.now(); document.querySelectorAll('img').forEach(i => { const a = i.getAttribute('src') || ''; if (/^logo\.png/.test(a)) i.src = 'logo.png?v=' + logoV; }); }

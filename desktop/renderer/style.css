@@ -554,16 +554,15 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 :root[data-skin=otaku] #sidebar nav a.on{box-shadow:inset 2px 0 0 var(--accent),0 0 18px rgba(255,63,164,.25)}
 :root[data-skin=otaku] h1{text-shadow:0 0 18px rgba(255,63,164,.55)}
 
-/* OLD MONEY: creme, verde, dourado, serifa */
-:root[data-skin=oldmoney]{--bg:#f4eee0;--side:#ece3cd;--card:#fbf7ee;--card2:#e9dfc8;--line:rgba(31,59,45,.14);--text:#1f2e25;--dim:#7d7564;--hfont:'Cormorant Garamond',serif;
-  --tex:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 .4 0 0 0 0 .3 0 0 0 0 .1 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");--texO:1}
-:root[data-skin=oldmoney] h1{font-size:40px;font-weight:700;letter-spacing:.01em}
-:root[data-skin=oldmoney] #sidebar{background:#1f3b2d;border-right:1px solid #b08a2e}
-:root[data-skin=oldmoney] #sidebar nav a{color:#efe6cf} :root[data-skin=oldmoney] #sidebar nav a svg{fill:#d6b25e}
-:root[data-skin=oldmoney] #sidebar nav a.on{background:rgba(214,178,94,.16);box-shadow:inset 2px 0 0 #d6b25e}
-:root[data-skin=oldmoney] #sidebar .brand span{color:#f1e6c8;font-size:20px}
-:root[data-skin=oldmoney] #sidebar .navlabel{color:#b6a77f}
-:root[data-skin=oldmoney] #bar{background:rgba(244,238,224,.95);border-top:1px solid #d9c9a0}
+/* OLD MONEY: linho italiano, marinho, caramelo, serifa */
+:root[data-skin=oldmoney]{--bg:#f4eee1;--card:#fbf8f1;--card2:#ebe3d2;--line:rgba(29,43,68,.12);--text:#1d2b44;--dim:#7d7462;--hfont:'Cormorant Garamond',serif;
+  --tex:repeating-linear-gradient(90deg,rgba(29,43,68,.035) 0 1px,transparent 1px 34px);--texO:1}
+:root[data-skin=oldmoney] h1{font-size:44px;font-weight:700;letter-spacing:.01em}
+:root[data-skin=oldmoney] #sidebar nav a{color:#f1e9d8} :root[data-skin=oldmoney] #sidebar nav a svg{fill:#d8b98a}
+:root[data-skin=oldmoney] #sidebar nav a.on{background:rgba(216,185,138,.16);box-shadow:inset 2px 0 0 #d8b98a}
+:root[data-skin=oldmoney] #sidebar .brand span{color:#f4eee1;font-size:20px}
+:root[data-skin=oldmoney] #sidebar .navlabel{color:#b6a888}
+:root[data-skin=oldmoney] #bar{background:rgba(244,238,225,.95);border-top:1px solid #d9cbb0}
 
 /* ALTERNATIVO: terroso, granulado */
 :root[data-skin=alternativo]{--bg:#161f1e;--card:#1f2b2a;--card2:#2b3a38;--text:#f4e8c8;--dim:#a8a08a;--hfont:'Space Grotesk',sans-serif;
@@ -585,3 +584,56 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 :root[data-skin=pulseirinhas] body::after{background-size:140px 140px,200px 200px,260px 260px}
 :root[data-skin=pulseirinhas] #sidebar{background:linear-gradient(180deg,#5b2a86,#8a2a6e 55%,#2b3f8f)}
 :root[data-skin=pulseirinhas] h1{background:linear-gradient(90deg,#ff6fb5,#ffd166,#7ae7c7,#7aa8ff,#c77dff);-webkit-background-clip:text;color:transparent}
+
+/* NINJA RENEGADO: preto, carmesim, pincel */
+:root[data-skin=ninja]{--bg:#0a0809;--card:#151114;--card2:#221b20;--dim:#a39599;--hfont:'Shojumaru',serif;
+  --tex:radial-gradient(120% 50% at 100% 0%,rgba(140,15,28,.18),transparent 60%),radial-gradient(90% 40% at 0% 100%,rgba(140,15,28,.14),transparent 60%);--texO:1}
+:root[data-skin=ninja] #sidebar{background:linear-gradient(170deg,#140b0d,#0a0809 55%,#1d070b);border-right:1px solid rgba(214,40,57,.3)}
+:root[data-skin=ninja] h1{letter-spacing:.03em}
+/* DESERTO ESTELAR: noite, ouro, turquesa */
+:root[data-skin=deserto]{--bg:#0d1430;--card:#17204a;--card2:#24305e;--dim:#9fa8cc;--hfont:'Cinzel',serif;
+  --tex:radial-gradient(circle at 12% 18%,rgba(255,255,255,.7) 0 1px,transparent 1.6px),radial-gradient(circle at 70% 40%,rgba(255,209,102,.7) 0 1.2px,transparent 1.8px);--texO:1}
+:root[data-skin=deserto] body::after{background-size:170px 170px,260px 260px}
+:root[data-skin=deserto] #sidebar{background:linear-gradient(180deg,#0f1a3a,#2a1d4a 70%,#5a2e3a)}
+:root[data-skin=deserto] h1{color:#ffd166;letter-spacing:.04em}
+/* OURO ITALIANO: dourado, magenta, linhas de ação */
+:root[data-skin=ouro]{--bg:#1c0718;--card:#2c0d27;--card2:#3f1538;--dim:#d39ac4;--hfont:'Playfair Display',serif;
+  --tex:repeating-conic-gradient(from 0deg at 100% 0%,rgba(255,211,110,.05) 0 2deg,transparent 2deg 6deg);--texO:1}
+:root[data-skin=ouro] #sidebar{background:linear-gradient(180deg,#3a0b2e,#1c0718);border-right:1px solid rgba(242,182,50,.35)}
+:root[data-skin=ouro] h1{font-style:italic;background:linear-gradient(90deg,#fff1a8,#f2b632,#b37a12);-webkit-background-clip:text;color:transparent}
+/* CELA ESMERALDA: verde-pedra, jade */
+:root[data-skin=cela]{--bg:#0b1d17;--card:#12281f;--card2:#1b382c;--dim:#8fb5a4;--hfont:'Anton',sans-serif;
+  --tex:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.02 .06' numOctaves='4'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .7 0 0 0 0 .5 0 0 0 .12 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");--texO:1}
+:root[data-skin=cela] #sidebar{background:linear-gradient(180deg,#0e231c,#091510);border-right:1px solid rgba(61,220,151,.3)}
+:root[data-skin=cela] h1{letter-spacing:.03em;text-transform:uppercase}
+
+/* ROCK TÓQUIO: xadrez vermelho, renda preta, rosas */
+:root[data-skin=rock]{--bg:#0d0506;--card:#1a0b0d;--card2:#2a1215;--dim:#b49a9c;--hfont:'Special Elite',monospace;
+  --tex:repeating-linear-gradient(0deg,rgba(122,11,22,.07) 0 22px,transparent 22px 44px),repeating-linear-gradient(90deg,rgba(122,11,22,.07) 0 22px,transparent 22px 44px);--texO:1}
+:root[data-skin=rock] h1{letter-spacing:.02em}
+
+/* arte da barra lateral de cada tema (escurecida pra ler os menus) */
+:root[data-skin] #sidebar{background-size:cover!important;background-position:center 30%!important;background-repeat:no-repeat!important}
+:root[data-skin=fadinha] #sidebar{background-image:linear-gradient(180deg,rgba(255,236,246,.72),rgba(255,236,246,.45) 35%,rgba(255,236,246,.55) 65%,rgba(255,236,246,.85)),url("themes/fadinha-side.jpg")!important}
+:root[data-skin=otaku] #sidebar{background-image:linear-gradient(180deg,rgba(10,6,24,.62),rgba(10,6,24,.3) 35%,rgba(10,6,24,.4) 65%,rgba(10,6,24,.85)),url("themes/otaku-side.jpg")!important}
+:root[data-skin=oldmoney] #sidebar{background-image:linear-gradient(180deg,rgba(18,27,44,.6),rgba(18,27,44,.3) 35%,rgba(18,27,44,.4) 65%,rgba(18,27,44,.85)),url("themes/oldmoney-side.jpg")!important}
+:root[data-skin=alternativo] #sidebar{background-image:linear-gradient(180deg,rgba(14,20,19,.62),rgba(14,20,19,.3) 35%,rgba(14,20,19,.4) 65%,rgba(14,20,19,.85)),url("themes/alternativo-side.jpg")!important}
+:root[data-skin=punk] #sidebar{background-image:linear-gradient(180deg,rgba(0,0,0,.6),rgba(0,0,0,.28) 35%,rgba(0,0,0,.38) 65%,rgba(0,0,0,.85)),url("themes/punk-side.jpg")!important}
+:root[data-skin=pulseirinhas] #sidebar{background-image:linear-gradient(180deg,rgba(26,12,50,.6),rgba(26,12,50,.28) 35%,rgba(26,12,50,.4) 65%,rgba(26,12,50,.85)),url("themes/pulseirinhas-side.jpg")!important}
+:root[data-skin=ninja] #sidebar{background-image:linear-gradient(180deg,rgba(8,6,7,.62),rgba(8,6,7,.3) 35%,rgba(8,6,7,.4) 65%,rgba(8,6,7,.88)),url("themes/ninja-side.jpg")!important}
+:root[data-skin=deserto] #sidebar{background-image:linear-gradient(180deg,rgba(10,14,36,.6),rgba(10,14,36,.28) 35%,rgba(10,14,36,.4) 65%,rgba(10,14,36,.85)),url("themes/deserto-side.jpg")!important}
+:root[data-skin=ouro] #sidebar{background-image:linear-gradient(180deg,rgba(28,7,24,.6),rgba(28,7,24,.28) 35%,rgba(28,7,24,.4) 65%,rgba(28,7,24,.85)),url("themes/ouro-side.jpg")!important}
+:root[data-skin=cela] #sidebar{background-image:linear-gradient(180deg,rgba(8,21,16,.62),rgba(8,21,16,.3) 35%,rgba(8,21,16,.4) 65%,rgba(8,21,16,.85)),url("themes/cela-side.jpg")!important}
+:root[data-skin=rock] #sidebar{background-image:linear-gradient(180deg,rgba(10,4,5,.6),rgba(10,4,5,.28) 35%,rgba(10,4,5,.4) 65%,rgba(10,4,5,.88)),url("themes/rock-side.jpg")!important;border-right:1px solid rgba(224,30,55,.3)}
+:root[data-skin] #sidebar nav a{text-shadow:0 1px 6px rgba(0,0,0,.6)}
+:root[data-skin=fadinha] #sidebar nav a{text-shadow:0 1px 6px rgba(255,255,255,.8)}
+
+/* PAVOR: terror pesado */
+:root[data-skin=pavor]{--bg:#060508;--card:#121016;--card2:#1d1a22;--text:#ddd6c6;--dim:#8a8394;--hfont:'Creepster',cursive;
+  --tex:radial-gradient(ellipse at 50% 50%,transparent 45%,rgba(0,0,0,.75) 100%);--texO:1}
+:root[data-skin=pavor] h1{color:#d8d0bc;letter-spacing:.06em;text-shadow:0 3px 0 #5a000c,0 0 24px rgba(192,0,26,.4)}
+:root[data-skin=pavor] h2{font-family:inherit;letter-spacing:.02em}
+:root[data-skin=pavor] #sidebar{background-image:linear-gradient(180deg,rgba(5,4,6,.55),rgba(5,4,6,.25) 35%,rgba(5,4,6,.4) 65%,rgba(5,4,6,.9)),url("themes/pavor-side.jpg")!important;border-right:1px solid rgba(192,0,26,.25)}
+:root[data-skin=pavor] body::after{animation:pavorFlicker 9s infinite steps(1)}
+@keyframes pavorFlicker{0%,100%{opacity:1}61%{opacity:1}62%{opacity:.35}63%{opacity:1}64%{opacity:.5}65%{opacity:1}88%{opacity:1}88.5%{opacity:.2}89%{opacity:1}}
+:root[data-skin=pavor] .row:hover{box-shadow:inset 3px 0 0 #c0001a}
