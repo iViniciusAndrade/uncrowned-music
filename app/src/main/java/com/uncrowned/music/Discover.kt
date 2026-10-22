@@ -213,9 +213,24 @@ fun DiscoverTab(ui: PlayerUi) {
     LaunchedEffect(trendGenre) { trending = Audius.trending(trendGenre).getOrDefault(emptyList()) }
 
     if (onboarding) { GenrePicker { onboarding = false }; return }
+    var radioOpen by remember { mutableStateOf(false) }
+    if (radioOpen) { RadioScreen(ui) { radioOpen = false }; return }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Descobrir") }
+        item {
+            Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clickable { radioOpen = true }) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Radio, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Rádio", fontWeight = FontWeight.Bold)
+                        Text("Rádio FM sem internet e estações ao vivo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Rounded.ChevronRight, null)
+                }
+            }
+        }
         item {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 placeholder = { Text("Buscar e baixar músicas") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
