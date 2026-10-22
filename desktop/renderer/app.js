@@ -895,7 +895,7 @@ views.search = () => {
     const R = searchRes || { stream: [], downloadable: [], loading: true };
   const by = src => R.stream.filter(t => t.src === src);
   const yt = by('yt'), sc = by('sc'), vm = by('vm');
-  const Y = R.ytm || { artists: [], albums: [] };
+  const Y = R.ytm && Array.isArray(R.ytm.artists) ? { albums: [], songs: [], ...R.ytm } : { artists: [], albums: [], songs: [] };
   const F = [['all', 'Tudo'], ['art', 'Artistas'], ['alb', 'Álbuns'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'No PC'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'art' ? Y.artists.length : k === 'alb' ? Y.albums.length : k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
   const nq = x => (x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const artTiles = l => `<div class="hscroll">${l.map((a, i) => `<div class="tile round" data-sart="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt" style="text-align:center">${esc(a.name)}</div><div class="ta" style="text-align:center">Artista</div></div>`).join('')}</div>`;
