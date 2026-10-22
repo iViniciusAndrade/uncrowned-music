@@ -41,6 +41,7 @@ const P = {
   wave: 'M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z',
   cassette: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-1.4l-1.6-3H7l-1.6 3H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm3.5 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm9 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM10 10.25v1.5h4v-1.5h-4z',
   cal: 'M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7z',
+  chart: 'M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z',
   radio: 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8c0-1.11-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z',
   close: 'M18.3 5.71a.996.996 0 0 0-1.41 0L12 10.59 7.11 5.7A.996.996 0 1 0 5.7 7.11L10.59 12 5.7 16.89a.996.996 0 1 0 1.41 1.41L12 13.41l4.89 4.89a.996.996 0 1 0 1.41-1.41L13.41 12l4.89-4.89c.38-.38.38-1.02 0-1.4z'
 };
@@ -206,6 +207,7 @@ setInterval(() => {
     if (stuck >= 4) { stuck = 0; const t = audio.currentTime; audio.load(); audio.currentTime = t; audio.play().catch(() => {}); applyRate(); }
   } else stuck = 0;
   if (st.sleepAt && Date.now() >= st.sleepAt) { st.sleepAt = 0; pause(); toast('Timer: música pausada'); }
+  countListen();
 }, 1000);
 
 /* ---------------- players oficiais: YouTube / SoundCloud / Vimeo ---------------- */
@@ -513,7 +515,7 @@ function onTrackChange(t) {
   tasteDecay();
   bump(D.taste.g, t.genre, 1); bump(D.taste.a, t.artist, 1); bumpPlay(t, 1);
   const k = keyOf(t); if (!D.heard.includes(k)) { D.heard.push(k); if (D.heard.length > 3000) D.heard.shift(); }
-  if (t.src !== 'local') { D.history = [t, ...D.history.filter(x => keyOf(x) !== k)].slice(0, 80); }
+  D.history = [t, ...D.history.filter(x => keyOf(x) !== k)].slice(0, 150);
   lastKey = k; lastMeta = t; startedAt = Date.now();
   D.lastQueue = { q: st.queue.slice(0, 300), i: st.idx };
   save();
@@ -749,7 +751,7 @@ function prompt2(label, cb) {
 }
 
 /* ---------------- navegação ---------------- */
-const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio'], ['moments', 'Momentos', 'cal']];
+const NAV = [['discover', 'Descobrir', 'explore'], ['search', 'Buscar', 'search'], ['radio', 'Rádio', 'radio'], ['moments', 'Momentos', 'cal'], ['stats', 'Mais ouvidas', 'chart']];
 const NAV_OFF = [['songs', 'Músicas', 'note'], ['albums', 'Álbuns', 'album'], ['artists', 'Artistas', 'person'], ['export', 'Slowed / Nightcore', 'wave']];
 function renderNav() {
   const radioOn = st.kind === 'radio' && st.playing;
@@ -760,7 +762,7 @@ function renderNav() {
   renderPlNav();
 }
 function renderPlNav() {
-  const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas online', 'history'], ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
+  const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas recentemente', 'history'], ['import', 'Importar playlists', 'plus'], ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
   $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${ico(i)}<span>${esc(l)}</span></a>`).join('');
 }
 document.addEventListener('click', e => {
@@ -815,14 +817,14 @@ views.group = () => {
 views.favs = () => { const l = Object.values(D.favs); $('#view').innerHTML = `<h1>Favoritas</h1>${l.length ? playBtns('favs') : ''}${rows(l, 'favs', { empty: 'Toque no coração das músicas pra salvar aqui.' })}`; };
 views.history = () => {
   const l = D.history;
-  const SRC = { yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Archive' };
+  const SRC = { local: 'No PC', yt: 'YouTube', sc: 'SoundCloud', vm: 'Vimeo', au: 'Audius', ia: 'Archive' };
   rowsCtx.history = l;
-  $('#view').innerHTML = `<h1>Ouvidas online</h1><div class="sub">${l.length} músicas que você ouviu por último</div>
+  $('#view').innerHTML = `<h1>Ouvidas recentemente</h1><div class="sub">${l.length} músicas que você ouviu por último, do PC e da internet</div>
     ${l.length ? `<div class="btns"><button class="btn" data-play="history">${ico('play')} Tocar</button><button class="btn" data-shuf="history">${ico('shuffle')} Aleatório</button><button class="btn" id="histClr">Limpar histórico</button></div>` : ''}
     ${l.length ? `<div class="grid hgrid">${l.map((t, i) => `<div class="htile ${keyOf(t) === keyOf(cur()) ? 'cur' : ''}" data-hi="${i}">
       <div class="hart"><img loading="lazy" src="${esc(artOf(t))}" onerror="this.src='logo.png'"><span class="hsrc ${t.src}">${SRC[t.src] || ''}</span>
         <button class="hplay" title="Tocar">${ico('play')}</button><button class="hmore" title="Mais">${ico('more')}</button></div>
-      <div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('')}</div>` : '<div class="empty">As músicas que você ouvir online aparecem aqui.</div>'}`;
+      <div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('')}</div>` : '<div class="empty">As músicas que você ouvir aparecem aqui.</div>'}`;
   $('#view').querySelectorAll('[data-hi]').forEach(d => d.onclick = e => {
     const i = +d.dataset.hi;
     if (e.target.closest('.hmore')) return menu(l[i], l, i, 'history');
@@ -857,6 +859,8 @@ function startLiveSearch(q) {
   // espera o YouTube até 1,2 s pra lista não "pular" quando ele chegar por cima
   sShowT = setTimeout(() => { sParts.show = true; paintSearch(); }, 1200);
   U.searchLive(q, searchRid);
+  const rid = searchRid;
+  U.ytmSearch(q).then(r => { if (rid !== searchRid) return; sParts.ytm = r; paintSearch(); });
 }
 U.onSearchPart(p => {
   if (p.rid !== searchRid) return;
@@ -868,7 +872,7 @@ function paintSearch() {
   if (!sParts.show || sParts.q !== searchQ) return;
   const P = sParts;
   searchRes = P.link ? { stream: P.link, downloadable: [], link: true }
-    : { stream: [...(P.yt || []).slice(0, 25), ...(P.sc || []).slice(0, 20), ...(P.vm || []).slice(0, 10)], downloadable: [...(P.au || []).filter(t => t.download), ...(P.ia || [])].slice(0, 15), audius: P.au || [], loading: !P.done };
+    : { ytm: P.ytm, stream: [...(P.yt || []).slice(0, 25), ...(P.sc || []).slice(0, 20), ...(P.vm || []).slice(0, 10)], downloadable: [...(P.au || []).filter(t => t.download), ...(P.ia || [])].slice(0, 15), audius: P.au || [], loading: !P.done };
   cancelAnimationFrame(sRaf); sRaf = requestAnimationFrame(() => { if (view.name === 'search') { const y = $('#main').scrollTop; render(); $('#main').scrollTop = y; } });
 }
 views.search = () => {
@@ -891,7 +895,11 @@ views.search = () => {
     const R = searchRes || { stream: [], downloadable: [], loading: true };
   const by = src => R.stream.filter(t => t.src === src);
   const yt = by('yt'), sc = by('sc'), vm = by('vm');
-  const F = [['all', 'Tudo'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'No PC'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
+  const Y = R.ytm || { artists: [], albums: [] };
+  const F = [['all', 'Tudo'], ['art', 'Artistas'], ['alb', 'Álbuns'], ['yt', 'YouTube'], ['sc', 'SoundCloud'], ['local', 'No PC'], ['dl', 'Pra baixar']].filter(([k]) => k === 'all' || (k === 'art' ? Y.artists.length : k === 'alb' ? Y.albums.length : k === 'local' ? local.length : k === 'dl' ? R.downloadable.length : by(k).length) || sFilter === k);
+  const nq = x => (x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const artTiles = l => `<div class="hscroll">${l.map((a, i) => `<div class="tile round" data-sart="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt" style="text-align:center">${esc(a.name)}</div><div class="ta" style="text-align:center">Artista</div></div>`).join('')}</div>`;
+  const albTiles = l => `<div class="hscroll">${l.map((a, i) => `<div class="tile" data-salb="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.title)}</div><div class="ta">${esc([a.year, a.artist || a.type].filter(Boolean).join(' • '))}</div></div>`).join('')}</div>`;
   const chips = `<div class="chips sticky">${F.map(([k, n]) => `<button class="chip ${sFilter === k ? 'on' : ''}" data-sf="${k}">${n}</button>`).join('')}${R.loading ? '<span class="spinner"></span>' : ''}</div>`;
   let body = '';
   if (sFilter === 'all') {
@@ -899,7 +907,16 @@ views.search = () => {
     const ql = q.toLowerCase();
     const best = local.find(t => (t.title + ' ' + t.artist).toLowerCase().includes(ql)) || R.stream[0] || local[0];
     const top4 = pool.filter(t => t !== best).slice(0, 4);
-    if (best) {
+    const bestArt = Y.artists[0] && (nq(Y.artists[0].name) === nq(q) || nq(q).startsWith(nq(Y.artists[0].name))) ? Y.artists[0] : null;
+    if (bestArt) {
+      rowsCtx.best = [...(Y.songs || []), ...top4].slice(0, 4);
+      body += `<div class="sTop">
+        <div><h2>Melhor resultado</h2><div class="best" data-sart="0">
+          <img class="round" src="${esc(bestArt.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="bt">${esc(bestArt.name)}</div>
+          <div class="ba"><span class="badge yt">ARTISTA</span>${esc(bestArt.sub || '')}</div>
+          <button class="bplay" title="Abrir">${ico('play')}</button></div></div>
+        <div class="sTopList"><h2>Músicas</h2>${rows(rowsCtx.best, 'best')}</div></div>`;
+    } else if (best) {
       rowsCtx.best = [best, ...top4];
       body += `<div class="sTop">
         <div><h2>Melhor resultado</h2><div class="best" id="bestCard">
@@ -908,18 +925,24 @@ views.search = () => {
           <button class="bplay" title="Tocar">${ico('play')}</button></div></div>
         <div class="sTopList"><h2>Músicas</h2>${rows(top4, 'sTop4')}</div></div>`;
     } else if (!R.loading) body += `<div class="empty">Nada encontrado pra "${esc(q)}".</div>`;
+    if (Y.artists.length) body += `<h2>Artistas</h2>${artTiles(Y.artists)}`;
+    if (Y.albums.length) body += `<h2>Álbuns</h2>${albTiles(Y.albums)}`;
     if (local.length) body += `<h2>No seu PC</h2>${rows(local.slice(0, 10), 'sLocal')}`;
     if (yt.length) body += `<h2>YouTube</h2>${rows(yt.slice(0, 10), 'sYt')}`;
     if (sc.length) body += `<h2>SoundCloud</h2>${rows(sc.slice(0, 8), 'sSc')}`;
     if (vm.length) body += `<h2>Vimeo</h2>${rows(vm.slice(0, 6), 'sVm')}`;
     if (R.downloadable.length) body += `<h2>Pra baixar</h2><div class="sub">Músicas liberadas pelos próprios artistas (Audius e Internet Archive).</div>${rows(R.downloadable, 'sDl')}`;
-  } else {
+  } else if (sFilter === 'art') body = `<div class="grid">${Y.artists.map((a, i) => `<div class="tile round" data-sart="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt" style="text-align:center">${esc(a.name)}</div><div class="ta" style="text-align:center">${esc(a.sub || 'Artista')}</div></div>`).join('')}</div>`;
+  else if (sFilter === 'alb') body = `<div class="grid">${Y.albums.map((a, i) => `<div class="tile" data-salb="${i}"><img loading="lazy" src="${esc(a.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.title)}</div><div class="ta">${esc([a.type, a.year, a.artist].filter(Boolean).join(' • '))}</div></div>`).join('')}</div>`;
+  else {
     const l = sFilter === 'local' ? local : sFilter === 'dl' ? R.downloadable : by(sFilter);
     body = rows(l, 's_' + sFilter, { empty: R.loading ? 'Procurando…' : 'Nada aqui.' });
   }
   $('#view').innerHTML = chips + body;
   $('#view').querySelectorAll('[data-sf]').forEach(b => b.onclick = () => { sFilter = b.dataset.sf; render(); });
   if ($('#bestCard')) $('#bestCard').onclick = () => { addRecent(searchQ); play(rowsCtx.best, 0); };
+  $('#view').querySelectorAll('[data-sart]').forEach(d => d.onclick = () => { addRecent(searchQ); const a = Y.artists[+d.dataset.sart]; go({ name: 'artist', id: a.id, title: a.name, art: a.art }); });
+  $('#view').querySelectorAll('[data-salb]').forEach(d => d.onclick = () => { addRecent(searchQ); const a = Y.albums[+d.dataset.salb]; go({ name: 'album', id: a.id, title: a.title, art: a.art, artist: a.artist }); });
 };
 /* busca vazia: buscas recentes + navegar por estilo (igual Spotify) */
 const BROWSE = [['Funk', '#e8115b'], ['Trap', '#8d67ab'], ['Phonk', '#1e3264'], ['Rap', '#ba5d07'], ['Sertanejo', '#e1118c'], ['Pagode', '#148a08'], ['Pop', '#477d95'], ['Rock', '#e91429'], ['Eletrônica', '#0d73ec'], ['Lo-fi', '#509bf5'], ['Drill', '#503750'], ['R&B', '#dc148c'], ['Reggaeton', '#27856a'], ['Metal', '#777777'], ['Gospel', '#8c1932'], ['MPB', '#af2896'], ['Slowed + Reverb', '#283ea8'], ['Nightcore', '#e8115b'], ['Anos 2000', '#a56752'], ['Para treinar', '#777700']];
@@ -1140,6 +1163,273 @@ function changed(k, keepView) {
   if (k === 'lyricsSource') { lyKey = ''; }
   if (!keepView) render();
 }
+
+/* ---------------- página do artista e do álbum (YouTube Music) ---------------- */
+const artistCache = {}, albumCache = {};
+let artAll = false;
+views.artist = async () => {
+  const v0 = view;
+  const a = artistCache[view.id];
+  const hero = (name, art, sub) => `<div class="aHero" style="--img:url('${esc(art || 'logo.png')}')"><div class="aBg"></div>
+    <img class="aImg" src="${esc(art || 'logo.png')}" onerror="this.src='logo.png'"><div class="aTxt"><span>Artista</span><h1>${esc(name)}</h1><small>${esc(sub || '')}</small></div></div>`;
+  if (!a) {
+    $('#view').innerHTML = hero(view.title, view.art, '') + '<span class="spinner"></span>';
+    const r = await U.ytmArtist(view.id);
+    if (view !== v0) return;
+    if (!r.name && r.err) { $('#view').innerHTML = hero(view.title, view.art, '') + '<div class="empty">Não deu pra abrir esse artista agora.</div>'; return; }
+    artistCache[view.id] = r; artAll = false; return render();
+  }
+  const top = a.top || [], shown = artAll ? top : top.slice(0, 10);
+  rowsCtx.artTop = top;
+  const tiles = (l, k) => `<div class="hscroll">${l.map((x, i) => `<div class="tile" data-${k}="${i}"><img loading="lazy" src="${esc(x.art || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(x.title)}</div><div class="ta">${esc(x.sub || '')}</div></div>`).join('')}</div>`;
+  $('#view').innerHTML = hero(a.name || view.title, a.art || view.art, a.subs) + `
+    <div class="btns aBtns">${top.length ? `<button class="bigPlay" data-play="artTop" title="Tocar">${ico('play')}</button><button class="btn" data-shuf="artTop">${ico('shuffle')} Aleatório</button><button class="btn" id="artRadio">${ico('radio')} Rádio do artista</button>` : ''}</div>
+    ${top.length ? `<h2>Populares</h2>${rows(shown, 'artTopV')}${top.length > 10 ? `<button class="lnk more" id="artMore">${artAll ? 'Mostrar menos' : `Ver mais (${top.length})`}</button>` : ''}` : ''}
+    ${(a.albums || []).length ? `<h2>Álbuns</h2>${tiles(a.albums, 'aal')}` : ''}
+    ${(a.singles || []).length ? `<h2>Singles e EPs</h2>${tiles(a.singles, 'asg')}` : ''}
+    ${(a.videos || []).length ? `<h2>Vídeos</h2><div class="hscroll wide">${a.videos.map((t, i) => `<div class="tile" data-avd="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div></div>`).join('')}</div>` : ''}`;
+  rowsCtx.artTopV = top;
+  if ($('#artMore')) $('#artMore').onclick = () => { artAll = !artAll; render(); };
+  if ($('#artRadio')) $('#artRadio').onclick = () => top[0] && startRadio(top[0], false);
+  const openAlb = x => go({ name: 'album', id: x.id, title: x.title, art: x.art, artist: a.name });
+  $('#view').querySelectorAll('[data-aal]').forEach(d => d.onclick = () => openAlb(a.albums[+d.dataset.aal]));
+  $('#view').querySelectorAll('[data-asg]').forEach(d => d.onclick = () => openAlb(a.singles[+d.dataset.asg]));
+  $('#view').querySelectorAll('[data-avd]').forEach(d => d.onclick = () => play(a.videos, +d.dataset.avd));
+};
+views.album = async () => {
+  const v0 = view;
+  let al = albumCache[view.id];
+  const head = (x, n) => `<div class="alHero"><img src="${esc(x.art || view.art || 'logo.png')}" onerror="this.src='logo.png'"><div><span>${esc(x.type || 'Álbum')}</span><h1>${esc(x.title || view.title)}</h1>
+    <small>${esc([x.artist || view.artist, x.year, n != null ? n + ' músicas' : ''].filter(Boolean).join(' • '))}</small></div></div>`;
+  if (!al) {
+    $('#view').innerHTML = head({}, null) + '<span class="spinner"></span>';
+    const r = await U.ytmAlbum(view.id);
+    if (view !== v0) return;
+    if (!r.tracks || !r.tracks.length) { $('#view').innerHTML = head({}, null) + '<div class="empty">Não deu pra abrir esse álbum agora.</div>'; return; }
+    albumCache[view.id] = r; return render();
+  }
+  $('#view').innerHTML = head(al, al.tracks.length) + playBtns('alb') + rows(al.tracks, 'alb');
+};
+/* ---------------- mais ouvidas: tempo de verdade ouvindo cada música e artista ---------------- */
+let listenSaveN = 0;
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function countListen() {
+  const t = cur(); if (!t || !st.playing) return;
+  const L = D.listen || (D.listen = { days: {}, tr: {} }), dk = dayKey(new Date());
+  const day = L.days[dk] || (L.days[dk] = { t: 0, a: {}, k: {} });
+  day.t++;
+  if (t.src !== 'radio') {
+    const k = keyOf(t);
+    if (t.artist) day.a[t.artist] = (day.a[t.artist] || 0) + 1;
+    day.k[k] = (day.k[k] || 0) + 1;
+    if (!L.tr[k]) L.tr[k] = { src: t.src, id: t.id, title: t.title, artist: t.artist, art: t.art, duration: t.duration, path: t.path, stream: t.stream, url: t.url, genre: t.genre, album: t.album, first: Date.now() };
+  }
+  const days = Object.keys(L.days); if (days.length > 420) days.sort().slice(0, days.length - 420).forEach(x => delete L.days[x]);
+  if (++listenSaveN % 30 === 0) save();
+}
+const PERIODS_ST = [['week', 'Esta semana'], ['month', 'Este mês'], ['year', 'Este ano'], ['all', 'Sempre']];
+let statsP = 'month';
+function statsFor(p) {
+  const L = D.listen || { days: {}, tr: {} }, now = new Date();
+  const from = p === 'week' ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7))
+    : p === 'month' ? new Date(now.getFullYear(), now.getMonth(), 1) : p === 'year' ? new Date(now.getFullYear(), 0, 1) : new Date(2000, 0, 1);
+  const fk = dayKey(from);
+  let total = 0; const a = {}, k = {}; let firstDay = null;
+  for (const [dk, d] of Object.entries(L.days)) {
+    if (dk < fk) continue;
+    if (!firstDay || dk < firstDay) firstDay = dk;
+    total += d.t;
+    for (const [x, v] of Object.entries(d.a)) a[x] = (a[x] || 0) + v;
+    for (const [x, v] of Object.entries(d.k)) k[x] = (k[x] || 0) + v;
+  }
+  const songs = Object.entries(k).filter(([x]) => L.tr[x]).sort((x, y) => y[1] - x[1]).map(([x, v]) => ({ ...L.tr[x], _s: v }));
+  const artists = Object.entries(a).sort((x, y) => y[1] - x[1]).map(([name, v]) => ({ name, s: v, art: artOf(songs.find(t => t.artist === name) || {}) }));
+  return { total, songs, artists, firstDay, label: PERIODS_ST.find(x => x[0] === p)[1] };
+}
+const fmtH = s => s >= 3600 ? `${(s / 3600).toFixed(s >= 36000 ? 0 : 1).replace('.', ',')} h` : `${Math.max(1, Math.round(s / 60))} min`;
+views.stats = () => {
+  const S2 = statsFor(statsP);
+  const top = S2.songs.slice(0, 10), arts = S2.artists.slice(0, 10);
+  rowsCtx.statsTop = S2.songs.slice(0, 50);
+  const maxA = arts[0] ? arts[0].s : 1;
+  $('#view').innerHTML = `<h1>Mais ouvidas</h1>
+    <div class="chips">${PERIODS_ST.map(([k, n]) => `<button class="chip ${statsP === k ? 'on' : ''}" data-stp="${k}">${n}</button>`).join('')}</div>
+    <div class="stNums"><div><b>${fmtH(S2.total)}</b><span>ouvindo música</span></div><div><b>${S2.songs.length}</b><span>músicas diferentes</span></div><div><b>${S2.artists.length}</b><span>artistas</span></div></div>
+    ${S2.total < 60 ? '<div class="empty">Ainda não deu tempo de contar. Ouça umas músicas que seus números aparecem aqui.</div>' : `
+    <div class="btns"><button class="btn fill" id="cardFan" ${arts.length ? '' : 'disabled'}>${ico('person')} Meu card de fã</button><button class="btn fill" id="cardWrap">${ico('chart')} Card da retrospectiva</button>${top.length ? `<button class="btn" data-play="statsTop">${ico('play')} Tocar minhas mais ouvidas</button>` : ''}</div>
+    <div class="stCols"><div><h2>Top artistas</h2>${arts.map((x, i) => `<div class="stArt"><i>${i + 1}</i><img src="${esc(x.art || 'logo.png')}" onerror="this.src='logo.png'"><div><b>${esc(x.name)}</b><span class="bar"><em style="width:${Math.max(4, x.s / maxA * 100)}%"></em></span></div><small>${fmtH(x.s)}</small><button class="btn mini" data-fan="${i}" title="Card de fã">${ico('person')}</button></div>`).join('')}</div>
+      <div><h2>Top músicas</h2>${rows(top, 'statsTop')}</div></div>`}`;
+  $('#view').querySelectorAll('[data-stp]').forEach(b => b.onclick = () => { statsP = b.dataset.stp; render(); });
+  if ($('#cardFan')) $('#cardFan').onclick = () => shareCard('fan', S2, arts[0]);
+  if ($('#cardWrap')) $('#cardWrap').onclick = () => shareCard('wrap', S2);
+  $('#view').querySelectorAll('[data-fan]').forEach(b => b.onclick = () => shareCard('fan', S2, arts[+b.dataset.fan]));
+};
+/* ---------------- card pra compartilhar (imagem 1080x1920, formato de story) ---------------- */
+function loadImg(src) {
+  return new Promise(res => {
+    if (!src) return res(null);
+    const i = new Image(); i.crossOrigin = 'anonymous';
+    i.onload = () => res(i); i.onerror = () => res(null);
+    i.src = /^https?:/.test(src) ? `/proxy?u=${encodeURIComponent(src)}` : src;
+  });
+}
+function domColor(img) {
+  try { const c = document.createElement('canvas'); c.width = c.height = 24; const x = c.getContext('2d'); x.drawImage(img, 0, 0, 24, 24); const d = x.getImageData(0, 0, 24, 24).data;
+    let r = 0, g = 0, b = 0, w = 0; for (let i = 0; i < d.length; i += 4) { const s = Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) + 8; r += d[i] * s; g += d[i + 1] * s; b += d[i + 2] * s; w += s; }
+    return [r / w, g / w, b / w].map(Math.round); } catch { return [250, 45, 72]; }
+}
+function coverDraw(x, img, dx, dy, dw, dh) { const s = Math.max(dw / img.width, dh / img.height), w = img.width * s, h = img.height * s; x.drawImage(img, dx + (dw - w) / 2, dy + (dh - h) / 2, w, h); }
+function fitText(x, txt, max, size, weight = 900) { let s = size; do { x.font = `${weight} ${s}px Inter, "Segoe UI", Arial`; s -= 4; } while (x.measureText(txt).width > max && s > 30); return s + 4; }
+function ellip(x, t, max) { if (x.measureText(t).width <= max) return t; while (t.length > 1 && x.measureText(t + '…').width > max) t = t.slice(0, -1); return t + '…'; }
+async function makeCard(kind, S2, artist) {
+  const W = 1080, H = 1920, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const mainArt = await loadImg(kind === 'fan' ? artist && artist.art : (S2.songs[0] && artOf(S2.songs[0])) || (S2.artists[0] && S2.artists[0].art));
+  const logo = await loadImg('logo.png');
+  const [r, g, b] = mainArt ? domColor(mainArt) : [250, 45, 72];
+  const acc = `rgb(${r},${g},${b})`, accSoft = `rgba(${r},${g},${b},.35)`;
+  // fundo: capa gigante desfocada + gradiente + granulado
+  x.fillStyle = '#07070a'; x.fillRect(0, 0, W, H);
+  if (mainArt) { x.save(); x.filter = 'blur(70px) saturate(1.4) brightness(.55)'; coverDraw(x, mainArt, -200, -200, W + 400, H + 400); x.restore(); }
+  let gr = x.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, `rgba(${r},${g},${b},.35)`); gr.addColorStop(.45, 'rgba(8,8,12,.55)'); gr.addColorStop(1, 'rgba(5,5,8,.96)'); x.fillStyle = gr; x.fillRect(0, 0, W, H);
+  const id = x.getImageData(0, 0, W, H), d = id.data; for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - 0.5) * 14; d[i] += n; d[i + 1] += n; d[i + 2] += n; } x.putImageData(id, 0, 0);
+  // topo
+  x.fillStyle = '#fff'; x.font = '800 34px Inter, "Segoe UI", Arial'; x.globalAlpha = .9;
+  x.fillText(kind === 'fan' ? 'CARD DE FÃ' : 'MINHA RETROSPECTIVA', 80, 130); x.globalAlpha = .6; x.font = '600 30px Inter, "Segoe UI", Arial';
+  x.fillText(S2.label.toUpperCase(), 80, 175); x.globalAlpha = 1;
+  if (kind === 'fan') {
+    const sz = 660, ax = (W - sz) / 2, ay = 260;
+    x.save(); x.shadowColor = acc; x.shadowBlur = 120; x.beginPath(); x.arc(W / 2, ay + sz / 2, sz / 2, 0, Math.PI * 2); x.fillStyle = acc; x.fill(); x.restore();
+    x.save(); x.beginPath(); x.arc(W / 2, ay + sz / 2, sz / 2, 0, Math.PI * 2); x.clip(); if (mainArt) coverDraw(x, mainArt, ax, ay, sz, sz); else { x.fillStyle = '#222'; x.fillRect(ax, ay, sz, sz); } x.restore();
+    x.lineWidth = 10; x.strokeStyle = 'rgba(255,255,255,.9)'; x.beginPath(); x.arc(W / 2, ay + sz / 2, sz / 2 + 4, 0, Math.PI * 2); x.stroke();
+    x.textAlign = 'center'; x.fillStyle = '#fff';
+    const fs = fitText(x, artist.name, W - 140, 130); x.font = `900 ${fs}px Inter, "Segoe UI", Arial`; x.fillText(artist.name, W / 2, 1060);
+    const songsA = S2.songs.filter(t => t.artist === artist.name);
+    const stats = [[fmtH(artist.s), 'ouvindo ' + (artist.name.length > 16 ? 'esse artista' : artist.name)], [String(songsA.length), songsA.length === 1 ? 'música dele no seu top' : 'músicas diferentes'], ['#' + (S2.artists.indexOf(artist) + 1), 'no seu ranking']];
+    stats.forEach(([big, small], i) => { const cx = 180 + i * 360; x.font = '900 86px Inter, "Segoe UI", Arial'; x.fillStyle = '#fff'; x.fillText(big, cx, 1220); x.font = '600 28px Inter, "Segoe UI", Arial'; x.fillStyle = 'rgba(255,255,255,.65)'; x.fillText(ellip(x, small, 320), cx, 1268); });
+    if (songsA[0]) {
+      x.fillStyle = 'rgba(255,255,255,.08)'; x.beginPath(); x.roundRect(80, 1350, W - 160, 200, 36); x.fill();
+      const sArt = await loadImg(artOf(songsA[0])); if (sArt) { x.save(); x.beginPath(); x.roundRect(110, 1380, 140, 140, 20); x.clip(); coverDraw(x, sArt, 110, 1380, 140, 140); x.restore(); }
+      x.textAlign = 'left'; x.fillStyle = 'rgba(255,255,255,.6)'; x.font = '700 26px Inter, "Segoe UI", Arial'; x.fillText('A QUE VOCÊ MAIS OUVIU', 280, 1430);
+      x.fillStyle = '#fff'; x.font = '800 46px Inter, "Segoe UI", Arial'; x.fillText(ellip(x, songsA[0].title, W - 400), 280, 1490);
+      x.textAlign = 'center';
+    }
+  } else {
+    x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = '900 190px Inter, "Segoe UI", Arial'; x.fillText(fmtH(S2.total), 72, 420);
+    x.font = '600 38px Inter, "Segoe UI", Arial'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('ouvindo música', 82, 480);
+    const sec = async (title, list, y0, isArt) => {
+      x.fillStyle = acc; x.font = '800 30px Inter, "Segoe UI", Arial'; x.fillText(title, 82, y0);
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i], y = y0 + 40 + i * 104;
+        x.fillStyle = 'rgba(255,255,255,.35)'; x.font = '900 52px Inter, "Segoe UI", Arial'; x.fillText(String(i + 1), 82, y + 70);
+        const im = await loadImg(isArt ? it.art : artOf(it));
+        x.save(); x.beginPath(); if (isArt) x.arc(205, y + 50, 48, 0, Math.PI * 2); else x.roundRect(157, y + 2, 96, 96, 14); x.clip(); if (im) coverDraw(x, im, 157, y + 2, 96, 96); else { x.fillStyle = '#333'; x.fillRect(157, y, 96, 96); } x.restore();
+        x.fillStyle = '#fff'; x.font = '800 40px Inter, "Segoe UI", Arial'; x.fillText(ellip(x, isArt ? it.name : it.title, 600), 280, y + 45);
+        x.fillStyle = 'rgba(255,255,255,.6)'; x.font = '600 28px Inter, "Segoe UI", Arial'; x.fillText(ellip(x, isArt ? fmtH(it.s) : `${it.artist} · ${fmtH(it._s)}`, 600), 280, y + 88);
+      }
+    };
+    await sec('TOP MÚSICAS', S2.songs.slice(0, 5), 600, false);
+    await sec('TOP ARTISTAS', S2.artists.slice(0, 4), 1200, true);
+  }
+  // rodapé com a marca do app
+  x.textAlign = 'left';
+  if (logo) { x.save(); x.beginPath(); x.roundRect(80, H - 170, 84, 84, 20); x.clip(); x.drawImage(logo, 80, H - 170, 84, 84); x.restore(); }
+  x.fillStyle = '#fff'; x.font = '900 40px Inter, "Segoe UI", Arial'; x.fillText('Uncrowned Music', 186, H - 122);
+  x.fillStyle = 'rgba(255,255,255,.55)'; x.font = '600 26px Inter, "Segoe UI", Arial'; x.fillText(new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }), 186, H - 84);
+  x.fillStyle = acc; x.fillRect(W - 80 - 160, H - 132, 160, 10);
+  return c;
+}
+async function shareCard(kind, S2, artist) {
+  if (kind === 'fan' && !artist) return toast('Ouça mais um pouco pra ter um artista no topo');
+  toast('Montando o card…');
+  const c = await makeCard(kind, S2, artist);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  const url = URL.createObjectURL(blob);
+  const name = kind === 'fan' ? `Card de fã - ${artist.name}` : `Retrospectiva - ${S2.label}`;
+  modal(`<div class="cardPrev"><img src="${url}"><div class="btns" style="justify-content:center"><button class="btn fill" id="cpSave">${ico('dl')} Salvar imagem</button><button class="btn" id="cpCopy">Copiar</button></div>
+    <div class="sub" style="text-align:center">Formato de story (Instagram, TikTok, WhatsApp). Salva em Imagens/Uncrowned.</div></div>`);
+  $('#cpSave').onclick = async () => { const f = await U.saveImage(new Uint8Array(await blob.arrayBuffer()), name); toast('Card salvo em Imagens/Uncrowned'); U.openPath(f); };
+  $('#cpCopy').onclick = async () => { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); toast('Card copiado. É só colar na rede social'); } catch { toast('Não deu pra copiar. Use Salvar imagem'); } };
+}
+
+/* ---------------- importar do Spotify / YouTube Music ---------------- */
+let impBusy = false, impLib = null, impSel = new Set();
+U.onImportProgress(p => { const el = $('#impProg'); if (el) { el.querySelector('span').textContent = `${p.tag}: ${p.done} de ${p.total} músicas`; el.querySelector('i').style.width = (p.done / p.total * 100).toFixed(1) + '%'; } });
+function impStatus(txt) { const el = $('#impProg'); if (el) { el.classList.remove('hidden'); el.querySelector('span').textContent = txt; } }
+function learnTaste(tracks, w = 0.4) { tracks.forEach(t => { if (t.artist) bump(D.taste.a, t.artist, w); if (t.genre) bump(D.taste.g, t.genre, w); }); }
+function savePlaylist(name, tracks) { let n = name || 'Playlist importada', i = 2; while (D.playlists[n]) n = `${name} (${i++})`; D.playlists[n] = tracks; return n; }
+async function importSets(sets, liked, history) {
+  if (impBusy) return toast('Já tem uma importação rodando');
+  impBusy = true; let lists = 0, songs = 0;
+  try {
+    for (const set of sets) {
+      impStatus(`Importando "${set.name}"…`);
+      const tracks = set.tracks && set.tracks.length ? set.tracks : await U.importResolve(set.items || [], set.name);
+      if (!tracks.length) continue;
+      savePlaylist(set.name, tracks); learnTaste(tracks); lists++; songs += tracks.length; renderPlNav(); save();
+    }
+    if (liked && liked.length) {
+      impStatus('Importando suas curtidas…');
+      const tr = liked[0].src ? liked : await U.importResolve(liked, 'Curtidas');
+      tr.forEach(t => { D.favs[keyOf(t)] = t; }); learnTaste(tr, 1); songs += tr.length;
+    }
+    if (history) for (const [a, ms] of Object.entries(history)) bump(D.taste.a, a, Math.min(15, ms / 3.6e6 * 0.6));
+    D.weekly = null; save(); renderPlNav();
+    impStatus(`Pronto: ${lists} ${lists === 1 ? 'playlist' : 'playlists'} e ${songs} músicas importadas. Suas Descobertas da Semana já vão usar esse gosto.`);
+    toast('Importação concluída');
+  } catch (e) { impStatus('A importação parou: ' + (e.message || e)); }
+  impBusy = false;
+}
+views.import = () => {
+  $('#view').innerHTML = `<h1>Importar suas músicas</h1><div class="sub">Traga suas playlists, curtidas e seu gosto do Spotify e do YouTube Music. Tudo vira playlist aqui e o app já aprende o que você curte.</div>
+    <div id="impProg" class="impProg ${impBusy ? '' : 'hidden'}"><span>Importando…</span><b><i></i></b></div>
+    <div class="impGrid">
+      <div class="impCard"><div class="impH"><span class="dot sp"></span><b>Colar link</b></div>
+        <p>Link de uma playlist (ou álbum) pública do <b>Spotify</b>, <b>YouTube</b> ou <b>YouTube Music</b>.</p>
+        <div class="impRow"><input class="txt" id="impUrl" placeholder="https://open.spotify.com/playlist/…"><button class="btn fill" id="impGo">Importar</button></div></div>
+      <div class="impCard"><div class="impH"><span class="dot yt"></span><b>Minha conta do YouTube Music</b></div>
+        <p>Puxa todas as suas playlists e as músicas curtidas da conta que está logada no app.</p>
+        <div id="impLib">${impLib ? '' : '<button class="btn fill" id="impLibGo">Ver minhas playlists</button>'}</div></div>
+      <div class="impCard wide"><div class="impH"><span class="dot fl"></span><b>Arquivo com todos os seus dados</b></div>
+        <p>Traz <b>tudo</b>: todas as playlists, curtidas e o histórico de quem você mais ouve.</p>
+        <ol><li><b>Spotify:</b> spotify.com → Conta → Privacidade → <i>Baixar seus dados</i>. O Spotify manda um .zip por e-mail (pode levar alguns dias).</li>
+          <li><b>YouTube Music:</b> takeout.google.com → marque só <i>YouTube e YouTube Music</i> → exportar. Chega um .zip.</li></ol>
+        <button class="btn fill" id="impFile">Escolher arquivo (.zip, .json ou .csv)</button></div>
+    </div>`;
+  $('#impGo').onclick = async () => {
+    const u = $('#impUrl').value.trim(); if (!u) return;
+    impStatus('Lendo o link…');
+    const r = await U.importLink(u);
+    if (!r || r.err) return impStatus('Não deu: ' + ((r && r.err) || 'link não reconhecido'));
+    importSets([{ name: r.name, items: r.items, tracks: r.tracks }]);
+  };
+  const paintLib = () => {
+    const box = $('#impLib'); if (!box || !impLib) return;
+    if (!impLib.logged) { box.innerHTML = `<p class="warn">Você ainda não entrou no YouTube pelo app.</p><button class="btn fill" id="impLogin">Entrar no YouTube</button>`; $('#impLogin').onclick = async () => { const ok = await U.ytLogin(); if (ok) { impLib = await U.ytmLibrary(); paintLib(); } }; return; }
+    box.innerHTML = `<div class="impList">${impLib.lists.map((l, i) => `<label class="ck"><input type="checkbox" data-il="${i}" ${impSel.has(i) ? 'checked' : ''}> ${esc(l.title)} <small>${esc(l.sub || '')}</small></label>`).join('') || '<p>Nenhuma playlist encontrada.</p>'}</div>
+      <div class="impRow"><button class="btn" id="impAll">Marcar todas</button><button class="btn fill" id="impLibImp">Importar selecionadas</button></div>`;
+    box.querySelectorAll('[data-il]').forEach(c => c.onchange = () => c.checked ? impSel.add(+c.dataset.il) : impSel.delete(+c.dataset.il));
+    $('#impAll').onclick = () => { impLib.lists.forEach((_, i) => impSel.add(i)); paintLib(); };
+    $('#impLibImp').onclick = async () => {
+      const pick = [...impSel].map(i => impLib.lists[i]); if (!pick.length) return toast('Marque pelo menos uma');
+      const sets = [], liked = [];
+      for (const l of pick) {
+        impStatus(`Lendo "${l.title}"…`);
+        const r = await U.ytmFullPlaylist(l.id);
+        if (/^(VL)?LM$/.test(l.id)) liked.push(...r.tracks); else if (r.tracks.length) sets.push({ name: l.title || r.title, tracks: r.tracks });
+      }
+      importSets(sets, liked);
+    };
+  };
+  if ($('#impLibGo')) $('#impLibGo').onclick = async () => { $('#impLib').innerHTML = '<span class="spinner"></span>'; impLib = await U.ytmLibrary(); paintLib(); };
+  paintLib();
+  $('#impFile').onclick = async () => {
+    const r = await U.importPick(); if (!r) return;
+    const n = r.playlists.length;
+    if (!n && !r.liked.length && !Object.keys(r.history).length) return impStatus('Não achei playlists nesse arquivo. Use o .zip que o Spotify ou o Google mandaram.');
+    impStatus(`Achei ${n} ${n === 1 ? 'playlist' : 'playlists'}${r.liked.length ? ` e ${r.liked.length} curtidas` : ''}. Importando…`);
+    importSets(r.playlists, r.liked, r.history);
+  };
+};
 
 /* ---------------- música do momento: quando e onde você ouviu cada música ---------------- */
 let netNow = '';

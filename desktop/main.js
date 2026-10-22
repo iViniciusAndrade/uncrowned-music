@@ -618,9 +618,9 @@ ipcMain.handle('radio', (_, t) => radio(t).catch(() => []));
 
 /* ---------------- YouTube Music: mais ouvidas da semana (só pras recomendações) ---------------- */
 const YTM_VER = '1.20250101.01.00';
-async function ytm(body) {
+async function ytm(body, auth) {
   const txt = await getText('https://music.youtube.com/youtubei/v1/browse?prettyPrint=false',
-    { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/', 'X-Youtube-Client-Name': '67', 'X-Youtube-Client-Version': YTM_VER },
+    { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/', 'X-Youtube-Client-Name': '67', 'X-Youtube-Client-Version': YTM_VER, ...(auth || {}) },
     { method: 'POST', body: JSON.stringify({ context: { client: { clientName: 'WEB_REMIX', clientVersion: YTM_VER, hl: 'pt', gl: 'BR' } }, ...body }) });
   return JSON.parse(txt);
 }
@@ -1004,6 +1004,227 @@ function netName() {
   })();
 }
 ipcMain.handle('net-name', () => netName().catch(() => ''));
+
+/* ---------------- YouTube Music: artistas e álbuns (busca, página do artista, página do álbum) ---------------- */
+const lastThumb = o => { const t = findKey(o, 'thumbnails'); return Array.isArray(t) && t.length ? t[t.length - 1].url.replace(/=w\d+-h\d+/, '=w544-h544') : ''; };
+const pageTypeOf = o => { const c = findKey(o, 'browseEndpointContextMusicConfig'); return (c && c.pageType) || ''; };
+async function ytmSearch(q) {
+  const k = 'ytms|' + q.toLowerCase(); const c = sCache.get(k); if (c && Date.now() - c.at < 15 * 60e3) return c.v;
+  const txt = await getText('https://music.youtube.com/youtubei/v1/search?prettyPrint=false',
+    { 'Content-Type': 'application/json', Origin: 'https://music.youtube.com', Referer: 'https://music.youtube.com/', 'X-Youtube-Client-Name': '67', 'X-Youtube-Client-Version': YTM_VER },
+    { method: 'POST', body: JSON.stringify({ context: { client: { clientName: 'WEB_REMIX', clientVersion: YTM_VER, hl: 'pt', gl: 'BR' } }, query: q }) });
+  const j = JSON.parse(txt);
+  const artists = [], albums = [], songs = [];
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== 'object') return;
+    const r = x.musicResponsiveListItemRenderer || x.musicCardShelfRenderer;
+    if (r) {
+      const isCard = !!x.musicCardShelfRenderer;
+      const cols = isCard ? [runsTxt(r.title), runsTxt(r.subtitle)] : (r.flexColumns || []).map(c => runsTxt(c.musicResponsiveListItemFlexColumnRenderer && c.musicResponsiveListItemFlexColumnRenderer.text));
+      const nav = isCard ? ((r.title && r.title.runs && r.title.runs[0] && r.title.runs[0].navigationEndpoint) || {}) : (r.navigationEndpoint || {});
+      const art = lastThumb(r.thumbnail || r);
+      const songId = (r.playlistItemData && r.playlistItemData.videoId) || (nav.watchEndpoint && nav.watchEndpoint.videoId)
+        || (!nav.browseEndpoint && (() => { const we = findKey(r.overlay || {}, 'watchEndpoint'); return we && we.videoId; })());
+      const be = nav.browseEndpoint, pt = be ? pageTypeOf(be) : '';
+      if (songId && cols[0]) { const parts = (cols[1] || '').split(' • '); songs.push({ src: 'yt', id: songId, title: cols[0], artist: parts.length > 1 && /^(m[uú]sica|song|v[ií]deo|video)$/i.test(parts[0]) ? parts[1] : parts[0], art: `https://i.ytimg.com/vi/${songId}/hqdefault.jpg`, duration: 0 }); }
+      else if (be && /ARTIST/.test(pt)) artists.push({ id: be.browseId, name: cols[0], sub: (cols[1] || '').split(' • ').slice(1).join(' • ') || 'Artista', art });
+      else if (be && /ALBUM/.test(pt)) { const parts = (cols[1] || '').split(' • '); albums.push({ id: be.browseId, title: cols[0], type: parts[0] || 'Álbum', artist: parts[1] || '', year: parts.find(p => /^\d{4}$/.test(p)) || '', art }); }
+      if (x.musicCardShelfRenderer) walk(r.contents);
+      return;
+    }
+    Object.values(x).forEach(walk);
+  })(j);
+  const uniq = (l, f) => l.filter((v, i, a) => v[f] && a.findIndex(w => w[f] === v[f]) === i);
+  const v = { artists: uniq(artists, 'id').slice(0, 10), albums: uniq(albums, 'id').slice(0, 12), songs: uniq(songs, 'id').slice(0, 10) };
+  sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+async function ytmArtist(id) {
+  const k = 'ytma|' + id; const c = sCache.get(k); if (c && Date.now() - c.at < 3 * 3600e3) return c.v;
+  const j = await ytm({ browseId: id });
+  const head = findKey(j, 'musicImmersiveHeaderRenderer') || findKey(j, 'musicVisualHeaderRenderer') || findKey(j, 'musicHeaderRenderer') || {};
+  const name = runsTxt(head.title);
+  const art = lastThumb(head.thumbnail || head.foregroundThumbnail || head);
+  const subs = runsTxt((head.subscriptionButton && findKey(head.subscriptionButton, 'subscriberCountText')) || head.monthlyListenerCount || {});
+  // prateleiras: músicas populares, álbuns, singles, vídeos
+  const shelves = [];
+  (function walk(x) {
+    if (Array.isArray(x)) return x.forEach(walk);
+    if (!x || typeof x !== 'object') return;
+    const sh = x.musicShelfRenderer || x.musicCarouselShelfRenderer;
+    if (sh) {
+      const title = runsTxt((sh.header && sh.header.musicCarouselShelfBasicHeaderRenderer && sh.header.musicCarouselShelfBasicHeaderRenderer.title) || sh.title);
+      const more = findKey(sh.bottomEndpoint || (sh.header && sh.header.musicCarouselShelfBasicHeaderRenderer && sh.header.musicCarouselShelfBasicHeaderRenderer.moreContentButton) || {}, 'browseEndpoint');
+      const p = ytmParse({ contents: sh.contents });
+      const items = (sh.contents || []).map(it => {
+        const r = it.musicTwoRowItemRenderer; if (!r) return null;
+        const be = r.navigationEndpoint && r.navigationEndpoint.browseEndpoint; if (!be) return null;
+        return { id: be.browseId, title: runsTxt(r.title), sub: runsTxt(r.subtitle), art: lastThumb(r.thumbnailRenderer), type: pageTypeOf(r.navigationEndpoint) };
+      }).filter(Boolean);
+      shelves.push({ title, more: more && more.browseId, songs: p.songs.map(({ shelf, ...t }) => ({ ...t, artist: t.artist || name })), items });
+      return;
+    }
+    Object.values(x).forEach(walk);
+  })(j);
+  const songShelf = shelves.find(s => s.songs.length && !/v[ií]deo/i.test(s.title)) || shelves.find(s => s.songs.length);
+  let top = songShelf ? songShelf.songs : [];
+  if (songShelf && songShelf.more) { const all = await ytmPlaylist(songShelf.more).catch(() => []); if (all.length > top.length) top = all; }
+  const pick = re => shelves.filter(s => re.test(s.title)).flatMap(s => s.items).filter(i => /ALBUM|PLAYLIST/.test(i.type) || /^MPRE/.test(i.id));
+  const albums = pick(/[áa]lbu|album/i), singles = pick(/single|ep/i);
+  const videos = shelves.filter(s => /v[ií]deo/i.test(s.title)).flatMap(s => s.songs);
+  const v = { id, name, art, subs, top: top.slice(0, 50), albums, singles, videos: videos.slice(0, 12) };
+  if (name) sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+async function ytmAlbum(id) {
+  const k = 'ytmal|' + id; const c = sCache.get(k); if (c && Date.now() - c.at < 6 * 3600e3) return c.v;
+  const j = await ytm({ browseId: id });
+  const head = findKey(j, 'musicResponsiveHeaderRenderer') || findKey(j, 'musicDetailHeaderRenderer') || {};
+  const title = runsTxt(head.title), sub = runsTxt(head.subtitle), strap = runsTxt(head.straplineTextOne);
+  const art = lastThumb(head.thumbnail || head);
+  const artist = strap || (sub.split(' • ')[1] || '');
+  const year = (sub.match(/\b(19|20)\d{2}\b/) || [''])[0];
+  const tracks = ytmParse(j).songs.map(({ shelf, ...t }) => ({ ...t, artist: t.artist && !/^\d/.test(t.artist) ? t.artist : artist, album: title, art: art || t.art }));
+  const v = { id, title, artist, year, art, type: sub.split(' • ')[0] || 'Álbum', tracks };
+  if (tracks.length) sCache.set(k, { at: Date.now(), v });
+  return v;
+}
+ipcMain.handle('ytm-search', (_, q) => ytmSearch(q).catch(() => ({ artists: [], albums: [], songs: [] })));
+ipcMain.handle('ytm-artist', (_, id) => ytmArtist(id).catch(e => ({ id, err: String(e) })));
+ipcMain.handle('ytm-album', (_, id) => ytmAlbum(id).catch(e => ({ id, err: String(e), tracks: [] })));
+
+/* salva a imagem do card (Imagens/Uncrowned) */
+ipcMain.handle('save-image', (_, data, name) => {
+  const dir = path.join(app.getPath('pictures'), 'Uncrowned'); fs.mkdirSync(dir, { recursive: true });
+  const base = String(name || 'card').replace(/[\\/:*?"<>|]/g, '').slice(0, 120);
+  let f = path.join(dir, base + '.png'), n = 2; while (fs.existsSync(f)) f = path.join(dir, `${base} ${n++}.png`);
+  fs.writeFileSync(f, Buffer.from(data)); return f;
+});
+
+/* ---------------- importar playlists: Spotify, YouTube / YouTube Music ---------------- */
+function deepFind(o, key) {
+  const stack = [o];
+  while (stack.length) { const x = stack.pop(); if (!x || typeof x !== 'object') continue; if (Object.prototype.hasOwnProperty.call(x, key)) return x[key]; for (const v of Object.values(x)) if (v && typeof v === 'object') stack.push(v); }
+}
+// login do YouTube que já está no app: assina o pedido igual o site faz
+async function ytmAuth() {
+  const ck = await ytSession().cookies.get({ domain: '.youtube.com' }).catch(() => []);
+  const sap = (ck.find(c => c.name === 'SAPISID') || ck.find(c => c.name === '__Secure-3PAPISID') || {}).value;
+  if (!sap) return null;
+  const ts = Math.floor(Date.now() / 1000), origin = 'https://music.youtube.com';
+  const hash = require('crypto').createHash('sha1').update(`${ts} ${sap} ${origin}`).digest('hex');
+  return { Cookie: ck.map(c => `${c.name}=${c.value}`).join('; '), Authorization: `SAPISIDHASH ${ts}_${hash}`, 'X-Origin': origin, 'X-Goog-AuthUser': '0' };
+}
+const contTok = j => { const c = deepFind(j, 'continuationCommand'); if (c && c.token) return c.token; const n = deepFind(j, 'nextContinuationData'); return n && n.continuation; };
+async function ytmFullPlaylist(id, useAuth) {
+  const auth = useAuth ? await ytmAuth() : null;
+  const bid = /^(VL|MPRE|OLAK)/.test(id) ? id : 'VL' + id;
+  const j = await ytm({ browseId: bid }, auth);
+  const head = deepFind(j, 'musicResponsiveHeaderRenderer') || deepFind(j, 'musicDetailHeaderRenderer') || deepFind(j, 'musicEditablePlaylistDetailHeaderRenderer') || {};
+  const title = runsTxt(head.title) || runsTxt(deepFind(head, 'title'));
+  let songs = ytmParse(j).songs, tok = contTok(j);
+  for (let n = 0; tok && n < 40; n++) { const k = await ytm({ continuation: tok }, auth).catch(() => null); if (!k) break; const more = ytmParse(k).songs; if (!more.length) break; songs = songs.concat(more); tok = contTok(k); }
+  songs = songs.filter((v, i, a) => a.findIndex(w => w.id === v.id) === i).map(({ shelf, ...t }) => t);
+  return { title, tracks: songs };
+}
+async function ytmLibrary() {
+  const auth = await ytmAuth(); if (!auth) return { logged: false, lists: [] };
+  const j = await ytm({ browseId: 'FEmusic_liked_playlists' }, auth);
+  const lists = ytmParse(j).lists.filter(l => /^(VL)?(PL|LM|RDCLAK|OLAK|SE)/.test(l.id));
+  if (!lists.some(l => /^(VL)?LM$/.test(l.id))) lists.unshift({ id: 'VLLM', title: 'Músicas curtidas', sub: 'YouTube Music' });
+  return { logged: true, lists: lists.map(l => ({ ...l, title: /^(VL)?LM$/.test(l.id) ? 'Músicas curtidas' : l.title })) };
+}
+// link de playlist/álbum/música do Spotify: lê a página pública de "incorporar"
+async function spotifyLink(url) {
+  const m = /open\.spotify\.com\/(?:intl-[\w-]+\/)?(playlist|album|track)\/([A-Za-z0-9]+)/.exec(url); if (!m) return null;
+  const html = await getText(`https://open.spotify.com/embed/${m[1]}/${m[2]}`);
+  const mm = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html); if (!mm) throw new Error('o Spotify não mostrou essa playlist (ela é pública?)');
+  const ent = deepFind(JSON.parse(mm[1]), 'entity') || {};
+  const items = m[1] === 'track' ? [{ title: ent.name || ent.title, artist: (ent.artists || []).map(a => a.name).join(', ') || ent.subtitle || '' }]
+    : (ent.trackList || []).map(t => ({ title: t.title, artist: t.subtitle || '', dur: t.duration || 0 }));
+  return { name: ent.name || ent.title || 'Playlist do Spotify', items: items.filter(i => i.title), from: 'Spotify' };
+}
+async function importLink(url) {
+  url = (url || '').trim();
+  if (/spotify\.com/.test(url)) return spotifyLink(url);
+  const list = /[?&]list=([\w-]+)/.exec(url); const alb = /browse\/(MPRE[\w-]+)/.exec(url);
+  if (list || alb) { const r = await ytmFullPlaylist(alb ? alb[1] : list[1], true); return { name: r.title || 'Playlist do YouTube', tracks: r.tracks, from: 'YouTube' }; }
+  throw new Error('cole um link de playlist do Spotify, YouTube ou YouTube Music');
+}
+// arquivos de dados: Spotify (Baixar seus dados) e Google Takeout (YouTube e YouTube Music)
+function csvRows(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; } else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; } else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+function parseImportFiles(paths) {
+  const out = { playlists: [], liked: [], history: {} };
+  const handle = (name, text) => {
+    const base = path.basename(name).replace(/\.(json|csv)$/i, '');
+    if (/\.json$/i.test(name)) {
+      let j; try { j = JSON.parse(text.replace(/^﻿/, '')); } catch { return; }
+      if (j && Array.isArray(j.playlists)) j.playlists.forEach(pl => {
+        const items = (pl.items || []).map(it => it.track || {}).filter(t => t.trackName).map(t => ({ title: t.trackName, artist: t.artistName || '' }));
+        if (items.length) out.playlists.push({ name: pl.name || 'Playlist', items, from: 'Spotify' });
+      });
+      if (j && Array.isArray(j.tracks)) out.liked.push(...j.tracks.filter(t => t.track).map(t => ({ title: t.track, artist: t.artist || '' })));
+      if (Array.isArray(j)) j.forEach(e => { const a = e.artistName || e.master_metadata_album_artist_name; const ms = e.msPlayed || e.ms_played || 0; if (a) out.history[a] = (out.history[a] || 0) + ms; });
+      return;
+    }
+    const rows = csvRows(text.replace(/^﻿/, ''));
+    const hi = rows.findIndex(r => r.some(c => /^(video id|id do v[ií]deo)$/i.test(c.trim())));
+    if (hi < 0) return;
+    const h = rows[hi].map(c => c.trim().toLowerCase());
+    const vi = h.findIndex(c => /video id|id do v/.test(c)), ti = h.findIndex(c => /song title|t[ií]tulo da m|^title$|^t[ií]tulo$/.test(c)), ai = h.findIndex(c => /artist/.test(c));
+    const items = rows.slice(hi + 1).map(r => ({ videoId: (r[vi] || '').trim(), title: ti >= 0 ? (r[ti] || '').trim() : '', artist: ai >= 0 ? (r[ai] || '').trim() : '' })).filter(x => /^[\w-]{11}$/.test(x.videoId));
+    if (!items.length) return;
+    const nm = base.replace(/-videos?$/i, '').replace(/^music library songs$/i, 'Biblioteca do YouTube Music');
+    if (/liked|gostei|curtid|marquei como gostei/i.test(nm)) out.liked.push(...items);
+    else out.playlists.push({ name: nm, items, from: 'YouTube' });
+  };
+  for (const p of paths) {
+    try {
+      if (/\.zip$/i.test(p)) { const Z = require('adm-zip'); new Z(p).getEntries().forEach(e => { if (!e.isDirectory && /\.(json|csv)$/i.test(e.entryName) && !/__MACOSX/.test(e.entryName)) handle(e.entryName, e.getData().toString('utf8')); }); }
+      else handle(p, fs.readFileSync(p, 'utf8'));
+    } catch (e) { console.error('import', p, e); }
+  }
+  return out;
+}
+ipcMain.handle('import-pick', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Escolha o arquivo de dados (Spotify ou Google Takeout)', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Dados do Spotify / YouTube', extensions: ['zip', 'json', 'csv'] }] });
+  if (r.canceled || !r.filePaths.length) return null;
+  return parseImportFiles(r.filePaths);
+});
+ipcMain.handle('import-link', (_, url) => importLink(url).catch(e => ({ err: String(e.message || e) })));
+ipcMain.handle('ytm-library', () => ytmLibrary().catch(e => ({ logged: false, lists: [], err: String(e.message || e) })));
+ipcMain.handle('ytm-full-playlist', (_, id) => ytmFullPlaylist(id, true).catch(e => ({ title: '', tracks: [], err: String(e.message || e) })));
+// transforma "artista - música" (ou id de vídeo) em música tocável do YouTube, com progresso
+const resolveCache = new Map();
+ipcMain.handle('import-resolve', async (e, items, tag) => {
+  const send = d => { try { if (!e.sender.isDestroyed()) e.sender.send('import-progress', { tag, ...d }); } catch {} };
+  let done = 0;
+  const out = await pool(items, 6, async it => {
+    const k = it.videoId || (norm(it.artist) + '|' + norm(it.title));
+    let r = resolveCache.get(k);
+    if (!r) {
+      if (it.videoId) {
+        let title = it.title, artist = it.artist;
+        if (!title) { try { const o = await getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + it.videoId)}&format=json`); title = o.title; artist = artist || (o.author_name || '').replace(/ - Topic$/, ''); } catch {} }
+        r = { src: 'yt', id: it.videoId, title: title || it.videoId, artist: artist || '', art: `https://i.ytimg.com/vi/${it.videoId}/hqdefault.jpg`, duration: 0 };
+      } else r = await toYT({ title: it.title, artist: it.artist, dur: it.dur || 0 }).catch(() => null);
+      if (r) resolveCache.set(k, r);
+    }
+    send({ done: ++done, total: items.length });
+    return r;
+  });
+  return out.filter(Boolean);
+});
 
 ipcMain.handle('store-get', () => store.data || {});
 ipcMain.handle('store-set', (_, data) => { store.data = data; saveStore(); });
