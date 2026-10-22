@@ -90,6 +90,30 @@ object SoundCloudApi {
         emptyList()
     }
 
+    /* faixas do SoundCloud com download liberado pelo próprio artista */
+    suspend fun downloadables(q: String): List<Pair<YtVideo, Boolean>> = withContext(Dispatchers.IO) {
+        runCatching {
+            var id = findClientId(false) ?: return@runCatching emptyList()
+            var (code, body) = http("https://api-v2.soundcloud.com/search/tracks?q=${URLEncoder.encode(q, "UTF-8")}&client_id=$id&limit=30")
+            if (code == 401 || code == 403) { id = findClientId(true) ?: return@runCatching emptyList(); val r = http("https://api-v2.soundcloud.com/search/tracks?q=${URLEncoder.encode(q, "UTF-8")}&client_id=$id&limit=30"); code = r.first; body = r.second }
+            if (code !in 200..299) return@runCatching emptyList()
+            val col = JSONObject(body).optJSONArray("collection") ?: return@runCatching emptyList()
+            (0 until col.length()).mapNotNull { i -> val o = col.getJSONObject(i); if (!o.optBoolean("downloadable")) null else mapTrack(o)?.let { it to true } }
+        }.getOrDefault(emptyList())
+    }
+
+    /* link do arquivo original (só quando o artista liberou o download) */
+    suspend fun downloadUrl(path: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val id = findClientId(false) ?: return@runCatching null
+            val (c1, b1) = http("https://api-v2.soundcloud.com/resolve?url=${URLEncoder.encode("https://soundcloud.com/$path", "UTF-8")}&client_id=$id")
+            if (c1 !in 200..299) return@runCatching null
+            val tr = JSONObject(b1); if (!tr.optBoolean("downloadable")) return@runCatching null
+            val (c2, b2) = http("https://api-v2.soundcloud.com/tracks/${tr.optLong("id")}/download?client_id=$id")
+            if (c2 !in 200..299) null else JSONObject(b2).optString("redirectUri").ifBlank { null }
+        }.getOrNull()
+    }
+
     suspend fun search(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
         runCatching {
             val api = runCatching { apiSearch(q, false) }.getOrNull()

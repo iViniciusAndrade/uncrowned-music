@@ -177,6 +177,13 @@ object YtPlayer {
 
     private var loadedSrc: String? = null
     fun play(list: List<YtVideo>, i: Int) {
+        val target = list.getOrNull(i) ?: return
+        // sem internet: toca a versão que já foi sincronizada pro celular
+        if (!Sync.online()) {
+            val u = Sync.syncedUri(target)
+            if (u != null && Sync.playLocal != null) { js("player.pauseVideo()"); Sync.playLocal?.invoke(u, target); return }
+            runCatching { android.widget.Toast.makeText(Sync.app, "Sem internet: essa ainda não foi sincronizada", android.widget.Toast.LENGTH_SHORT).show() }
+        }
         queue = list; index = i
         val v = current ?: return
         YtStore.addHistory(v)
@@ -368,6 +375,11 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
             if (expanded) Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { onExpand(false) }) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
                 Text(mapOf("yt" to "YOUTUBE", "sc" to "SOUNDCLOUD", "vm" to "VIMEO")[v.src] ?: "", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
+                Sync.version
+                val synced = Sync.syncedUri(v) != null
+                var showSync by remember { mutableStateOf(false) }
+                IconButton(onClick = { showSync = true }) { Icon(if (synced) Icons.Rounded.DownloadDone else Icons.Rounded.Download, "Sincronizar", tint = if (synced) accent else LocalContentColor.current) }
+                if (showSync) SyncSheet(v) { showSync = false }
                 IconButton(onClick = { YtStore.showVideo = !YtStore.showVideo }) {
                     Icon(if (YtStore.showVideo) Icons.Rounded.Videocam else Icons.Rounded.VideocamOff, null)
                 }

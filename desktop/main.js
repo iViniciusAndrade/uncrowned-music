@@ -315,6 +315,28 @@ async function audiusTrending(genre, time = 'week') {
   return (j.data || []).map(audiusMap);
 }
 
+/* ccMixter: músicas e remixes com licença Creative Commons, download liberado */
+async function ccmixter(q) {
+  const j = await getJSON(`https://ccmixter.org/api/query?f=json&search=${encodeURIComponent(q)}&search_type=all&limit=15`);
+  return (Array.isArray(j) ? j : []).map(u => {
+    const f = (u.files || []).find(x => /audio/.test((x.file_format_info || {}).mime_type || '') && !/preview/i.test(JSON.stringify(x.file_extra || {}))) || (u.files || [])[0];
+    if (!f || !f.download_url) return null;
+    const url = String(f.download_url).replace(/^http:/, 'https:');
+    return { src: 'cc', id: 'cc' + u.upload_id, title: u.upload_name || '', artist: u.user_real_name || u.user_name || '', genre: 'ccMixter', art: '', duration: 0, stream: url, download: url };
+  }).filter(Boolean);
+}
+/* Wikimedia Commons: gravações livres (muita música clássica, hinos, folclore, domínio público) */
+async function commons(q) {
+  const j = await getJSON(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrlimit=15&gsrsearch=${encodeURIComponent(q + ' filemime:audio')}&prop=imageinfo&iiprop=url|mime|size|extmetadata&format=json&origin=*`);
+  const pages = Object.values((j.query && j.query.pages) || {});
+  const strip = h => String(h || '').replace(/<[^>]+>/g, '').trim();
+  return pages.map(p => {
+    const ii = (p.imageinfo || [])[0]; if (!ii || !/^(audio\/|application\/ogg)/.test(ii.mime || '') || !/^https:\/\/upload\.wikimedia\.org\//.test(ii.url || '')) return null;
+    const m = ii.extmetadata || {};
+    const title = strip(m.ObjectName && m.ObjectName.value) || p.title.replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '');
+    return { src: 'wm', id: 'wm' + p.pageid, title, artist: strip(m.Artist && m.Artist.value).slice(0, 80), genre: 'Wikimedia', art: '', duration: 0, stream: ii.url, download: ii.url };
+  }).filter(Boolean);
+}
 async function archive(q) {
   const query = encodeURIComponent(`(${q}) AND mediatype:audio AND collection:(opensource_audio OR netlabels OR audio_music)`);
   const j = await getJSON(`https://archive.org/advancedsearch.php?q=${query}&fl[]=identifier&fl[]=title&fl[]=creator&rows=8&sort[]=downloads+desc&output=json`);
@@ -427,15 +449,52 @@ async function songInfo(title, artist) {
 }
 
 /* ---------------- download ---------------- */
-async function download(url, name) {
-  const dir = path.join(app.getPath('music'), 'Uncrowned');
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, name.replace(/[\\/:*?"<>|]/g, '').slice(0, 150) + '.mp3');
-  const res = await request(url);
-  if (res.statusCode >= 400) throw new Error('HTTP ' + res.statusCode);
-  await new Promise((ok, bad) => { const w = fs.createWriteStream(file); res.pipe(w); w.on('finish', ok); w.on('error', bad); });
-  return file;
+/* download seguro: só grava se o arquivo for áudio de verdade (confere os primeiros bytes),
+   com tamanho razoável e extensão de áudio forçada. Qualquer coisa diferente (página, .exe, zip) é descartada. */
+function audioKind(b) {
+  if (!b || b.length < 12) return null;
+  if (b.slice(0, 3).toString('latin1') === 'ID3') return 'mp3';
+  if (b[0] === 0xFF && (b[1] & 0xE0) === 0xE0) return (b[1] & 0x06) === 0 ? 'aac' : 'mp3';
+  const s4 = b.slice(0, 4).toString('latin1');
+  if (s4 === 'OggS') return 'ogg';
+  if (s4 === 'fLaC') return 'flac';
+  if (s4 === 'RIFF' && b.slice(8, 12).toString('latin1') === 'WAVE') return 'wav';
+  if (b.slice(4, 8).toString('latin1') === 'ftyp') return 'm4a';
+  if (b[0] === 0x1A && b[1] === 0x45 && b[2] === 0xDF && b[3] === 0xA3) return 'webm';
+  return null;
 }
+const MIN_AUDIO = 60 * 1024, MAX_AUDIO = 400 * 1024 * 1024;
+async function safeDownload(url, name, dir) {
+  if (!/^https:\/\//i.test(url)) throw new Error('link inseguro');
+  fs.mkdirSync(dir, { recursive: true });
+  const res = await request(url);
+  if (res.statusCode >= 400) { res.resume(); throw new Error('HTTP ' + res.statusCode); }
+  const ct = String(res.headers['content-type'] || '');
+  if (/text\/|html|json|javascript|x-msdownload|x-dosexec|zip|x-rar|x-7z|octet-stream.*exe/i.test(ct)) { res.resume(); throw new Error('o arquivo não é áudio'); }
+  if (+res.headers['content-length'] > MAX_AUDIO) { res.resume(); throw new Error('arquivo grande demais'); }
+  const base = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').replace(/\.+$/, '').trim().slice(0, 150) || 'musica';
+  const tmp = path.join(dir, '.' + Date.now() + Math.random().toString(36).slice(2) + '.part');
+  let head = Buffer.alloc(0), size = 0, kind = null;
+  try {
+    await new Promise((ok, bad) => {
+      const w = fs.createWriteStream(tmp);
+      res.on('data', c => {
+        size += c.length;
+        if (head.length < 64) { head = Buffer.concat([head, c]).slice(0, 64); if (head.length >= 12 && !kind) { kind = audioKind(head); if (!kind) { res.destroy(); w.destroy(); return bad(new Error('o arquivo não é áudio')); } } }
+        if (size > MAX_AUDIO) { res.destroy(); w.destroy(); return bad(new Error('arquivo grande demais')); }
+      });
+      res.on('error', bad); w.on('error', bad); w.on('finish', ok); res.pipe(w);
+    });
+    if (!kind) kind = audioKind(head);
+    if (!kind) throw new Error('o arquivo não é áudio');
+    if (size < MIN_AUDIO) throw new Error('arquivo incompleto');
+    let file = path.join(dir, base + '.' + kind), n = 2;
+    while (fs.existsSync(file)) file = path.join(dir, `${base} (${n++}).${kind}`);
+    fs.renameSync(tmp, file);
+    return file;
+  } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+}
+const download = (url, name) => safeDownload(url, name, path.join(app.getPath('music'), 'Uncrowned'));
 
 /* ---------------- janela ---------------- */
 function createWindow() {
@@ -1272,23 +1331,68 @@ function sameSong(a, b) {
   const aOk = !aa || !ab || aa.includes(ab) || ab.includes(aa) || (nrm(b.title + ' ' + b.artist).includes(aa));
   return aOk ? (ta === tb ? 3 : 2) : 1;
 }
-async function syncFind(t) {
-  const title = (t.title || '').replace(/\s*[\(\[].*?[\)\]]/g, '').replace(/^.*? - /, m => (t.artist && nrm(m).includes(nrm(t.artist)) ? '' : m)).trim();
-  const q = `${t.artist || ''} ${title}`.trim();
-  const ref = { title, artist: t.artist };
-  const [au, ia, sc] = await Promise.all([audiusSearch(q).catch(() => []), archive(q).catch(() => []), soundcloud(q).catch(() => [])]);
-  const cands = [...au.filter(x => x.download).map(x => ({ ...x, from: 'Audius' })), ...sc.filter(x => x.downloadable).map(x => ({ ...x, from: 'SoundCloud' })), ...ia.map(x => ({ ...x, from: 'Internet Archive' }))]
-    .map(x => ({ x, s: sameSong(ref, x) })).filter(o => o.s >= 2).sort((a, b) => b.s - a.s);
-  return cands.length ? cands[0].x : null;
+/* procura a música em todas as fontes que liberam download, ao mesmo tempo */
+const FROM = { au: 'Audius', sc: 'SoundCloud', ia: 'Internet Archive', cc: 'ccMixter', wm: 'Wikimedia Commons' };
+function cleanRef(t) {
+  let title = (t.title || '').replace(/\s*[\(\[].*?[\)\]]/g, '').trim(), artist = (t.artist || '').replace(/ - Topic$/i, '').replace(/VEVO$/i, '').trim();
+  if (title.includes(' - ')) { const [a, b] = title.split(' - '); if (!artist || nrm(a).includes(nrm(artist)) || nrm(artist).includes(nrm(a))) { artist = artist || a.trim(); title = b.trim(); } }
+  return { title, artist };
 }
+const findCache = new Map();
+async function syncCands(t) {
+  const ref = cleanRef(t), k = nrm(ref.artist) + '|' + nrm(ref.title);
+  const c = findCache.get(k); if (c && Date.now() - c.at < 3600e3) return c.v;
+  const q = `${ref.artist} ${ref.title}`.trim(), qt = ref.title;
+  const safe = p => p.catch(() => []);
+  const res = await Promise.all([safe(audiusSearch(q)), safe(audiusSearch(qt)), safe(archive(q)), safe(soundcloud(q)), safe(ccmixter(q)), safe(ccmixter(qt)), safe(commons(q))]);
+  const all = res.flat().filter(x => x && (x.download || (x.src === 'sc' && x.downloadable)));
+  const seen = new Set(), v = [];
+  for (const x of all) { const id = x.src + x.id; if (seen.has(id)) continue; seen.add(id); v.push({ ...x, from: FROM[x.src] || x.src, score: sameSong(ref, x) }); }
+  v.sort((a, b) => b.score - a.score);
+  findCache.set(k, { at: Date.now(), v });
+  return v;
+}
+async function syncFind(t) { return (await syncCands(t)).filter(x => x.score >= 2).slice(0, 4); }
+// quando não tem a mesma música: versões parecidas (remix, cover, ao vivo) e outras do mesmo artista que dá pra baixar
+ipcMain.handle('sync-similar', async (_, t) => {
+  try {
+    const ref = cleanRef(t), v = await syncCands(t);
+    const near = v.filter(x => x.score >= 1);
+    let byArtist = [];
+    if (ref.artist) byArtist = (await Promise.all([audiusSearch(ref.artist).catch(() => []), ccmixter(ref.artist).catch(() => []), archive(ref.artist).catch(() => [])])).flat()
+      .filter(x => x.download && nrm(x.artist).includes(nrm(ref.artist))).map(x => ({ ...x, from: FROM[x.src] || x.src, score: 0 }));
+    const out = [...near, ...byArtist].filter((x, i, a) => a.findIndex(o => o.src + o.id === x.src + x.id) === i).slice(0, 30);
+    return out;
+  } catch (e) { return []; }
+});
+/* ouvir offline dentro do app: guarda o áudio de faixas abertas (Audius/Archive/ccMixter/Commons) na pasta do app */
+const offDir = () => path.join(app.getPath('userData'), 'offline');
+ipcMain.handle('offline-save', async (_, t) => {
+  try {
+    if (!t || !t.stream || !['au', 'ia', 'cc', 'wm'].includes(t.src)) return { ok: false, error: 'essa fonte não deixa guardar' };
+    const id = require('crypto').createHash('sha1').update(t.src + ':' + t.id).digest('hex').slice(0, 20);
+    const file = await safeDownload(t.stream, id, offDir());
+    return { ok: true, file };
+  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+});
+ipcMain.handle('offline-del', (_, f) => { try { if (f && path.resolve(f).startsWith(offDir())) fs.unlinkSync(f); } catch {} return true; });
+ipcMain.handle('file-exists', (_, f) => { try { return !!f && fs.existsSync(f); } catch { return false; } });
 async function syncOne(t) {
   if (t.src === 'sc') { const r = await scDownload(t.id); if (r.ok) return { ok: true, file: r.file, from: 'SoundCloud' }; }
-  if (t.download) { try { return { ok: true, file: await download(t.download, `${t.artist} - ${t.title}`), from: t.src === 'au' ? 'Audius' : 'Internet Archive' }; } catch {} }
-  const c = await syncFind(t);
-  if (!c) return { ok: false, notFound: true };
-  if (c.src === 'sc') { const r = await scDownload(c.id); return r.ok ? { ok: true, file: r.file, from: 'SoundCloud', alt: true } : { ok: false, notFound: true }; }
-  try { return { ok: true, file: await download(c.download, `${c.artist} - ${c.title}`), from: c.from, alt: true }; } catch (e) { return { ok: false, error: String(e.message || e) }; }
+  if (t.download) { try { return { ok: true, file: await download(t.download, `${t.artist} - ${t.title}`), from: FROM[t.src] || 'fonte aberta' }; } catch {} }
+  // tenta as melhores candidatas até uma passar na checagem
+  for (const c of await syncFind(t)) {
+    if (c.src === 'sc') { const r = await scDownload(c.id); if (r.ok) return { ok: true, file: r.file, from: 'SoundCloud', alt: true }; continue; }
+    try { return { ok: true, file: await download(c.download, `${c.artist || t.artist} - ${c.title}`), from: c.from, alt: true }; } catch {}
+  }
+  return { ok: false, notFound: true };
 }
+ipcMain.handle('sync-pick', async (_, c) => {
+  try {
+    if (c.src === 'sc') return await scDownload(c.id);
+    return { ok: true, file: await download(c.download, `${c.artist ? c.artist + ' - ' : ''}${c.title}`), from: FROM[c.src] };
+  } catch (e) { return { ok: false, error: String(e.message || e) }; }
+});
 ipcMain.handle('sync-one', (_, t) => syncOne(t).catch(e => ({ ok: false, error: String(e.message || e) })));
 ipcMain.handle('sync-many', async (e, list, tag) => {
   const send = d => { try { if (!e.sender.isDestroyed()) e.sender.send('sync-progress', { tag, ...d }); } catch {} };

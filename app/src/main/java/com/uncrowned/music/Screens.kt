@@ -84,6 +84,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
     LaunchedEffect(granted, Prefs.hideVoice, Prefs.minDurationSec) { if (granted) Library.load(ctx) }
 
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) } }
     var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 4)) }
     var expanded by remember { mutableStateOf(false) }
     var showEq by remember { mutableStateOf(false) }
@@ -91,8 +92,8 @@ fun App(ui: PlayerUi, perms: List<String>) {
     var detail by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     var playlistDetail by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null || Nav.album != null || Nav.artist != null) {
-        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; Nav.album != null -> Nav.album = null; Nav.artist != null -> Nav.artist = null; detail != null -> detail = null; else -> playlistDetail = null }
+    BackHandler(ytExpanded || expanded || showEq || detail != null || playlistDetail != null || Nav.album != null || Nav.artist != null || Nav.page != null || Nav.sim != null) {
+        when { ytExpanded -> ytExpanded = false; showEq -> showEq = false; expanded -> expanded = false; Nav.sim != null -> Nav.sim = null; Nav.page != null -> Nav.page = null; Nav.album != null -> Nav.album = null; Nav.artist != null -> Nav.artist = null; detail != null -> detail = null; else -> playlistDetail = null }
     }
 
     val tabs = listOf(
@@ -137,8 +138,11 @@ fun App(ui: PlayerUi, perms: List<String>) {
                 } else {
                     val d = detail
                     val pd = playlistDetail
-                    val na = Nav.album; val nr = Nav.artist
+                    val na = Nav.album; val nr = Nav.artist; val ns = Nav.sim; val np = Nav.page
                     when {
+                        ns != null -> SimilarScreen(ui, ns) { Nav.sim = null }
+                        np == "pend" -> PendingScreen(ui) { Nav.page = null }
+                        np == "kept" -> KeptScreen(ui) { Nav.page = null }
                         na != null -> AlbumScreen(ui, na) { Nav.album = null }
                         nr != null -> ArtistScreen(ui, nr) { Nav.artist = null }
                         d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
@@ -456,6 +460,16 @@ fun PlaylistsTab(ui: PlayerUi, onOpen: (String) -> Unit) {
             item { PRow("Favoritas", "${Prefs.favs().size} músicas", Icons.Rounded.Favorite, null, FAVS) }
             item { PRow("Favoritos online", "${YtStore.favs().size} faixas", Icons.Rounded.CloudQueue, null, ONLINE_FAVS) }
             item { PRow("Ouvidas recentemente", "Histórico", Icons.Rounded.History, null, ONLINE_HIST) }
+            Sync.version
+            val pend = Sync.pending().size; val kept = Sync.kept().size
+            if (kept > 0) item { ListItem(headlineContent = { Text("Guardadas no app", fontSize = 17.sp) }, supportingContent = { Text("$kept • tocam sem internet") },
+                leadingContent = { Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary), Alignment.Center) { Icon(Icons.Rounded.OfflinePin, null, tint = MaterialTheme.colorScheme.onPrimary) } },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                modifier = Modifier.clickable { Nav.page = "kept" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
+            if (pend > 0) item { ListItem(headlineContent = { Text("Pra sincronizar", fontSize = 17.sp) }, supportingContent = { Text("$pend pendentes • baixam sozinhas no Wi-Fi") },
+                leadingContent = { Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary), Alignment.Center) { Icon(Icons.Rounded.CloudSync, null, tint = MaterialTheme.colorScheme.onPrimary) } },
+                trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                modifier = Modifier.clickable { Nav.page = "pend" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
             items(pls.keys.toList()) { p ->
                 val first = pls[p].orEmpty().firstNotNullOfOrNull { Library.byId(it) }
                 PRow(p, "${pls[p].orEmpty().size} músicas", null, first?.art, p)
@@ -621,6 +635,25 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                         }
                     }
                     ToolBtn(Icons.Rounded.QueueMusic, "Fila", false) { showQueue = true }
+                    // faixa de fonte aberta (Audius/Archive): guardar dentro do app pra tocar sem internet
+                    val mid = ui.mediaId
+                    if (mid != null && mid.startsWith("au:") && !onRadio) {
+                        Sync.version
+                        val item = ui.controller?.currentMediaItem
+                        val uri = item?.requestMetadata?.mediaUri?.toString() ?: item?.localConfiguration?.uri?.toString() ?: ""
+                        val tid = mid.removePrefix("au:")
+                        val isKept = uri.startsWith("file:") || Sync.isKept(tid)
+                        val scopeK = rememberCoroutineScope()
+                        ToolBtn(if (isKept) Icons.Rounded.OfflinePin else Icons.Rounded.DownloadForOffline, if (isKept) "Offline ✓" else "Offline", isKept) {
+                            if (isKept) return@ToolBtn
+                            android.widget.Toast.makeText(ctxR, "Guardando pra ouvir offline…", android.widget.Toast.LENGTH_SHORT).show()
+                            val t = Track(tid, ui.title, ui.artist, "", ui.duration, ui.art?.toString() ?: "", false, uri)
+                            scopeK.launch {
+                                val r = Sync.keep(t)
+                                android.widget.Toast.makeText(ctxR, if (r.isSuccess) "Guardada no app: toca mesmo sem internet" else "Não deu pra guardar: ${r.exceptionOrNull()?.message}", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -908,6 +941,9 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             SwitchRow("Bloquear anúncios", "Corta propaganda do YouTube e pula o que passar", adb) { adb = it; AdBlock.on = it; YtPlayer.web?.evaluateJavascript("window.ADB=$it", null) }
             Div()
             SwitchRow("Mostrar vídeo no player", null, YtStore.showVideo) { YtStore.showVideo = it }
+            Div()
+            var aw by remember { mutableStateOf(Sync.autoWifi) }
+            SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
         }
 
         Text("Uncrowned Music 1.3", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -984,6 +1020,8 @@ fun RecentGrid(ui: PlayerUi, list: List<YtVideo>, onBack: () -> Unit) {
 object Nav {
     var artist by mutableStateOf<YtmArtistHit?>(null)
     var album by mutableStateOf<YtmAlbumHit?>(null)
+    var page by mutableStateOf<String?>(null)     // "pend" = Pra sincronizar, "kept" = Guardadas no app
+    var sim by mutableStateOf<YtVideo?>(null)       // parecidas que baixam
 }
 
 @Composable

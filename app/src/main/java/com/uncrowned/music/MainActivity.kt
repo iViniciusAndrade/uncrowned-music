@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -32,6 +33,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        Sync.init(this)
+        runCatching { Sync.schedule(this) }
         // primeiro uso desta versão: já começa no tema Edgy (igual ao PC)
         if (Prefs.skin.isEmpty()) Skins.all.firstOrNull { it.id == "edgy" }?.let { Skins.apply(this, it) }
         enableEdgeToEdge()
@@ -116,6 +119,13 @@ class PlayerUi(private val ctx: Context) {
         val c = controller ?: return
         YtPlayer.js("player.pauseVideo()")
         c.setMediaItems(list.map { it.toItem() }, start, 0); c.prepare(); c.play()
+    }
+    // toca um arquivo do celular no lugar da música online (versão sincronizada)
+    fun playUri(uri: String, v: YtVideo) {
+        val c = controller ?: return
+        val item = MediaItem.Builder().setMediaId("off:" + v.id).setUri(uri)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(v.title).setArtist(v.channel).setArtworkUri(v.thumb.takeIf { it.isNotBlank() }?.let(Uri::parse)).build()).build()
+        c.setMediaItem(item); c.prepare(); c.play()
     }
     fun playNext(s: Song) { controller?.let { it.addMediaItem((it.currentMediaItemIndex + 1).coerceAtMost(it.mediaItemCount), s.toItem()) } }
     fun enqueue(s: Song) { controller?.addMediaItem(s.toItem()) }

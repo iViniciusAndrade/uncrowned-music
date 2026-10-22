@@ -433,7 +433,8 @@ async function playAt(i) {
     if (cur() !== t) return;
     if (r) { scUrl = r.url; if (!t.duration) t.duration = r.duration; if (!t.genre) t.genre = r.genre; if (!t.art && r.art) t.art = r.art; }
   }
-  const embed = ['yt', 'vm'].includes(t.src) || (t.src === 'sc' && !scUrl);
+  const offFile = offFileOf(t);
+  const embed = !offFile && (['yt', 'vm'].includes(t.src) || (t.src === 'sc' && !scUrl));
   stopEmbeds(embed ? t.src : null);
   if (embed) {
     audio.pause(); st.kind = t.src;
@@ -443,7 +444,7 @@ async function playAt(i) {
     clearInterval(pollT); st.kind = 'audio';
     $('#embed').classList.add('hidden');
     initGraph(); if (ctx.state === 'suspended') ctx.resume();
-    audio.src = t.src === 'local' ? `/media?p=${encodeURIComponent(t.path)}` : `/proxy?u=${encodeURIComponent(scUrl || t.stream)}`;
+    audio.src = t.src === 'local' ? `/media?p=${encodeURIComponent(t.path)}` : offFile ? `/media?p=${encodeURIComponent(offFile)}` : `/proxy?u=${encodeURIComponent(scUrl || t.stream)}`;
     applyRate();
     audio.play().catch(() => {});
   }
@@ -726,7 +727,7 @@ function rows(list, ctxName, opts = {}) {
     <div class="row" data-ctx="${ctxName}" data-i="${i}" data-k="${esc(keyOf(t))}">
       <span class="n"><b>${i + 1}</b>${ico('play', 'pl')}</span>
       ${artOf(t) ? `<img loading="lazy" src="${esc(artOf(t))}" onerror="this.outerHTML='<div class=ph></div>'">` : '<div class="ph"></div>'}
-      <span class="t">${t.src !== 'local' ? `<span class="badge ${t.src}">${{ yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE' }[t.src]}</span>` : ''}${esc(t.title)}</span>
+      <span class="t">${t.src !== 'local' ? `<span class="badge ${t.src}">${{ yt: 'YOUTUBE', sc: 'SOUNDCLOUD', vm: 'VIMEO', au: 'AUDIUS', ia: 'ARCHIVE', cc: 'CCMIXTER', wm: 'COMMONS' }[t.src]}</span>` : ''}${esc(t.title)}</span>
       <span class="a">${esc(t.artist)}</span>
       <span class="al">${esc(t.album || t.genre || '')}</span>
       <span class="d">${t.duration ? fmt(t.duration) : ''}</span>
@@ -811,7 +812,7 @@ function renderNav() {
   renderPlNav();
 }
 function renderPlNav() {
-  const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas recentemente', 'history'], ['import', 'Importar playlists', 'plus'], ...((D.syncPending || []).length ? [['syncPending', `Pra sincronizar (${D.syncPending.length})`, 'dl']] : []), ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
+  const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas recentemente', 'history'], ['import', 'Importar playlists', 'plus'], ...(Object.keys(D.offline || {}).length ? [['offlineApp', `Guardadas no app (${Object.keys(D.offline).length})`, 'dl']] : []), ...((D.syncPending || []).length ? [['syncPending', `Pra sincronizar (${D.syncPending.length})`, 'dl']] : []), ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
   const pc = D.plCovers || {};
   $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${k.startsWith('pl:') && pc[k.slice(3)] ? `<img class="plCov" src="${esc(pc[k.slice(3)])}" onerror="this.remove()">` : ico(i)}<span>${esc(l)}</span></a>`).join('');
 }
@@ -1581,13 +1582,34 @@ const seenM = new Set(M.map(m => { const d = new Date(m[0] * 1000); return d.get
   v.querySelectorAll('[data-hc]').forEach(c => c.onclick = () => { const [d, pi] = c.dataset.hc.split(':').map(Number); const p = PERIODS[pi]; openMoment(`Suas músicas de ${DIAS[d]} ${p[1]}`, x => x.getDay() === d && periodOf(x.getHours()) === p); });
 };
 
-/* ---------------- sincronizar: salvar a música no PC (pasta Música/Uncrowned) ---------------- */
+/* ---------------- sincronizar: salvar a música offline (pasta Música/Uncrowned) ---------------- */
+const OPEN_SRC = ['au', 'ia', 'cc', 'wm'];
+// arquivo pra tocar sem internet: guardado no app, ou a versão sincronizada quando a rede cai
+function offFileOf(t) {
+  if (!t) return null; const k = keyOf(t);
+  const o = (D.offline || {})[k]; if (o && o.file) return o.file;
+  const f = (D.synced || {})[k]; if (typeof f === 'string' && (!navigator.onLine || t.src === 'yt' && S().preferSynced)) return f;
+  return null;
+}
+async function keepOffline(t, quiet) {
+  if (!t || !OPEN_SRC.includes(t.src)) return false;
+  if ((D.offline || {})[keyOf(t)]) { if (!quiet) toast('Essa já está guardada pra ouvir offline'); return true; }
+  if (!quiet) toast(`Guardando "${t.title}" pra ouvir offline…`);
+  const r = await U.offlineSave(t);
+  if (!r.ok) { if (!quiet) toast('Não deu pra guardar: ' + r.error); return false; }
+  (D.offline || (D.offline = {}))[keyOf(t)] = { file: r.file, t: { src: t.src, id: t.id, title: t.title, artist: t.artist, art: t.art, duration: t.duration, stream: t.stream, genre: t.genre }, at: Date.now() };
+  save(); renderPlNav(); syncBtnState();
+  if (!quiet) toast(`"${t.title}" guardada no app: toca mesmo sem internet`);
+  return true;
+}
 async function syncTrack(t) {
   if (!t) return;
   if (t.src === 'radio') return toast('Na rádio use o botão Gravar');
   if (t.src === 'local') return toast('Essa já está offline');
-  toast(`Sincronizando "${t.title}"…`); syncBtnState(true);
+  toast(`Procurando "${t.title}" em todas as fontes abertas…`); syncBtnState(true);
   const r = await U.syncOne(t);
+  // Audius sem download liberado: guarda dentro do app pra ouvir offline
+  if (!r.ok && OPEN_SRC.includes(t.src) && await keepOffline(t, true)) { syncBtnState(); return toast(`"${t.title}" guardada no app: toca mesmo sem internet`); }
   syncDone([{ t, r }], 1);
 }
 // guarda o que não tinha versão liberada e mostra o resumo
@@ -1601,7 +1623,7 @@ function syncDone(results, quiet) {
   if (quiet && results.length === 1) {
     const { t, r } = results[0];
     if (r.ok) toast(r.alt ? `Salvei a versão liberada do ${r.from} de "${t.title}"` : `"${t.title}" salva na pasta Música/Uncrowned`);
-    else toast(`"${t.title}" não tem versão liberada pra salvar. Ficou em "Pra sincronizar"`);
+    else notFoundBox(t);
     return;
   }
   modal(`<h3 style="margin:0 0 6px">Sincronização concluída</h3>
@@ -1611,6 +1633,58 @@ function syncDone(results, quiet) {
     <div class="btns" style="justify-content:flex-end"><button class="btn" id="syOpen">Abrir pasta</button><button class="btn fill" id="syOk">OK</button></div>`);
   $('#syOk').onclick = closeModal; $('#syOpen').onclick = async () => U.openPath((await U.musicDir()) + '\\Uncrowned');
 }
+// não achou: mostra o que dá pra fazer
+function notFoundBox(t) {
+  modal(`<h3 style="margin:0 0 6px">Não achei "${esc(t.title)}" liberada pra baixar</h3>
+    <div class="sub">Procurei no Audius, SoundCloud (download do artista), Internet Archive, ccMixter e Wikimedia Commons. Ela ficou em <b>Pra sincronizar</b> e o app tenta de novo sozinho de tempos em tempos, porque artistas sobem músicas novas toda hora.</div>
+    <div class="nfOpts">
+      <button class="btn fill" id="nfSim">${ico('search')} Ver versões parecidas que baixam</button>
+      <button class="btn" id="nfBc">Comprar no Bandcamp (vem com o arquivo)</button>
+    </div>
+    <div class="btns" style="justify-content:flex-end"><button class="btn" id="nfOk">OK</button></div>`);
+  $('#nfOk').onclick = closeModal;
+  $('#nfSim').onclick = () => { closeModal(); go({ name: 'syncSimilar', t }); };
+  $('#nfBc').onclick = () => U.openUrl('https://bandcamp.com/search?q=' + encodeURIComponent(`${t.artist} ${t.title}`.trim()));
+}
+views.syncSimilar = async () => {
+  const t = view.t; if (!t) return go({ name: 'syncPending' });
+  $('#view').innerHTML = `<h1>Parecidas que dá pra baixar</h1><div class="sub">Remixes, covers, versões ao vivo e outras do mesmo artista com download liberado, pra "${esc(t.title)}"${t.artist ? ' de ' + esc(t.artist) : ''}.</div><div id="simL"><div class="empty">Procurando em todas as fontes…</div></div>`;
+  const l = await U.syncSimilar(t);
+  if (view.name !== 'syncSimilar' || view.t !== t) return;
+  rowsCtx.simL = l;
+  $('#simL').innerHTML = l.length ? `<div class="list">${l.map((x, i) => `<div class="row" data-ctx="simL" data-i="${i}"><span class="n"><b>${i + 1}</b>${ico('play', 'pl')}</span>${artOf(x) ? `<img src="${esc(artOf(x))}" onerror="this.outerHTML='<div class=ph></div>'">` : '<div class="ph"></div>'}<span class="t"><span class="badge ${x.src}">${esc((x.from || '').toUpperCase())}</span>${esc(x.title)}</span><span class="a">${esc(x.artist)}</span><span class="acts" style="opacity:1"><button class="btn mini" data-pick="${i}">${ico('dl')} Baixar</button></span></div>`).join('')}</div>`
+    : '<div class="empty">Nenhuma versão liberada por enquanto. Ela continua em Pra sincronizar e o app tenta de novo sozinho.</div>';
+  $('#simL').querySelectorAll('[data-pick]').forEach(b => b.onclick = async e => {
+    e.stopPropagation(); const x = l[+b.dataset.pick]; b.disabled = true; b.textContent = 'Baixando…';
+    const r = await U.syncPick(x);
+    if (r.ok) { b.textContent = 'Salva ✓'; toast(`"${x.title}" salva na pasta Música/Uncrowned`); rescan(); } else { b.disabled = false; b.innerHTML = ico('dl') + ' Baixar'; toast('Não deu: ' + (r.error || 'tente outra')); }
+  });
+};
+/* pendentes: tenta de novo sozinho quando tem internet (na abertura, a cada 3 horas e quando a rede volta) */
+async function retryPending() {
+  const l = (D.syncPending || []).slice(0, 25);
+  if (!l.length || syncBusy || !navigator.onLine) return;
+  if (Date.now() - (D.pendTry || 0) < 3 * 3600e3) return;
+  D.pendTry = Date.now(); save();
+  syncBusy = true;
+  const res = await U.syncMany(l, 'tentativa automática').catch(() => []);
+  syncBusy = false;
+  const ok = res.filter(x => x.r && x.r.ok);
+  ok.forEach(({ t, r }) => { D.syncPending = D.syncPending.filter(p => keyOf(p) !== keyOf(t)); (D.synced || (D.synced = {}))[keyOf(t)] = r.file || 1; });
+  if (ok.length) { save(); rescan(); renderPlNav(); toast(`Achei ${ok.length} ${ok.length > 1 ? 'músicas que estavam pendentes' : 'música que estava pendente'} e salvei offline`); }
+  syncBar(null);
+}
+setTimeout(retryPending, 60e3); setInterval(retryPending, 30 * 60e3);
+addEventListener('online', () => setTimeout(retryPending, 10e3));
+/* tela: músicas guardadas no app pra ouvir offline */
+views.offlineApp = async () => {
+  const o = D.offline || {};
+  for (const [k, v] of Object.entries(o)) if (!(await U.fileExists(v.file))) delete o[k];
+  const l = Object.values(o).sort((a, b) => b.at - a.at).map(v => v.t);
+  $('#view').innerHTML = `<h1>Guardadas no app</h1><div class="sub">Tocam sem internet. São faixas de fontes abertas (Audius, Internet Archive, ccMixter, Commons) que o artista não liberou como arquivo, então ficam só dentro do app.</div>
+    ${l.length ? `<div class="btns"><button class="btn fill" id="oaPlay">${ico('play')} Tocar todas</button></div>` : ''}${rows(l, 'offApp', { empty: 'Nada guardado ainda. Toque uma música do Audius e use Sincronizar → Guardar no app.' })}`;
+  if ($('#oaPlay')) $('#oaPlay').onclick = () => play(l, 0);
+};
 let syncBusy = false;
 async function syncList(list, name) {
   const l = list.filter(t => t && !['local', 'radio'].includes(t.src));
@@ -1630,13 +1704,14 @@ U.onSyncProgress(p => syncBar(`Sincronizando "${p.tag}": ${p.done} de ${p.total}
 views.syncPending = () => {
   const l = D.syncPending || [];
   rowsCtx.syncP = l;
-  $('#view').innerHTML = `<h1>Pra sincronizar</h1><div class="sub">Músicas que não tinham versão liberada pra salvar. O app tenta de novo quando você quiser, e dá pra comprar no Bandcamp, onde a compra já vem com o arquivo pra baixar.</div>
+  $('#view').innerHTML = `<h1>Pra sincronizar</h1><div class="sub">Músicas que não tinham versão liberada pra salvar. O app tenta de novo sozinho a cada poucas horas, e dá pra comprar no Bandcamp, onde a compra já vem com o arquivo pra baixar.</div>
     ${l.length ? `<div class="btns"><button class="btn fill" id="spRetry">Tentar de novo todas</button><button class="btn" id="spClear">Limpar lista</button></div>` : ''}
     ${l.length ? `<div class="list">${l.map((t, i) => `<div class="row spRow"><span class="n">${i + 1}</span><img src="${esc(artOf(t) || 'logo.png')}" onerror="this.src='logo.png'"><span class="t">${esc(t.title)}</span><span class="a">${esc(t.artist)}</span>
-      <span class="acts" style="opacity:1"><button class="btn mini" data-bc="${i}" title="Procurar no Bandcamp">Bandcamp</button><button class="btn mini" data-sr="${i}" title="Tirar da lista">${ico('close')}</button></span></div>`).join('')}</div>` : '<div class="empty">Nada pendente. Tudo que você sincronizou foi salvo.</div>'}`;
+      <span class="acts" style="opacity:1"><button class="btn mini" data-sim="${i}" title="Versões parecidas que baixam">Parecidas</button><button class="btn mini" data-bc="${i}" title="Procurar no Bandcamp">Bandcamp</button><button class="btn mini" data-sr="${i}" title="Tirar da lista">${ico('close')}</button></span></div>`).join('')}</div>` : '<div class="empty">Nada pendente. Tudo que você sincronizou foi salvo.</div>'}`;
   if ($('#spRetry')) $('#spRetry').onclick = () => syncList(l.slice(), 'Pra sincronizar');
   if ($('#spClear')) $('#spClear').onclick = () => { D.syncPending = []; save(); renderPlNav(); render(); };
   $('#view').querySelectorAll('[data-bc]').forEach(b => b.onclick = () => { const t = l[+b.dataset.bc]; U.openUrl('https://bandcamp.com/search?q=' + encodeURIComponent(`${t.artist} ${t.title}`.trim())); });
+  $('#view').querySelectorAll('[data-sim]').forEach(b => b.onclick = e => { e.stopPropagation(); go({ name: 'syncSimilar', t: l[+b.dataset.sim] }); });
   $('#view').querySelectorAll('[data-sr]').forEach(b => b.onclick = () => { l.splice(+b.dataset.sr, 1); save(); renderPlNav(); render(); });
 };
 /* ---------------- rádio ---------------- */
@@ -1861,23 +1936,25 @@ $('#bRetro').innerHTML = ico('cassette');
 $('#bRetro').onclick = () => { if (st.kind === 'radio') return toast('O modo retrô não funciona na rádio ao vivo'); const order = ['', 'k7', 'vinil']; setRetro(order[(order.indexOf(S().retro || '') + 1) % 3]); };
 $('#bSync').onclick = e => {
   e.stopPropagation();
-  const t = cur(), done = t && (t.src === 'local' || (D.synced || {})[keyOf(t)]);
+  const t = cur(), done = t && (t.src === 'local' || (D.synced || {})[keyOf(t)] || (D.offline || {})[keyOf(t)]);
   const box = document.createElement('div'); box.id = 'syncMenu';
   box.innerHTML = `<b>Sincronizar</b><small>Salva no aparelho pra ouvir sem internet</small>
     <button data-sm="one" ${!t || done ? 'disabled' : ''}>${ico('dl')}<span>${done ? 'Essa já está offline' : 'Salvar esta música'}<em>${t ? esc(t.title) : 'Nada tocando'}</em></span></button>
+ ${t && OPEN_SRC.includes(t.src) && !(D.offline || {})[keyOf(t)] ? `<button data-sm="keep">${ico('heart')}<span>Guardar no app pra ouvir offline<em>Toca sem internet, mesmo sem arquivo liberado</em></span></button>` : ''}
+    ${t && !done && !OPEN_SRC.includes(t.src) && t.src !== 'radio' ? `<button data-sm="sim">${ico('search')}<span>Versões parecidas que baixam<em>Remix, cover, ao vivo, mesmo artista</em></span></button>` : ''}
     <button data-sm="queue" ${st.queue.length ? '' : 'disabled'}>${ico('plist')}<span>Sincronizar a fila inteira<em>${st.queue.length} músicas</em></span></button>
     <button data-sm="pend">${ico('history')}<span>Ver Pra sincronizar<em>${(D.syncPending || []).length} pendentes</em></span></button>
-    <p>Salva direto quando o artista libera. Se não liberou, o app procura a mesma música no Audius, Internet Archive ou SoundCloud com download aberto.</p>`;
+    <p>Salva direto quando o artista libera. Se não liberou, o app procura a mesma música no Audius, SoundCloud, Internet Archive, ccMixter e Wikimedia Commons. Todo arquivo é conferido antes de salvar: só entra áudio de verdade.</p>`;
   document.querySelectorAll('#syncMenu').forEach(x => x.remove()); document.body.appendChild(box);
   const r = $('#bSync').getBoundingClientRect(); box.style.left = Math.max(10, Math.min(innerWidth - 330, r.left - 150)) + 'px';
   box.onclick = ev => { const b = ev.target.closest('[data-sm]'); if (!b || b.disabled) return; box.remove();
-    if (b.dataset.sm === 'one') syncTrack(cur()); else if (b.dataset.sm === 'queue') syncList(st.queue.slice(), 'Fila'); else go({ name: 'syncPending' }); };
+    if (b.dataset.sm === 'one') syncTrack(cur()); else if (b.dataset.sm === 'keep') keepOffline(cur()); else if (b.dataset.sm === 'sim') go({ name: 'syncSimilar', t: cur() }); else if (b.dataset.sm === 'queue') syncList(st.queue.slice(), 'Fila'); else go({ name: 'syncPending' }); };
   setTimeout(() => document.addEventListener('click', function off(ev) { if (!box.contains(ev.target)) { box.remove(); document.removeEventListener('click', off); } }), 0);
 };
 // estado do botão: girando enquanto salva, ✓ quando a música já está no PC
 function syncBtnState(busy) {
   const b = $('#bSync'); if (!b) return; const t = cur();
-  const done = t && (t.src === 'local' || (D.synced || {})[keyOf(t)]);
+  const done = t && (t.src === 'local' || (D.synced || {})[keyOf(t)] || (D.offline || {})[keyOf(t)]);
   b.classList.toggle('busy', !!busy || syncBusy); b.classList.toggle('done', !!done && !busy);
   b.innerHTML = done && !busy ? ico('check') : ico('dl');
 }
