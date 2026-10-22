@@ -43,6 +43,7 @@ object Prefs {
     private fun pb(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
 
     // Aparência
+    var skin: String get() = s("skin", ""); set(v) = ps("skin", v)
     var themeMode: String get() = s("theme", "amoled"); set(v) = ps("theme", v)          // system/light/dark/amoled
     var accent: Int get() = sp.getInt("accent", 0xFFFA2D48.toInt()); set(v) = pi("accent", v)
     var dynamicColor: Boolean get() = sp.getBoolean("dynamic", false); set(v) = pb("dynamic", v)

@@ -32,6 +32,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        // primeiro uso desta versão: já começa no tema Edgy (igual ao PC)
+        if (Prefs.skin.isEmpty()) Skins.all.firstOrNull { it.id == "edgy" }?.let { Skins.apply(this, it) }
         enableEdgeToEdge()
         ui = PlayerUi(this)
         val perms = buildList {
@@ -149,6 +151,13 @@ fun UncrownedTheme(content: @Composable () -> Unit) {
         background = Color.Black, surface = Color.Black,
         surfaceContainer = Color(0xFF141414), surfaceContainerHigh = Color(0xFF222224), surfaceContainerLow = Color(0xFF050505)
     )
+    // tema escolhido: cores próprias (fundo, cards, texto)
+    Skins.current?.let { sk ->
+        val bg = Color(sk.bg); val card = Color(sk.card); val card2 = Color(sk.card2); val txt = Color(sk.text)
+        scheme = scheme.copy(background = bg, surface = bg, surfaceContainer = card, surfaceContainerHigh = card2, surfaceContainerLow = bg,
+            onBackground = txt, onSurface = txt, onSurfaceVariant = Color(sk.dim),
+            primaryContainer = accent.copy(alpha = 0.25f).compositeOver(card), secondaryContainer = accent.copy(alpha = 0.2f).compositeOver(card))
+    }
     val r = Prefs.corner.dp
     val d = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * Prefs.fontScale)) {

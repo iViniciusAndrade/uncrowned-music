@@ -100,8 +100,9 @@ fun App(ui: PlayerUi, perms: List<String>) {
     )
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        SkinBackground()
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = Color.Transparent,
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
@@ -138,7 +139,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
                     when {
                         d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
                         pd == ONLINE_FAVS -> OnlineList(ui, "Favoritos online", YtStore.favs()) { playlistDetail = null }
-                        pd == ONLINE_HIST -> OnlineList(ui, "Ouvidas online", YtStore.history()) { playlistDetail = null }
+                        pd == ONLINE_HIST -> RecentGrid(ui, YtStore.history()) { playlistDetail = null }
                         pd != null -> PlaylistDetail(ui, pd) { playlistDetail = null }
                         tab == 0 -> SongsTab(ui)
                         tab == 1 -> AlbumsTab { detail = it }
@@ -418,7 +419,7 @@ fun PlaylistsTab(ui: PlayerUi, onOpen: (String) -> Unit) {
         LazyColumn {
             item { PRow("Favoritas", "${Prefs.favs().size} músicas", Icons.Rounded.Favorite, null, FAVS) }
             item { PRow("Favoritos online", "${YtStore.favs().size} faixas", Icons.Rounded.CloudQueue, null, ONLINE_FAVS) }
-            item { PRow("Ouvidas online", "Histórico", Icons.Rounded.History, null, ONLINE_HIST) }
+            item { PRow("Ouvidas recentemente", "Histórico", Icons.Rounded.History, null, ONLINE_HIST) }
             items(pls.keys.toList()) { p ->
                 val first = pls[p].orEmpty().firstNotNullOfOrNull { Library.byId(it) }
                 PRow(p, "${pls[p].orEmpty().size} músicas", null, first?.art, p)
@@ -766,14 +767,15 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
         "rew" to "Voltar", "fwd" to "Avançar", "close" to "Fechar")
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 40.dp)) {
         Header("Ajustes")
+        SkinGallery()
 
         Group("Aparência") {
-            ChoiceRow("Tema", listOf("system" to "Sistema", "light" to "Claro", "dark" to "Escuro", "amoled" to "Preto total"), Prefs.themeMode) { Prefs.themeMode = it }
+            ChoiceRow("Fundo", listOf("system" to "Sistema", "light" to "Claro", "dark" to "Escuro", "amoled" to "Preto total"), Prefs.themeMode) { Prefs.themeMode = it }
             Div()
             SwitchRow("Cores do papel de parede", "Material You (Android 12+)", Prefs.dynamicColor) { Prefs.dynamicColor = it }
             Div()
             Column(Modifier.padding(16.dp)) {
-                Text("Cor de destaque", fontSize = 16.sp)
+                Text("Cor dos botões", fontSize = 16.sp)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 10.dp)) {
                     ACCENTS.forEach { c ->
                         Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c))
@@ -912,6 +914,30 @@ fun EqualizerScreen(onBack: () -> Unit) {
                 SliderRow("Graves", Prefs.bass.toFloat(), 0f..1000f, "%.0f") { Prefs.bass = it.toInt() }
                 Div()
                 SliderRow("Som 3D", Prefs.virtualizer.toFloat(), 0f..1000f, "%.0f") { Prefs.virtualizer = it.toInt() }
+            }
+        }
+    }
+}
+
+/* Ouvidas recentemente: quadradinhos */
+@Composable
+fun RecentGrid(ui: PlayerUi, list: List<YtVideo>, onBack: () -> Unit) {
+    Prefs.version.intValue
+    Column {
+        Header("Ouvidas recentemente", onBack)
+        if (list.isEmpty()) { Empty("As músicas que você ouvir aparecem aqui."); return@Column }
+        LazyVerticalGrid(GridCells.Adaptive(108.dp), contentPadding = PaddingValues(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            items(list.size) { i ->
+                val v = list[i]
+                Column(Modifier.clickable { ui.controller?.pause(); YtPlayer.play(list, i) }) {
+                    Box {
+                        Art(v.thumb, Modifier.fillMaxWidth().aspectRatio(1f), RoundedCornerShape(12.dp))
+                        Text(when (v.src) { "sc" -> "SOUNDCLOUD"; "vm" -> "VIMEO"; else -> "YOUTUBE" }, Modifier.padding(6.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .6f)).padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = when (v.src) { "sc" -> Color(0xFFFF8A1F); "vm" -> Color(0xFF1AB7EA); else -> Color(0xFFFF5A50) }, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text(v.title, Modifier.padding(top = 6.dp), fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
+                    Text(v.channel, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }
