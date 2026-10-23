@@ -184,6 +184,11 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
         if (loc.isNotEmpty()) { ui.play(loc, 0); return "Tocando do celular: ${loc[0].title}" + if (loc.size > 1) " (+${loc.size - 1})" else "" }
         if (!Sync.online()) return "Sem internet e não achei \"$q\" no celular."
         val r = Ytm.search(q)
+        // pediu um artista: toca as mais tocadas dele
+        r.artists.firstOrNull { norm(it.name) == n }?.let { a ->
+            val top = Ytm.artist(a.id)?.top.orEmpty()
+            if (top.isNotEmpty()) { ui.controller?.pause(); YtPlayer.play(top, 0); return "Tocando ${a.name}: ${top[0].title}" + if (top.size > 1) " (+${top.size - 1} na fila)" else "" }
+        }
         val songs = r.songs
         if (songs.isEmpty()) return "Não achei \"$q\"."
         ui.controller?.pause(); YtPlayer.play(songs, 0)
@@ -198,7 +203,10 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
         val out = withContext(Dispatchers.Default) { askModel(c, text) }
         val j = Regex("\\{.*\\}", RegexOption.DOT_MATCHES_ALL).find(out)?.value?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: return out.trim().ifBlank { "Não entendi." }
-        val acao = j.optString("acao"); val valor = j.optString("valor"); val resp = j.optString("resposta")
+        var acao = j.optString("acao"); val valor = j.optString("valor"); val resp = j.optString("resposta")
+        // a IA pequena inventa de tocar música em qualquer frase: só executa se você pediu algo mesmo
+        val pediu = Regex("(toca|tocar|toque|bota|coloca|poe|quero|ouvir|escutar|musica|som|vibe|playlist|pausa|para|proxima|pula|volta|anterior|velocidade|slowed|rapido|lento|devagar|timer|desliga|dormir|aleatorio|embaralha|repete|efeito|k7|vinil|black)").containsMatchIn(t)
+        if (!pediu) acao = "conversa"
         val done = withContext(Dispatchers.Main) {
             when (acao) {
                 "tocar" -> if (valor.isNotBlank()) play(ui, valor) else null

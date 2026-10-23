@@ -183,7 +183,8 @@ object Ytm {
                                 val be = nav?.optJSONObject("browseEndpoint"); val pt = if (be != null) pageType(be) else ""
                                 val c1 = cols.getOrElse(1) { "" }.split(" • ")
                                 when {
-                                    sid != null && cols.firstOrNull().orEmpty().isNotBlank() -> so += yt(sid, cols[0], if (c1.size > 1 && Regex("(?i)^(m[uú]sica|song|v[ií]deo|video)$").matches(c1[0])) c1[1] else c1[0])
+                                    // artista: pula o tipo ("Música"), a duração ("2:25") e contagens ("1 mi de visualizações")
+                                    sid != null && cols.firstOrNull().orEmpty().isNotBlank() -> so += yt(sid, cols[0], c1.map { it.trim() }.firstOrNull { s -> s.isNotBlank() && !Regex("(?i)^(m[uú]sica|song|v[ií]deo|video|single|ep|[aá]lbum)$").matches(s) && !Regex("^\\d{1,2}(:\\d{2}){1,2}$").matches(s) && !Regex("(?i)(visualiza|views|plays|reprodu|ouvintes)").containsMatchIn(s) } ?: c1.getOrElse(0) { "" })
                                     be != null && pt.contains("ARTIST") -> ar += YtmArtistHit(be.optString("browseId"), cols.getOrElse(0) { "" }, c1.drop(1).joinToString(" • ").ifBlank { "Artista" }, thumb(r.opt("thumbnail") ?: r))
                                     be != null && pt.contains("ALBUM") -> al += YtmAlbumHit(be.optString("browseId"), cols.getOrElse(0) { "" }, c1.getOrElse(0) { "Álbum" }, c1.getOrElse(1) { "" }, c1.firstOrNull { Regex("^\\d{4}$").matches(it) } ?: "", thumb(r.opt("thumbnail") ?: r))
                                 }
