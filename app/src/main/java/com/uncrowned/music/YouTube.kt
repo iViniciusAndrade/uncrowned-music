@@ -210,7 +210,7 @@ object YtPlayer {
     fun setSpeedTo(v: Float) { speed = v; Prefs.sp.edit().putFloat("ytspeed", v).apply(); applySpeed() }
     fun applySpeed() { web?.evaluateJavascript("""(function(){function run(d){if(!d)return;d.querySelectorAll('video,audio').forEach(function(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;m.playbackRate=$speed;}catch(e){}})}
       try{document.querySelectorAll('iframe').forEach(function(f){try{run(f.contentDocument)}catch(e){}})}catch(e){} try{run(document)}catch(e){}
-      try{if(window.player&&player.setPlaybackRate)player.setPlaybackRate($speed)}catch(e){} })();""", null) }
+      })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
     fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false } }
@@ -229,6 +229,7 @@ object YtPlayer {
         @JavascriptInterface fun time(t: Float, d: Float) = h.post {
             time = t; duration = d
             // conta o tempo ouvido (Mais ouvidas / Momentos)
+            if (playing && speed != 1f && ticks % 6 == 0) applySpeed()
             if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
         }.let {}
         // vídeo que o dono bloqueou fora do YouTube: avisa e pula em vez de ficar travado
