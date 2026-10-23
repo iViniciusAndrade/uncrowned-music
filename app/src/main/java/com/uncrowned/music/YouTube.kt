@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.Dispatchers
@@ -501,7 +502,7 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 Sync.version
                 val synced = Sync.syncedUri(v) != null
                 var showSync by remember { mutableStateOf(false) }
-                IconButton(onClick = { showSync = true }) { Icon(if (synced) Icons.Rounded.DownloadDone else Icons.Rounded.Download, "Sincronizar", tint = if (synced) accent else LocalContentColor.current) }
+                Spacer(Modifier.size(48.dp))
                 if (showSync) SyncSheet(v) { showSync = false }
             }
             val showVid = false
@@ -551,14 +552,28 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 // som retrô (K7 / vinil) e adicionar à playlist
                 var addOpen by remember { mutableStateOf(false) }
                 var retro by remember { mutableStateOf(Retro.mode) }
-                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                    Retro.NAMES.forEach { (k, n) -> FilterChip(retro == k, { retro = k; Retro.mode = k }, { Text(n) }) }
-                    IconButton(onClick = { addOpen = true }) { Icon(Icons.Rounded.PlaylistAdd, "Adicionar à playlist") }
+                var speedOpen by remember { mutableStateOf(false) }
+                var syncOpen by remember { mutableStateOf(false) }
+                // botões compactos, iguais aos do player do app
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally)) {
+                    ToolBtn(Icons.Rounded.Speed, "${"%.2f".format(YtPlayer.speed)}x", YtPlayer.speed != 1f) { speedOpen = true }
+                    ToolBtn(Icons.Rounded.Album, Retro.NAMES[retro] ?: "Normal", retro.isNotEmpty()) { Retro.next(); retro = Retro.mode }
+                    ToolBtn(Icons.Rounded.PlaylistAdd, "Playlist", false) { addOpen = true }
+                    Sync.version
+                    val sDone = Sync.syncedUri(v) != null
+                    ToolBtn(if (sDone) Icons.Rounded.DownloadDone else Icons.Rounded.Download, if (sDone) "Offline ✓" else "Salvar", sDone) { syncOpen = true }
                 }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Speed, null, Modifier.size(20.dp))
-                    listOf(0.75f to "Lento", 0.85f to "Slowed", 1f to "Normal", 1.15f to "Sped up", 1.25f to "Nightcore").forEach { (r, n) ->
-                        FilterChip(YtPlayer.speed == r, { YtPlayer.setSpeedTo(r) }, { Text(n) }) }
+                if (syncOpen) SyncSheet(v) { syncOpen = false }
+                if (speedOpen) ModalBottomSheet(onDismissRequest = { speedOpen = false }) {
+                    Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                        Text("Velocidade e tom", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("O tom muda junto (slowed / nightcore)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Slider(YtPlayer.speed, { YtPlayer.setSpeedTo((Math.round(it * 20) / 20f)) }, valueRange = 0.5f..1.5f, modifier = Modifier.padding(top = 8.dp))
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(0.75f to "Lento", 0.85f to "Slowed", 1f to "Normal", 1.15f to "Sped up", 1.25f to "Nightcore").forEach { (r, n) ->
+                                FilterChip(YtPlayer.speed == r, { YtPlayer.setSpeedTo(r) }, { Text(n) }) }
+                        }
+                    }
                 }
                 if (addOpen) {
                     var nome by remember { mutableStateOf("") }
@@ -571,10 +586,6 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                         } },
                         confirmButton = { TextButton(onClick = { if (nome.isNotBlank()) { OPlaylists.save(nome.trim(), listOf(v), v.thumb, ""); addOpen = false } }) { Text("Criar") } },
                         dismissButton = { TextButton(onClick = { addOpen = false }) { Text("Fechar") } })
-                }
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tocar a próxima sozinho"); Spacer(Modifier.width(8.dp))
-                    Switch(YtStore.autoNext, { YtStore.autoNext = it })
                 }
             }
         }

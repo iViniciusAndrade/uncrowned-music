@@ -577,18 +577,15 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
     val artScale by animateFloatAsState(if (Prefs.artPulse && !ui.playing) 0.82f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "art")
 
-    CompositionLocalProvider(LocalContentColor provides Color.White) {
-        Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0D)).clickable(enabled = false) {}) {
-            when (Prefs.playerBg) {
-                "blur" -> AsyncImage(ui.art, null, Modifier.fillMaxSize().graphicsLayer(scaleX = 1.4f, scaleY = 1.4f).blur(Prefs.blurAmount.dp), contentScale = ContentScale.Crop, alpha = 0.75f)
-                "gradient" -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.7f), Color(0xFF0B0B0D)))))
-            }
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.25f), Color.Black.copy(alpha = 0.7f)))))
-
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(48.dp)) {
-                    IconButton(onClick = onClose, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(30.dp)) }
-                    Box(Modifier.align(Alignment.Center).size(40.dp, 5.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.35f)).clickable(onClick = onClose))
+    // mesmo visual do player online: fundo do tema, origem no topo, botão de play grande na cor do tema
+    val Dim = MaterialTheme.colorScheme.onSurfaceVariant
+    val src = ui.mediaId.let { m -> when { m == null -> ""; m.startsWith("sc:") -> "SOUNDCLOUD"; m.startsWith("au:radio-") -> "RÁDIO AO VIVO"; m.startsWith("au:") -> "AUDIUS"; else -> "OFFLINE" } }
+    CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).clickable(enabled = false) {}) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(48.dp)) {
+                    IconButton(onClick = onClose, Modifier.align(Alignment.CenterStart)) { Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(32.dp)) }
+                    Text(src, Modifier.align(Alignment.Center), style = MaterialTheme.typography.labelLarge)
                     Row(Modifier.align(Alignment.CenterEnd)) {
                         IconButton(onClick = onEq) { Icon(Icons.Rounded.Tune, null, Modifier.size(22.dp)) }
                         // botão de info: pequeno, no canto
@@ -606,49 +603,42 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                         val spin = Prefs.artShape == "disc" && ui.playing
                         Art(ui.art, Modifier.fillMaxWidth(Prefs.artSize).aspectRatio(1f)
                             .graphicsLayer(scaleX = artScale, scaleY = artScale)
-                            .shadow(28.dp, shape)
-                            .then(if (spin) Modifier.rotate(angle) else Modifier), shape)
+                            .then(if (spin) Modifier.rotate(angle) else Modifier), if (Prefs.artShape == "rounded") MaterialTheme.shapes.extraLarge else shape)
                     }
                 }
 
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(ui.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
-                        Text(ui.artist, fontSize = 19.sp, color = Dim, maxLines = 1, modifier = Modifier.basicMarquee())
+                        Text(ui.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.basicMarquee())
+                        Text(ui.artist, color = Dim, maxLines = 1, modifier = Modifier.basicMarquee())
                     }
                     val fav = Prefs.isFav(ui.mediaId)
-                    IconButton(onClick = { Prefs.toggleFav(ui.mediaId); if (Prefs.isFav(ui.mediaId)) Taste.onLike(c?.mediaMetadata?.genre?.toString() ?: "", ui.artist) },
-                        Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.14f))) {
-                        Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, Modifier.size(20.dp), tint = if (fav) accent else Color.White)
+                    IconButton(onClick = { Prefs.toggleFav(ui.mediaId); if (Prefs.isFav(ui.mediaId)) Taste.onLike(c?.mediaMetadata?.genre?.toString() ?: "", ui.artist) }) {
+                        Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, tint = accent)
                     }
                 }
 
                 val dur = ui.duration.coerceAtLeast(1)
                 Slider(value = dragging ?: (pos.toFloat() / dur).coerceIn(0f, 1f), onValueChange = { dragging = it },
-                    onValueChangeFinished = { dragging?.let { c?.seekTo((it * dur).toLong()) }; dragging = null },
-                    modifier = Modifier.padding(top = 10.dp).height(24.dp),
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
-                    thumb = { Box(Modifier.size(if (dragging != null) 16.dp else 8.dp).clip(CircleShape).background(Color.White)) },
-                    track = { st -> SliderDefaults.Track(st, Modifier.height(if (dragging != null) 7.dp else 4.dp), thumbTrackGapSize = 0.dp, drawStopIndicator = null,
-                        colors = SliderDefaults.colors(activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f))) })
+                    onValueChangeFinished = { dragging?.let { c?.seekTo((it * dur).toLong()) }; dragging = null })
                 Row(Modifier.fillMaxWidth()) {
-                    Text(fmt(dragging?.let { (it * dur).toLong() } ?: pos), fontSize = 12.sp, color = Dim)
+                    Text(fmt(dragging?.let { (it * dur).toLong() } ?: pos))
                     Spacer(Modifier.weight(1f))
-                    Text("-" + fmt(ui.duration - (dragging?.let { (it * dur).toLong() } ?: pos)), fontSize = 12.sp, color = Dim)
+                    Text(fmt(ui.duration))
                 }
 
-                Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { c?.shuffleModeEnabled = !ui.shuffle }) {
-                        Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) accent else Dim)
+                        Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) accent else LocalContentColor.current)
                     }
-                    IconButton(onClick = { ui.prev() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastRewind, null, Modifier.size(46.dp), tint = Color.White) }
-                    IconButton(onClick = { ui.toggle() }, Modifier.size(80.dp)) {
-                        Icon(if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(64.dp), tint = Color.White)
+                    IconButton(onClick = { ui.prev() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
+                    FilledIconButton(onClick = { ui.toggle() }, Modifier.size(76.dp), shape = MaterialTheme.shapes.extraLarge) {
+                        Icon(if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(42.dp))
                     }
-                    IconButton(onClick = { ui.next() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastForward, null, Modifier.size(46.dp), tint = Color.White) }
+                    IconButton(onClick = { ui.next() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
                     IconButton(onClick = { c?.repeatMode = (ui.repeat + 1) % 3 }) {
                         Icon(if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
-                            tint = if (ui.repeat != Player.REPEAT_MODE_OFF) accent else Dim)
+                            tint = if (ui.repeat != Player.REPEAT_MODE_OFF) accent else LocalContentColor.current.copy(alpha = .6f))
                     }
                 }
 
@@ -777,8 +767,8 @@ fun InfoSheet(ui: PlayerUi) {
 @Composable
 fun ToolBtn(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
     Column(Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, null, tint = if (active) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.75f))
-        Text(label, fontSize = 11.sp, color = Color.White.copy(alpha = 0.75f))
+        Icon(icon, null, tint = if (active) MaterialTheme.colorScheme.primary else LocalContentColor.current.copy(alpha = 0.8f))
+        Text(label, fontSize = 11.sp, color = LocalContentColor.current.copy(alpha = 0.8f))
     }
 }
 
@@ -792,7 +782,7 @@ fun LyricsView(ui: PlayerUi, position: () -> Long) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             when {
-                l == null -> CircularProgressIndicator(color = Color.White)
+                l == null -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 l.synced != null -> {
                     val st = rememberLazyListState()
                     var cur by remember { mutableIntStateOf(0) }
@@ -808,16 +798,16 @@ fun LyricsView(ui: PlayerUi, position: () -> Long) {
                         itemsIndexed(l.synced) { i, (t, line) ->
                             Text(line.ifBlank { "♪" }, Modifier.fillMaxWidth().clickable { ui.controller?.seekTo(t) }.padding(vertical = 8.dp),
                                 textAlign = align, fontSize = size, fontWeight = FontWeight.Bold,
-                                color = if (i == cur) Color.White else Color.White.copy(alpha = 0.35f))
+                                color = if (i == cur) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.35f))
                         }
                     }
                 }
                 l.plain != null -> Text(l.plain, Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
                     textAlign = align, fontSize = size * 0.85f, fontWeight = FontWeight.SemiBold, lineHeight = size * 1.25f)
-                else -> Text("Letra não encontrada", color = Dim)
+                else -> Text("Letra não encontrada", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (l?.source?.isNotBlank() == true) Text("Letra: ${l.source}", Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = TextAlign.Center, fontSize = 11.sp, color = Dim)
+        if (l?.source?.isNotBlank() == true) Text("Letra: ${l.source}", Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = TextAlign.Center, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
