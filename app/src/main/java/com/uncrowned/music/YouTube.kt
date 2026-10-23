@@ -282,22 +282,27 @@ object YtPlayer {
     // velocidade do player online (muda o tom junto, igual slowed/nightcore)
     var speed by mutableFloatStateOf(Prefs.sp.getFloat("ytspeed", 1f))
     fun setSpeedTo(v: Float) { speed = v; Prefs.sp.edit().putFloat("ytspeed", v).apply(); applySpeed() }
-    fun applySpeed() { web?.evaluateJavascript("""(function(){function run(d){if(!d)return;d.querySelectorAll('video,audio').forEach(function(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;m.playbackRate=$speed;}catch(e){}})}
-      try{document.querySelectorAll('iframe').forEach(function(f){try{run(f.contentDocument)}catch(e){}})}catch(e){} try{run(document)}catch(e){}
+    fun applySpeed() = applyRate(GlobalFx.wowRate(speed, System.currentTimeMillis()))
+    // velocidade com tom junto em qualquer player da web, inclusive o áudio escondido que o player cria (e o da faixa protegida)
+    private fun applyRate(r: Float) { web?.evaluateJavascript("""(function(){var R=$r;window.__uncRate=R;function set(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;if(Math.abs(m.playbackRate-R)>0.0005)m.playbackRate=R;}catch(e){}}
+      function run(d,w){try{if(d)d.querySelectorAll('video,audio').forEach(set)}catch(e){} try{if(w&&w.__uncEls)w.__uncEls.forEach(set)}catch(e){}}
+      try{document.querySelectorAll('iframe').forEach(function(f){try{if(typeof __p==='function')__p(f)}catch(e){} try{run(f.contentDocument,f.contentWindow)}catch(e){}})}catch(e){} run(document,window);
       })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
-    fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false } }
+    fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false }; GlobalFx.sync(false) }
     // modo retrô dentro do player do YouTube/SoundCloud
-    fun applyRetro() { web?.evaluateJavascript(Retro.js(Retro.mode), null) }
+    // faixa protegida do SoundCloud não pode passar pelo processamento da página (ficaria muda): o efeito vem do celular (GlobalFx)
+    fun applyRetro() { if (current?.src != "sc") web?.evaluateJavascript(Retro.js(Retro.mode), null); GlobalFx.sync(playing && current != null); applySpeed() }
     fun js(code: String) { web?.evaluateJavascript("if(window.player&&player.loadVideoById){$code}", null) }
 
     private val h = Handler(Looper.getMainLooper())
     class Bridge {
         @JavascriptInterface fun state(s: Int) = h.post {
             playing = s == 1
+            GlobalFx.sync(playing)
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
-            if (s == 1 && speed != 1f) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
+            if (s == 1 && (speed != 1f || Retro.mode.isNotEmpty())) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
             if (s == 0 && ScPlay.active && current?.src == "sc") ScPlay.onWebEnded()
             else if (s == 0) when {
@@ -310,7 +315,9 @@ object YtPlayer {
             if (t > 0.6f && !progressed) { progressed = true; h.removeCallbacks(dog) }
             time = t; duration = d
             // conta o tempo ouvido (Mais ouvidas / Momentos)
-            if (playing && speed != 1f && ticks % 6 == 0) applySpeed()
+            // velocidade (e a oscilação da fita no K7/vinil) aplicada pelo app, por fora do player
+            if (playing && (speed != 1f && ticks % 6 == 0 || Retro.mode.isNotEmpty())) applySpeed()
+            if (ticks == 0) GlobalFx.sync(playing)
             if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
         }.let {}
         // vídeo que o dono bloqueou fora do YouTube: avisa e pula em vez de ficar travado
@@ -328,22 +335,25 @@ object YtPlayer {
     const val HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100%;height:100%}</style></head>
 <body><div id="p"></div><script src="https://www.youtube.com/iframe_api"></script><script>
+function __p(f){try{var w=f.contentWindow;if(!w||w.__uncP)return;w.__uncP=1;w.__uncEls=w.__uncEls||[];var P=w.HTMLMediaElement.prototype,op=P.play;P.play=function(){try{if(w.__uncEls.indexOf(this)<0)w.__uncEls.push(this);if(window.__uncRate){this.preservesPitch=false;this.webkitPreservesPitch=false;this.playbackRate=window.__uncRate}}catch(e){}return op.apply(this,arguments)}}catch(e){}}
 var player;
 function onYouTubeIframeAPIReady(){player=new YT.Player('p',{width:'100%',height:'100%',
 playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1},
-events:{onReady:function(){Android.ready()},onStateChange:function(e){Android.state(e.data)},onError:function(e){Android.err(e.data)}}});}
+events:{onReady:function(){try{__p(player.getIframe())}catch(e){};Android.ready()},onStateChange:function(e){Android.state(e.data)},onError:function(e){Android.err(e.data)}}});}
 setInterval(function(){if(player&&player.getCurrentTime){Android.time(player.getCurrentTime()||0,player.getDuration()||0)}},500);
 </script></body></html>"""
 
     // SoundCloud: player oficial (Widget API); "player" imita a interface do YouTube pra reaproveitar os controles
     const val SC_HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{border:0;width:100%;height:100%}</style></head><body>
-<iframe id="sc" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/__ID__&auto_play=true&visual=true&show_comments=false"></iframe>
+<script>function __p(f){try{var w=f.contentWindow;if(!w||w.__uncP)return;w.__uncP=1;w.__uncEls=w.__uncEls||[];var P=w.HTMLMediaElement.prototype,op=P.play;P.play=function(){try{if(w.__uncEls.indexOf(this)<0)w.__uncEls.push(this);if(window.__uncRate){this.preservesPitch=false;this.webkitPreservesPitch=false;this.playbackRate=window.__uncRate}}catch(e){}return op.apply(this,arguments)}}catch(e){}}</script>
+<iframe id="sc" allow="autoplay" onload="__p(this)" src="https://w.soundcloud.com/player/?url=https%3A//soundcloud.com/__ID__&auto_play=true&visual=true&show_comments=false"></iframe>
 <script src="https://w.soundcloud.com/player/api.js"></script><script>
 var w=SC.Widget('sc');
 var player={playVideo:function(){w.play()},pauseVideo:function(){w.pause()},seekTo:function(s){w.seekTo(s*1000)},
 loadVideoById:function(id){w.load('https://soundcloud.com/'+id,{auto_play:true,visual:true,show_comments:false})}};
-w.bind(SC.Widget.Events.PLAY,function(){Android.state(1)});
+w.bind(SC.Widget.Events.READY,function(){__p(document.getElementById('sc'))});
+w.bind(SC.Widget.Events.PLAY,function(){__p(document.getElementById('sc'));Android.state(1)});
 w.bind(SC.Widget.Events.PAUSE,function(){Android.state(2)});
 w.bind(SC.Widget.Events.FINISH,function(){Android.state(0)});
 setInterval(function(){w.getPosition(function(p){w.getDuration(function(d){Android.time(p/1000,d/1000)})})},500);
