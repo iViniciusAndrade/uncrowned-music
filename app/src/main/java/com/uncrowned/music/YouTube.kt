@@ -163,7 +163,7 @@ object YtStore {
     var autoNext: Boolean get() = Prefs.sp.getBoolean("ytauto", true); set(v) = Prefs.sp.edit().putBoolean("ytauto", v).apply()
     var vimeoToken: String get() = Prefs.sp.getString("vmtoken", "") ?: ""; set(v) = Prefs.sp.edit().putString("vmtoken", v.trim()).apply()
     var source: String get() = Prefs.sp.getString("osrc", "yt") ?: "yt"; set(v) = Prefs.sp.edit().putString("osrc", v).apply()
-    var showVideo: Boolean get() = Prefs.sp.getBoolean("ytvideo", true); set(v) = Prefs.sp.edit().putBoolean("ytvideo", v).apply()
+    val showVideo: Boolean get() = false   // no celular não mostra vídeo, só a capa
     // toca pelo SoundCloud: música que vem do YouTube (artista, álbum, paradas, playlists) é procurada no SoundCloud e toca de lá
     var scFirst: Boolean get() = Prefs.sp.getBoolean("scfirst", true); set(v) = Prefs.sp.edit().putBoolean("scfirst", v).apply()
 }
@@ -482,18 +482,11 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 var showSync by remember { mutableStateOf(false) }
                 IconButton(onClick = { showSync = true }) { Icon(if (synced) Icons.Rounded.DownloadDone else Icons.Rounded.Download, "Sincronizar", tint = if (synced) accent else LocalContentColor.current) }
                 if (showSync) SyncSheet(v) { showSync = false }
-                IconButton(onClick = { YtStore.showVideo = !YtStore.showVideo }) {
-                    Icon(if (YtStore.showVideo) Icons.Rounded.Videocam else Icons.Rounded.VideocamOff, null)
-                }
             }
-            // O player oficial precisa ficar visível na tela (regra do YouTube)
-            val showVid = expanded && YtStore.showVideo && !Eco.on
+            val showVid = false
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Box(if (showVid) Modifier.fillMaxWidth() else Modifier.width(if (expanded) 1.dp else 78.dp)) {
-                    YtWebPlayer(
-                        if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp)
-                        else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                    )
+                Box(Modifier.width(if (expanded) 1.dp else 78.dp)) {
+                    YtWebPlayer(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     if (!expanded) Art(v.thumb, Modifier.matchParentSize(), MaterialTheme.shapes.small)
                 }
                 if (!expanded) {

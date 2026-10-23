@@ -973,8 +973,7 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
 
             var adb by remember { mutableStateOf(AdBlock.on) }
             SwitchRow("Bloquear anúncios", "Corta propaganda do YouTube e pula o que passar", adb) { adb = it; AdBlock.on = it; YtPlayer.web?.evaluateJavascript("window.ADB=$it", null) }
-            Div()
-            SwitchRow("Mostrar vídeo no player", null, YtStore.showVideo) { YtStore.showVideo = it }
+
             Div()
             var aw by remember { mutableStateOf(Sync.autoWifi) }
             SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
