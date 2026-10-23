@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
         Prefs.init(this)
         Sync.init(this)
         runCatching { Sync.schedule(this) }
+        runCatching { Nag.schedule(this) }
         // primeiro uso desta versão: já começa no tema Edgy (igual ao PC)
         if (Prefs.skin.isEmpty()) Skins.all.firstOrNull { it.id == "edgy" }?.let { Skins.apply(this, it) }
         enableEdgeToEdge()
@@ -55,7 +56,7 @@ class MainActivity : ComponentActivity() {
         setContent { UncrownedTheme { App(ui, perms) } }
     }
 
-    override fun onStart() { super.onStart(); ui.connect() }
+    override fun onStart() { super.onStart(); ui.connect(); runCatching { Nag.touch(this) } }
     override fun onStop() {
         val busy = ui.playing || YtPlayer.playing || RadioRecorder.recording != null || Exporter.running || Importer.busy
         runCatching { Listen.save() }

@@ -60,6 +60,7 @@ object Listen {
     /* chamado a cada poucos segundos enquanto toca. t == null = rádio ao vivo (conta só o tempo total) */
     @Synchronized fun tick(t: LTrack?, sec: Int) {
         if (!loaded) return
+        runCatching { Nag.touchListen() }
         val dk = dayKey(); val day = days.getOrPut(dk) { Day() }
         day.t += sec
         if (t != null) {

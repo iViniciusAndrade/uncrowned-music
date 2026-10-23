@@ -891,6 +891,12 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
                 Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        Group("Notificações") {
+            var nagOn by remember { mutableStateOf(Nag.on(ctxS)) }
+            SwitchRow("Me chamar quando eu sumir", "Se você ficar um dia sem ouvir nada, o app manda uma mensagem sem noção te chamando de volta (no máximo 1 por dia, das 10h às 22h)", nagOn) { nagOn = it; Nag.setOn(ctxS, it) }
+            if (nagOn) { Div(); TextButton(onClick = { Nag.fire(ctxS) }, Modifier.padding(start = 8.dp)) { Text("Testar uma mensagem agora") } }
+        }
+
         Group("Aparência") {
             ChoiceRow("Fundo", listOf("system" to "Sistema", "light" to "Claro", "dark" to "Escuro", "amoled" to "Preto total"), Prefs.themeMode) { Prefs.themeMode = it }
             Div()
