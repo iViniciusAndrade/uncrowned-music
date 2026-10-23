@@ -93,8 +93,13 @@ object Audius {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     suspend fun search(q: String) = runCatching { parse(get("/tracks/search?query=${enc(q)}")) }
-    suspend fun trending(genre: String? = null, time: String = "week") =
-        runCatching { parse(get("/tracks/trending?time=$time" + (genre?.let { "&genre=${enc(it)}" } ?: ""))) }
+    private val trendCache = HashMap<String, Pair<Long, List<Track>>>()
+    // guarda por 1 hora: abrir o Descobrir de novo não baixa tudo outra vez
+    suspend fun trending(genre: String? = null, time: String = "week"): Result<List<Track>> {
+        val k = "$genre|$time"
+        trendCache[k]?.let { if (System.currentTimeMillis() - it.first < 3600_000L) return Result.success(it.second) }
+        return runCatching { parse(get("/tracks/trending?time=$time" + (genre?.let { "&genre=${enc(it)}" } ?: ""))) }.onSuccess { if (it.isNotEmpty()) trendCache[k] = System.currentTimeMillis() to it }
+    }
 
     fun download(ctx: Context, t: Track) {
         val req = DownloadManager.Request(Uri.parse(t.url.ifBlank { "$BASE/tracks/${t.id}/download?app_name=$APP" }))

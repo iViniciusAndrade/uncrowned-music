@@ -121,7 +121,7 @@ class WebPlayService : Service() {
         if (artFor != v.thumb && v.thumb.isNotBlank()) {
             artFor = v.thumb
             CoroutineScope(Dispatchers.IO).launch {
-                val bmp = runCatching { (ImageLoader(this@WebPlayService).execute(ImageRequest.Builder(this@WebPlayService).data(v.thumb).allowHardware(false).size(512).build()) as? SuccessResult)?.drawable?.toBitmap() }.getOrNull()
+                val bmp = runCatching { (coil.Coil.imageLoader(this@WebPlayService).execute(ImageRequest.Builder(this@WebPlayService).data(v.thumb).allowHardware(false).size(512).build()) as? SuccessResult)?.drawable?.toBitmap() }.getOrNull()
                 if (bmp != null) h.post { art = bmp; show() }
             }
         }

@@ -148,7 +148,7 @@ private fun CardDialog(bmp: Bitmap, onClose: () -> Unit) {
 object ShareCard {
     private suspend fun img(ctx: Context, src: String?): Bitmap? = if (src.isNullOrBlank()) null else withContext(Dispatchers.IO) {
         runCatching {
-            val r = ImageLoader(ctx).execute(ImageRequest.Builder(ctx).data(src).allowHardware(false).size(900).build())
+            val r = coil.Coil.imageLoader(ctx).execute(ImageRequest.Builder(ctx).data(src).allowHardware(false).size(900).build())
             (r as? SuccessResult)?.drawable?.toBitmap()
         }.getOrNull()
     }

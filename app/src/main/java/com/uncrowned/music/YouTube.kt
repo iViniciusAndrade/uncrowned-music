@@ -276,6 +276,8 @@ object YtPlayer {
     }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    // vídeo aparecendo na tela? (se não, o player pede a menor qualidade de imagem)
+    var showingVideo = false
     /* ---------- Recortes: tocar só um trecho do vídeo ---------- */
     var cuts: List<Cuts.Cut>? = null; private set
     private var segDone = false
@@ -325,7 +327,7 @@ object YtPlayer {
     // velocidade com tom junto em qualquer player da web, inclusive o áudio escondido que o player cria (e o da faixa protegida)
     private fun applyRate(r: Float) { web?.evaluateJavascript("""(function(){var R=$r;window.__uncRate=R;function set(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;if(Math.abs(m.playbackRate-R)>0.0005)m.playbackRate=R;}catch(e){}}
       function run(d,w){try{if(d)d.querySelectorAll('video,audio').forEach(set)}catch(e){} try{if(w&&w.__uncEls)w.__uncEls.forEach(set)}catch(e){}}
-      try{document.querySelectorAll('iframe').forEach(function(f){try{f.contentWindow.postMessage({unc:'rate',r:R},'*')}catch(e){} try{if(typeof __p==='function')__p(f)}catch(e){} try{run(f.contentDocument,f.contentWindow)}catch(e){}})}catch(e){} run(document,window);
+      try{document.querySelectorAll('iframe').forEach(function(f){try{f.contentWindow.postMessage({unc:'rate',r:R},'*');f.contentWindow.postMessage({unc:'low',on:!$showingVideo},'*')}catch(e){} try{if(typeof __p==='function')__p(f)}catch(e){} try{run(f.contentDocument,f.contentWindow)}catch(e){}})}catch(e){} run(document,window);
       })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
@@ -346,7 +348,7 @@ object YtPlayer {
             GlobalFx.sync(playing)
             runCatching { WebPlayService.update(Sync.app) }
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
-            if (s == 1 && (speed != 1f || Retro.mode.isNotEmpty())) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
+            if (s == 1) { applySpeed(); h.postDelayed({ applySpeed() }, 800); h.postDelayed({ applySpeed() }, 3000) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
             if (s == 0 && cuts != null) { if (!segDone) { segDone = true; cutEnded() } }
             else if (s == 0 && ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.onWebEnded()
@@ -553,6 +555,7 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
             }
             Prefs.version.intValue
             val showVid = expanded && YtStore.showVideo && !Eco.on && v.src == "yt"
+            LaunchedEffect(showVid) { YtPlayer.showingVideo = showVid; YtPlayer.applySpeed() }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Box(if (showVid) Modifier.fillMaxWidth() else Modifier.width(if (expanded) 1.dp else 78.dp)) {
                     YtWebPlayer(if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))

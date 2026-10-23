@@ -98,7 +98,12 @@ object AdBlock {
 
     // roda dentro do player do YouTube: pula/silencia anúncio que passar e obedece a velocidade que o app mandar
     const val EMBED_JS = """(function(){ if(window.__uncE) return; window.__uncE=1; var R=1, ADB=true;
-  window.addEventListener('message',function(e){ var d=e.data; if(!d||!d.unc) return; if(d.unc==='rate') R=+d.r||1; if(d.unc==='adb') ADB=!!d.on; });
+  var LOW=true, lastQ='';
+  window.addEventListener('message',function(e){ var d=e.data; if(!d||!d.unc) return; if(d.unc==='rate') R=+d.r||1; if(d.unc==='adb') ADB=!!d.on; if(d.unc==='low'){ LOW=!!d.on; lastQ=''; } });
+  // sem vídeo na tela: pede a menor qualidade de imagem (o som não muda) e gasta bem menos internet
+  setInterval(function(){ try{ var mp=document.getElementById('movie_player'); if(!mp||!mp.setPlaybackQualityRange) return;
+    var want=LOW?'tiny':'auto'; var vid=(mp.getVideoData&&mp.getVideoData().video_id)||'';
+    if(lastQ!==want+vid){ lastQ=want+vid; if(LOW) mp.setPlaybackQualityRange('tiny','tiny'); else mp.setPlaybackQualityRange('auto','auto'); } }catch(e){} }, 1500);
   setInterval(function(){ var v=document.querySelector('video'); if(!v) return;
     try{ v.preservesPitch=false; v.webkitPreservesPitch=false; if(Math.abs(v.playbackRate-R)>0.0005) v.playbackRate=R; }catch(e){}
     if(!ADB) return;

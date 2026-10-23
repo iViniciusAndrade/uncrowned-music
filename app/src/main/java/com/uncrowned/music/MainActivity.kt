@@ -46,6 +46,11 @@ class MainActivity : ComponentActivity() {
             else add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         Eco.init(this); Listen.init(this)
+        // imagens: guardadas no armazenamento (não baixa de novo), metade da memória por imagem (RGB565), sem animação
+        coil.Coil.setImageLoader(coil.ImageLoader.Builder(this)
+            .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.12).build() }
+            .diskCache { coil.disk.DiskCache.Builder().directory(cacheDir.resolve("imagens")).maxSizeBytes(200L * 1024 * 1024).build() }
+            .respectCacheHeaders(false).allowRgb565(true).crossfade(false).build())
         handleIntent(intent)
         setContent { UncrownedTheme { App(ui, perms) } }
     }
@@ -57,6 +62,12 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // ícone do tema: troca agora que você saiu do app (se nada estiver tocando)
         if (!busy) runCatching { Skins.applyPendingIcon(this) }
+    }
+    // pouca memória: solta o que dá pra baixar de novo (imagens em memória)
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) runCatching { coil.Coil.imageLoader(this).memoryCache?.trimMemory(level) }
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) runCatching { coil.Coil.imageLoader(this).memoryCache?.clear() }
     }
     override fun onDestroy() { runCatching { Listen.save() }; ui.disconnect(); super.onDestroy() }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }

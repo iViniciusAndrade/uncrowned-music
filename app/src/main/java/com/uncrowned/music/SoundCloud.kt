@@ -71,7 +71,12 @@ object SoundCloudApi {
     }
 
     /* mais tocadas da semana no SoundCloud (paradas oficiais; renova o código se vencer) */
-    suspend fun charts(region: String): List<YtVideo> = withContext(Dispatchers.IO) {
+    private val chartCache = HashMap<String, Pair<Long, List<YtVideo>>>()
+    suspend fun charts(region: String): List<YtVideo> {
+        chartCache[region]?.let { if (System.currentTimeMillis() - it.first < 3 * 3600_000L) return it.second }
+        return chartsNet(region).also { if (it.isNotEmpty()) chartCache[region] = System.currentTimeMillis() to it }
+    }
+    private suspend fun chartsNet(region: String): List<YtVideo> = withContext(Dispatchers.IO) {
         val reg = if (region == "ZZ") "" else "&region=soundcloud:regions:$region"
         val tries = listOf("top" to reg, "trending" to reg, "top" to "", "trending" to "")
         var id = runCatching { findClientId(false) }.getOrNull()
