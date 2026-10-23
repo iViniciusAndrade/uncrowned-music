@@ -205,6 +205,10 @@ object YtPlayer {
     fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    // 0 = não repete, 1 = repete a lista, 2 = repete esta música
+    var repeat by mutableIntStateOf(Prefs.sp.getInt("ytrepeat", 0))
+    fun cycleRepeat() { repeat = (repeat + 1) % 3; Prefs.sp.edit().putInt("ytrepeat", repeat).apply() }
+    fun shuffleRest() { if (queue.size > 2) { val cur = current ?: return; queue = listOf(cur) + queue.filterIndexed { i, _ -> i != index }.shuffled(); index = 0 } }
     // controla o vídeo da página do YouTube igual ao player embutido (play, pausa, tempo, fim)
     const val WATCH_JS = """(function(){ if(window.__uncW) return; window.__uncW=1;
   var st=-1; function V(){return document.querySelector('video')}
@@ -238,7 +242,12 @@ object YtPlayer {
             playing = s == 1
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 1 && speed != 1f) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
-            if (s == 0 && YtStore.autoNext) next()
+            // terminou: repetir esta, repetir a lista, ou seguir pra próxima
+            if (s == 0) when {
+                repeat == 2 -> { seek(0f); js("player.playVideo()") }
+                index < queue.size - 1 && (YtStore.autoNext || repeat == 1) -> next()
+                repeat == 1 && queue.isNotEmpty() -> play(queue, 0)
+            }
         }.let {}
         @JavascriptInterface fun time(t: Float, d: Float) = h.post {
             time = t; duration = d
@@ -462,13 +471,15 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                     Text(fmt((YtPlayer.time * 1000).toLong())); Spacer(Modifier.weight(1f)); Text(fmt((YtPlayer.duration * 1000).toLong()))
                 }
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { YtPlayer.seek((YtPlayer.time - Prefs.seekStep).coerceAtLeast(0f)) }) { Icon(Icons.Rounded.Replay10, null) }
+                    IconButton(onClick = { YtPlayer.shuffleRest() }) { Icon(Icons.Rounded.Shuffle, "Embaralhar") }
                     IconButton(onClick = { YtPlayer.prev() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipPrevious, null, Modifier.size(40.dp)) }
                     FilledIconButton(onClick = { YtPlayer.toggle() }, Modifier.size(76.dp), shape = MaterialTheme.shapes.extraLarge) {
                         Icon(if (YtPlayer.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(42.dp))
                     }
                     IconButton(onClick = { YtPlayer.next() }, Modifier.size(56.dp)) { Icon(Icons.Rounded.SkipNext, null, Modifier.size(40.dp)) }
-                    IconButton(onClick = { YtPlayer.seek(YtPlayer.time + Prefs.seekStep) }) { Icon(Icons.Rounded.Forward10, null) }
+                    IconButton(onClick = { YtPlayer.cycleRepeat() }) {
+                        Icon(if (YtPlayer.repeat == 2) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, "Repetir", tint = if (YtPlayer.repeat > 0) accent else LocalContentColor.current.copy(alpha = .6f))
+                    }
                 }
                 // som retrô (K7 / vinil) e adicionar à playlist
                 var addOpen by remember { mutableStateOf(false) }
