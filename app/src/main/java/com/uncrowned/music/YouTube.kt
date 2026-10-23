@@ -247,8 +247,8 @@ object YtPlayer {
             else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
-    fun next() { if (ScPlay.active && current?.src == "sc") ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
-    fun prev() { if (time > 5) seek(0f) else if (ScPlay.active && current?.src == "sc") ScPlay.prev() else if (index > 0) play(queue, index - 1) }
+    fun next() { if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
+    fun prev() { if (time > 5) seek(0f) else if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.prev() else if (index > 0) play(queue, index - 1) }
     // faixa protegida do SoundCloud: toca no player oficial deles (a fila continua no ScPlay)
     fun playWeb(v: YtVideo) {
         stopOther?.invoke()
@@ -304,7 +304,7 @@ object YtPlayer {
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 1 && (speed != 1f || Retro.mode.isNotEmpty())) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
-            if (s == 0 && ScPlay.active && current?.src == "sc") ScPlay.onWebEnded()
+            if (s == 0 && ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.onWebEnded()
             else if (s == 0) when {
                 repeat == 2 -> { seek(0f); js("player.playVideo()") }
                 index < queue.size - 1 && (YtStore.autoNext || repeat == 1) -> next()
@@ -586,7 +586,7 @@ object ScMatch {
         .replace(Regex("\\(.*?\\)|\\[.*?]"), " ").replace(Regex("\\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|ft\\.?.*|feat\\.?.*)\\b"), " ")
         .replace(Regex("[^a-z0-9]+"), " ").trim()
     private fun c(x: String) = n(x).replace(" ", "")
-    private val JUNK = Regex("(?i)saved on|spotify|free download|\\bleak|snippet|preview|type beat|re-?upload|sped up|slowed|nightcore|remix|\\bcover\\b|\\b8d\\b|reverb|instrumental|karaok|acapella|\\blive\\b|ao vivo|mashup|\\bedit\\b|bootleg|tiktok")
+    private val JUNK = Regex("(?i)saved on|liked on|youtube|spotify|reposted|free download|\\bleak|snippet|preview|type beat|re-?upload|sped up|slowed|nightcore|remix|\\bcover\\b|\\b8d\\b|reverb|instrumental|karaok|acapella|\\blive\\b|ao vivo|mashup|\\bedit\\b|bootleg|tiktok")
     /* acha a mesma música no SoundCloud: título igual, artista certo (de preferência o perfil oficial),
        sem versão alterada (slowed, remix, cover...) e que dê pra ouvir inteira */
     suspend fun find(v: YtVideo): YtVideo? = candidates(v).firstOrNull { it.first.policy != "SNIP" }?.first?.let { YtVideo(it.path, it.title, it.artist, it.art, "sc") }

@@ -54,14 +54,15 @@ object ScPlay {
     private suspend fun resolve(v: YtVideo): R = runCatching {
         if (v.src == "sc") return@runCatching resolve(v, v)
         val cands = ScMatch.candidates(v)
-        if (cands.isEmpty()) return@runCatching R.None("não achei no SoundCloud")
+        // não existe no SoundCloud: toca pelo player oficial do YouTube em vez de pular
+        if (cands.isEmpty() || cands.all { it.first.policy == "SNIP" }) return@runCatching if (v.src == "yt") R.Web(v) else R.None("não achei no SoundCloud")
         var last: R = R.None("no SoundCloud só tem a prévia de 30s (precisa do SoundCloud Go+)")
         for ((h, _) in cands.filter { it.first.policy != "SNIP" }.take(4)) {
             val r = resolve(v, YtVideo(h.path, h.title, h.artist, h.art, "sc"))
             if (r !is R.None) return@runCatching r
             last = r
         }
-        last
+        if (v.src == "yt") R.Web(v) else last
     }.getOrDefault(R.None("sem conexão com o SoundCloud"))
 
     private fun toast(t: String) { runCatching { Toast.makeText(Sync.app, t, Toast.LENGTH_SHORT).show() } }
