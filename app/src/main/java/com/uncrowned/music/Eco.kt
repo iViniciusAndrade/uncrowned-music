@@ -40,3 +40,23 @@ object Eco {
         systemSaver = runCatching { app.getSystemService(PowerManager::class.java).isPowerSaveMode }.getOrDefault(false)
     }
 }
+
+/* Opções secretas (salvar música / offline): ficam escondidas.
+   Liberar ou esconder de novo: em Ajustes, tocar 5 vezes seguidas no tema que já está em uso. */
+object Secret {
+    var on by mutableStateOf(false); private set
+    private var loaded = false
+    private var taps = 0; private var last = 0L
+    fun init() { if (!loaded) { loaded = true; on = Prefs.sp.getBoolean("sec", false) } }
+    fun tap(c: Context) {
+        init()
+        val now = System.currentTimeMillis()
+        taps = if (now - last < 1500) taps + 1 else 1
+        last = now
+        if (taps in 3..4) android.widget.Toast.makeText(c, "${5 - taps}…", android.widget.Toast.LENGTH_SHORT).show()
+        if (taps >= 5) {
+            taps = 0; on = !on; Prefs.sp.edit().putBoolean("sec", on).apply()
+            android.widget.Toast.makeText(c, if (on) "🔓 Opções secretas liberadas" else "🔒 Opções secretas escondidas", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+}

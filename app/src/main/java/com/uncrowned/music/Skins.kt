@@ -132,7 +132,7 @@ fun SkinGallery() {
                 Column(
                     Modifier.width(118.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
                         .border(2.dp, if (on) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(16.dp))
-                        .clickable { Skins.apply(ctx, s) }.padding(10.dp),
+                        .clickable { if (on) Secret.tap(ctx) else Skins.apply(ctx, s) }.padding(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Image(painterResource(s.icon), null, Modifier.size(84.dp).clip(RoundedCornerShape(18.dp)))

@@ -144,8 +144,8 @@ fun LibraryTab(ui: PlayerUi, onPlaylist: (String) -> Unit) {
         Cuts.version
         val nc = Cuts.list().size
         if (nc > 0) item { LRow(Icons.Rounded.ContentCut, "Recortes", "$nc ${if (nc == 1) "trecho" else "trechos"} marcados") { Nav.page = "cuts" } }
-        if (kept > 0) item { LRow(Icons.Rounded.OfflinePin, "Guardadas no app", "$kept • tocam sem internet") { Nav.page = "kept" } }
-        if (pend > 0) item { LRow(Icons.Rounded.CloudSync, "Pra sincronizar", "$pend pendentes • baixam sozinhas no Wi-Fi") { Nav.page = "pend" } }
+        if (kept > 0 && Secret.on) item { LRow(Icons.Rounded.OfflinePin, "Guardadas no app", "$kept • tocam sem internet") { Nav.page = "kept" } }
+        if (pend > 0 && Secret.on) item { LRow(Icons.Rounded.CloudSync, "Pra sincronizar", "$pend pendentes • baixam sozinhas no Wi-Fi") { Nav.page = "pend" } }
         items(oplists, key = { "op" + it.name }) { p ->
             ListItem(headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text("${p.items.size} músicas${if (p.from.isNotBlank()) " • ${p.from}" else ""}") },
                 leadingContent = { Art(p.cover.ifBlank { null }, Modifier.size(52.dp)) },

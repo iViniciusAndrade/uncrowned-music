@@ -7,6 +7,7 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,13 +53,14 @@ fun rememberVoice(onText: (String) -> Unit): () -> Unit {
    1) comandos que ele já conhece (instantâneo, sem internet)
    2) o resto vai pra IA local (Qwen 2.5 0.5B, roda no próprio celular, baixada uma vez) */
 object Assist {
-    data class Msg(val me: Boolean, val text: String)
+    data class Msg(val me: Boolean, val text: String, val img: String? = null)
     val msgs = mutableStateListOf<Msg>()
     var busy by mutableStateOf(false)
 
     /* ---------- IA local ---------- */
-    data class Model(val id: String, val name: String, val desc: String, val url: String, val size: Long, val ctx: Int)
+    data class Model(val id: String, val name: String, val desc: String, val url: String, val size: Long, val ctx: Int, val tpl: String = "qwen")
     val MODELS = listOf(
+        Model("phi4", "Phi-4 mini 3.8B (a mais esperta)", "≈3,9 GB • raciocina bem melhor, mais lenta e pesada", "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task", 3_910_050_199L, 4096, "phi"),
         Model("q15", "Qwen 2.5 1.5B (esperta)", "≈1,6 GB • bem mais esperta, conversa melhor", "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.task", 1_598_556_720L, 4096),
         Model("q05", "Qwen 2.5 0.5B (leve)", "≈520 MB • rápida, mas bem limitada", "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task", 546_660_344L, 1280),
     )
@@ -125,6 +127,8 @@ Hoje é $hoje. Tocando agora: $tocando.
 Ferramentas (use só quando precisar):
 - Pra pesquisar na internet (notícias, fatos, algo que você não sabe ou que muda com o tempo), responda APENAS uma linha: BUSCAR: termos da pesquisa
   Depois você recebe os resultados e responde com base neles.
+- Pra gerar uma imagem que o usuário pediu, responda uma linha: IMAGEM: descrição detalhada da imagem em inglês
+- Pra baixar um arquivo de um link direto que o usuário mandou, responda uma linha: BAIXAR: https://...
 - Se o usuário pedir algo do app, escreva sua resposta e no fim uma linha: AÇÃO: tocar <o que buscar> | pausar | continuar | proxima | anterior | velocidade <0.5 a 1.5> | timer <minutos> | aleatorio | repetir | efeito <k7|vinil|black|normal>
 Não invente ações que o usuário não pediu."""
     }
@@ -132,23 +136,97 @@ Não invente ações que o usuário não pediu."""
     // conversa com memória das últimas mensagens (cabe no limite do modelo)
     private fun prompt(m: Model, extra: List<Pair<String, String>>): String {
         val budget = (if (m.ctx >= 4096) 2048 else 1100) * 3   // ~3 letras por token
+        fun turn(role: String, txt: String) = if (m.tpl == "phi") "<|$role|>\n$txt<|end|>\n" else "<|im_start|>$role\n$txt<|im_end|>\n"
         val turns = ArrayList<String>()
         var used = 0
         for (msg in (msgs.map { (if (it.me) "user" else "assistant") to it.text } + extra).asReversed()) {
-            val t = "<|im_start|>${msg.first}\n${msg.second.take(1500)}<|im_end|>\n"
+            val t = turn(msg.first, msg.second.take(1500))
             if (used + t.length > budget && turns.isNotEmpty()) break
             used += t.length; turns.add(0, t)
         }
-        return "<|im_start|>system\n${sys()}<|im_end|>\n" + turns.joinToString("") + "<|im_start|>assistant\n"
+        return turn("system", sys()) + turns.joinToString("") + (if (m.tpl == "phi") "<|assistant|>\n" else "<|im_start|>assistant\n")
     }
 
     private fun gen(c: Context, m: Model, p: String): String {
         synchronized(lock) { thinking = true; closeLater = false }
-        try { return engine(c, m).generateResponse(p).replace("<|im_end|>", "").trim() }
+        try { return engine(c, m).generateResponse(p).replace("<|im_end|>", "").replace("<|end|>", "").trim() }
         finally { synchronized(lock) { thinking = false; if (closeLater) { closeLater = false; runCatching { llm?.close() }; llm = null; llmId = "" } } }
     }
 
     /* ---------- internet (sem chave): DuckDuckGo + Wikipédia ---------- */
+    /* ---------- gerar imagem (Pollinations, chave grátis em enter.pollinations.ai) ---------- */
+    var imgKey: String get() = Prefs.sp.getString("polkey", "") ?: ""; set(v) { Prefs.sp.edit().putString("polkey", v.trim()).apply() }
+    // limite que não sai: nada sexual envolvendo menores
+    private val MINOR = Regex("(?i)(crian[cç]a|menor de idade|menina|menino|garotinh|novinh|adolescente|teen|child|kid|minor|loli|shota|underage|\\b1[0-7] ?anos|\\b[1-9] ?anos|year[s]?[ -]old)")
+    private val SEXUAL = Regex("(?i)(nu[ad]?\\b|pelad|sexo|sexual|er[oó]tic|porn|nsfw|nude|naked|sex|explicit|hentai|lingerie|seios|bunda|transando)")
+    suspend fun makeImage(c: Context, prompt: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (MINOR.containsMatchIn(prompt) && SEXUAL.containsMatchIn(prompt)) error("isso eu não gero")
+            val key = imgKey.ifBlank { error("pra gerar imagem, cole sua chave grátis do Pollinations aqui em cima (enter.pollinations.ai)") }
+            val u = "https://gen.pollinations.ai/image/" + java.net.URLEncoder.encode(prompt.take(900), "UTF-8").replace("+", "%20") + "?width=1024&height=1024&seed=-1&nologo=true"
+            val con = URL(u).openConnection() as HttpURLConnection
+            con.setRequestProperty("Authorization", "Bearer $key"); con.connectTimeout = 20000; con.readTimeout = 120000
+            try {
+                if (con.responseCode !in 200..299) error("o gerador recusou (HTTP ${con.responseCode}): " + (runCatching { con.errorStream?.bufferedReader()?.readText()?.take(160) }.getOrNull() ?: ""))
+                val ct = con.contentType ?: ""
+                if (!ct.startsWith("image/")) error("o gerador não mandou imagem")
+                val bytes = con.inputStream.use { it.readBytes() }
+                val dir = File(c.filesDir, "ia/img").apply { mkdirs() }
+                val f = File(dir, "img_${System.currentTimeMillis()}.${if (ct.contains("png")) "png" else "jpg"}"); f.writeBytes(bytes)
+                f.path
+            } finally { con.disconnect() }
+        }
+    }
+    // salva a imagem na galeria (Imagens/Uncrowned)
+    fun saveToGallery(c: Context, path: String): Boolean = runCatching {
+        val f = File(path); val png = path.endsWith("png")
+        val v = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, f.name)
+            put(android.provider.MediaStore.Images.Media.MIME_TYPE, if (png) "image/png" else "image/jpeg")
+            if (android.os.Build.VERSION.SDK_INT >= 29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Uncrowned")
+        }
+        val uri = c.contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v) ?: return@runCatching false
+        c.contentResolver.openOutputStream(uri)?.use { o -> f.inputStream().use { it.copyTo(o) } }; true
+    }.getOrDefault(false)
+
+    /* ---------- baixar arquivo de um link direto (vai pra Downloads/Uncrowned) ---------- */
+    private val NO_DL = Regex("(?i)(youtube\\.com|youtu\\.be|googlevideo\\.com|soundcloud\\.com|sndcdn\\.com|spotify\\.com|deezer\\.com|music\\.apple\\.com|tidal\\.com)")
+    suspend fun downloadFile(c: Context, url0: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (NO_DL.containsMatchIn(url0)) error("de site de streaming eu não baixo (YouTube, SoundCloud, Spotify…)")
+            if (android.os.Build.VERSION.SDK_INT < 29) error("precisa de Android 10 ou mais novo")
+            var url = url0.trim(); var con: HttpURLConnection; var hops = 0
+            while (true) {
+                if (!url.startsWith("https://") && !url.startsWith("http://")) error("link inválido")
+                con = URL(url).openConnection() as HttpURLConnection
+                con.instanceFollowRedirects = false; con.connectTimeout = 15000; con.readTimeout = 30000
+                con.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) Chrome/124 Mobile")
+                val code = con.responseCode
+                if (code in 300..399) { url = URL(URL(url), con.getHeaderField("Location") ?: error("link quebrado")).toString(); con.disconnect(); if (NO_DL.containsMatchIn(url)) error("de site de streaming eu não baixo"); if (++hops > 8) error("redirecionou demais"); continue }
+                if (code !in 200..299) error("HTTP $code")
+                break
+            }
+            val ct = con.contentType ?: "application/octet-stream"
+            if (ct.startsWith("text/html")) { con.disconnect(); error("esse link é uma página, não um arquivo") }
+            val cd = con.getHeaderField("Content-Disposition") ?: ""
+            var name = Regex("filename\\*?=(?:UTF-8'')?\"?([^\";]+)").find(cd)?.groupValues?.get(1)?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                ?: java.net.URLDecoder.decode(URL(url).path.substringAfterLast('/'), "UTF-8")
+            name = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(120).ifBlank { "arquivo_${System.currentTimeMillis()}" }
+            val v = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name); put(android.provider.MediaStore.Downloads.MIME_TYPE, ct.substringBefore(';'))
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/Uncrowned")
+            }
+            val uri = c.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v) ?: error("não deu pra criar o arquivo")
+            try {
+                c.contentResolver.openOutputStream(uri)!!.use { o -> con.inputStream.use { inp ->
+                    val buf = ByteArray(128 * 1024); var n = 0L
+                    while (true) { val r = inp.read(buf); if (r < 0) break; n += r; if (n > 4L * 1024 * 1024 * 1024) error("arquivo grande demais"); o.write(buf, 0, r) }
+                } }
+            } catch (e: Throwable) { runCatching { c.contentResolver.delete(uri, null, null) }; throw e } finally { con.disconnect() }
+            name
+        }
+    }
+
     private fun httpGet(u: String): String {
         val con = URL(u).openConnection() as HttpURLConnection
         con.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36")
@@ -242,9 +320,23 @@ Não invente ações que o usuário não pediu."""
         return "Tocando ${songs[0].title} — ${songs[0].channel}"
     }
 
+    // gera e já mostra no chat
+    private suspend fun image(c: Context, prompt: String): String {
+        withContext(Dispatchers.Main) { msgs.add(Msg(false, "🎨 gerando: $prompt")) }
+        return makeImage(c, prompt).fold({ p -> withContext(Dispatchers.Main) { msgs.add(Msg(false, "", p)) }; "Pronto. Toca na imagem pra salvar na galeria." }, { "Não deu pra gerar: ${it.message}" })
+    }
+
     private suspend fun handle(c: Context, ui: PlayerUi, text: String): String {
         val t = norm(text).trimEnd('.', '!', '?')
         val m = if (Eco.extreme) null else active(c)
+        // gerar imagem / baixar link (funciona mesmo sem a IA baixada)
+        Regex("^(gera|gerar|cria|criar|faz|fazer|desenha|desenhar|me (da|manda|faz)) (uma |um )?(imagem|foto|desenho|arte|wallpaper|papel de parede|capa)( de| do| da| com)? (.+)$").find(t)?.let { mm ->
+            return image(c, mm.groupValues[6].trim())
+        }
+        Regex("^(baixa|baixar|download|salva|salvar)( esse| esse arquivo| o arquivo)?:? (https?://\\S+)").find(text.trim().lowercase())?.let { mm ->
+            val u = Regex("https?://\\S+").find(text)!!.value
+            return downloadFile(c, u).fold({ "Baixado em Downloads/Uncrowned: $it" }, { "Não deu pra baixar: ${it.message}" })
+        }
         // comandos rápidos: "toca X" sempre; os outros só em frase curta (senão vira conversa com a IA)
         if (m == null || t.split(" ").size <= 5 || Regex("^(toca|tocar|toque|bota|coloca|poe|quero ouvir|ouvir) ").containsMatchIn(t))
             withContext(Dispatchers.Main) { rules(ui, t) }?.let { return it }
@@ -264,6 +356,12 @@ Não invente ações que o usuário não pediu."""
             out = withContext(Dispatchers.Default) { gen(c, m, prompt(m, extra)) }
         }
         out = out.replace(Regex("(?im)^\\s*BUSCAR\\s*:.*$"), "").trim()
+        // imagem / download pedidos pela IA
+        Regex("(?im)^\\s*IMAGEM\\s*:\\s*(.+)$").find(out)?.let { mm -> val r = image(c, mm.groupValues[1].trim()); out = out.replace(mm.value, "").trim().ifBlank { r } }
+        Regex("(?im)^\\s*BAIXAR\\s*:\\s*(https?://\\S+)").find(out)?.let { mm ->
+            val r = downloadFile(c, mm.groupValues[1]).fold({ "Baixado em Downloads/Uncrowned: $it" }, { "Não deu pra baixar: ${it.message}" })
+            out = (out.replace(mm.value, "").trim() + "\n" + r).trim()
+        }
         // ação pedida pela IA
         val a = Regex("(?im)^\\s*A[ÇC][ÃA]O\\s*:\\s*(\\S+)\\s*(.*)$").find(out)
         var reply = out.replace(Regex("(?im)^\\s*A[ÇC][ÃA]O\\s*:.*$"), "").trim()
@@ -330,12 +428,20 @@ fun AssistScreen(ui: PlayerUi, onBack: () -> Unit) {
                         }
                         if (Assist.dl >= 0f && Assist.dlId == m.id) LinearProgressIndicator({ Assist.dl }, Modifier.fillMaxWidth().padding(top = 4.dp))
                     }
+                    // chave do gerador de imagens
+                    var key by remember { mutableStateOf(Assist.imgKey) }
+                    OutlinedTextField(key, { key = it; Assist.imgKey = it }, Modifier.fillMaxWidth().padding(top = 10.dp), singleLine = true,
+                        label = { Text("Chave do Pollinations (pra gerar imagens)") }, placeholder = { Text("grátis em enter.pollinations.ai") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), shape = RoundedCornerShape(12.dp))
                     if (Assist.msgs.isNotEmpty()) TextButton(onClick = { Assist.msgs.clear() }, Modifier.align(Alignment.End)) { Text("Nova conversa") }
                 }
             }
             items(Assist.msgs) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.me) Alignment.CenterEnd else Alignment.CenterStart) {
-                    Text(m.text, Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp))
+                    if (m.img != null) coil.compose.AsyncImage(java.io.File(m.img), null, Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(16.dp))
+                        .clickable { android.widget.Toast.makeText(ctx, if (Assist.saveToGallery(ctx, m.img)) "Salva em Imagens/Uncrowned" else "Não deu pra salvar", android.widget.Toast.LENGTH_SHORT).show() },
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    else Text(m.text, Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp))
                         .background(if (m.me) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                         color = if (m.me) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontSize = 15.sp)

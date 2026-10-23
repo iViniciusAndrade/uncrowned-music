@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
             override fun onLost(network: android.net.Network) { runOnUiThread { if (::ui.isInitialized) runCatching { ui.swapLocal() } } }
         }) }
         Prefs.init(this)
+        Secret.init()
         Sync.init(this)
         runCatching { Sync.schedule(this) }
         runCatching { Nag.schedule(this) }

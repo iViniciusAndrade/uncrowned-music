@@ -530,11 +530,12 @@ fun PlaylistsTab(ui: PlayerUi, onOpen: (String) -> Unit) {
             item { PRow("Ouvidas recentemente", "Histórico", Icons.Rounded.History, null, ONLINE_HIST) }
             Sync.version
             val pend = Sync.pending().size; val kept = Sync.kept().size
-            if (kept > 0) item { ListItem(headlineContent = { Text("Guardadas no app", fontSize = 17.sp) }, supportingContent = { Text("$kept • tocam sem internet") },
+            Secret.init()
+            if (kept > 0 && Secret.on) item { ListItem(headlineContent = { Text("Guardadas no app", fontSize = 17.sp) }, supportingContent = { Text("$kept • tocam sem internet") },
                 leadingContent = { Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary), Alignment.Center) { Icon(Icons.Rounded.OfflinePin, null, tint = MaterialTheme.colorScheme.onPrimary) } },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 modifier = Modifier.clickable { Nav.page = "kept" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
-            if (pend > 0) item { ListItem(headlineContent = { Text("Pra sincronizar", fontSize = 17.sp) }, supportingContent = { Text("$pend pendentes • baixam sozinhas no Wi-Fi") },
+            if (pend > 0 && Secret.on) item { ListItem(headlineContent = { Text("Pra sincronizar", fontSize = 17.sp) }, supportingContent = { Text("$pend pendentes • baixam sozinhas no Wi-Fi") },
                 leadingContent = { Box(Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary), Alignment.Center) { Icon(Icons.Rounded.CloudSync, null, tint = MaterialTheme.colorScheme.onPrimary) } },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 modifier = Modifier.clickable { Nav.page = "pend" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
@@ -695,7 +696,8 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                     ToolBtn(Icons.Rounded.QueueMusic, "Fila", false) { showQueue = true }
                     if (!onRadio) { Prefs.version.intValue; ToolBtn(Icons.Rounded.Album, Retro.NAMES[Retro.mode] ?: "Normal", Retro.mode.isNotEmpty()) { Retro.next(); Prefs.version.intValue++ } }
                     val mid = ui.mediaId
-                    if (mid != null && mid.startsWith("sc:")) {
+                    Secret.init()
+                    if (mid != null && mid.startsWith("sc:") && Secret.on) {
                         Sync.version
                         var showSync by remember { mutableStateOf(false) }
                         val sv = YtVideo(mid.removePrefix("sc:"), ui.title, ui.artist, ui.art?.toString() ?: "", "sc")
@@ -704,7 +706,7 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                         if (showSync) SyncSheet(sv) { showSync = false }
                     }
                     // faixa de fonte aberta (Audius/Archive): guardar dentro do app pra tocar sem internet
-                    if (mid != null && mid.startsWith("au:") && !onRadio) {
+                    if (mid != null && mid.startsWith("au:") && !onRadio && Secret.on) {
                         Sync.version
                         val item = ui.controller?.currentMediaItem
                         val uri = item?.requestMetadata?.mediaUri?.toString() ?: item?.localConfiguration?.uri?.toString() ?: ""
@@ -1023,9 +1025,12 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
 
             Div()
             SwitchRow("Mostrar vídeo", "Músicas do YouTube tocam com o vídeo no player (gasta mais internet e bateria)", YtStore.showVideo) { YtStore.showVideo = it }
-            Div()
-            var aw by remember { mutableStateOf(Sync.autoWifi) }
-            SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
+            Secret.init()
+            if (Secret.on) {
+                Div()
+                var aw by remember { mutableStateOf(Sync.autoWifi) }
+                SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
+            }
         }
 
         AboutCard()

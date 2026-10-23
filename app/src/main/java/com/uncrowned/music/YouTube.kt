@@ -618,7 +618,8 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                     if (cutOpen) CutSheet(v) { cutOpen = false }
                     Sync.version
                     val sDone = Sync.syncedUri(v) != null
-                    ToolBtn(if (sDone) Icons.Rounded.DownloadDone else Icons.Rounded.Download, if (sDone) "Offline ✓" else "Salvar", sDone) { syncOpen = true }
+                    Secret.init()
+                    if (Secret.on) ToolBtn(if (sDone) Icons.Rounded.DownloadDone else Icons.Rounded.Download, if (sDone) "Offline ✓" else "Salvar", sDone) { syncOpen = true }
                 }
                 if (syncOpen) SyncSheet(v) { syncOpen = false }
                 if (speedOpen) ModalBottomSheet(onDismissRequest = { speedOpen = false }) {
