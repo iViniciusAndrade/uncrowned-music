@@ -208,7 +208,16 @@ object YtPlayer {
         h.postDelayed(dogRef(), 9000)
     }
     private fun dogRef(): Runnable = dog
-    private fun startDog() { progressed = false; userPaused = false; tries = 0; h.removeCallbacks(dog); h.postDelayed(dog, 8000) }
+    // começa sozinho: até a música andar, dá "play" de novo a cada 1,2s (sem precisar abrir o player)
+    private var kicks = 0
+    private val kick = object : Runnable { override fun run() {
+        if (progressed || userPaused || current == null || kicks++ > 12) return
+        web?.let { w -> w.onResume(); w.resumeTimers() }
+        js("try{player.unMute&&player.unMute();player.setVolume&&player.setVolume(100)}catch(e){};player.playVideo()")
+        web?.evaluateJavascript("(function(){var f=document.querySelector('iframe');var d=f&&f.contentDocument;var v=(d||document).querySelector('video,audio');if(v&&v.paused){v.muted=false;v.play()}})()", null)
+        h.postDelayed(this, 1200)
+    } }
+    private fun startDog() { progressed = false; userPaused = false; tries = 0; kicks = 0; h.removeCallbacks(dog); h.removeCallbacks(kick); h.postDelayed(dog, 8000); h.postDelayed(kick, 900) }
     fun load(w: WebView, v: YtVideo?) {
         loadedSrc = v?.src ?: "yt"; time = 0f; duration = 0f
         when (v?.src) {
@@ -281,6 +290,7 @@ object YtPlayer {
             if (v.src == "yt" && loadedSrc == "yt") { loadedSrc = "ytw"; time = 0f; duration = 0f; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") }
             else if (index < queue.size - 1) next()
         }.let {}
+        @JavascriptInterface fun ready2() = Unit
         @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
     }
 
@@ -457,10 +467,13 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
             // O player oficial precisa ficar visível na tela (regra do YouTube)
             val showVid = expanded && YtStore.showVideo && !Eco.on
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                YtWebPlayer(
-                    if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp)
-                    else Modifier.width(if (expanded) 1.dp else 78.dp).aspectRatio(16f / 9f)
-                )
+                Box(if (showVid) Modifier.fillMaxWidth() else Modifier.width(if (expanded) 1.dp else 78.dp)) {
+                    YtWebPlayer(
+                        if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp)
+                        else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                    )
+                    if (!expanded) Art(v.thumb, Modifier.matchParentSize(), MaterialTheme.shapes.small)
+                }
                 if (!expanded) {
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp).clickable { onExpand(true) }) {
                         Text(v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
