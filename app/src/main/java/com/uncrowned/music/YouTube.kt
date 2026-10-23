@@ -214,6 +214,8 @@ object YtPlayer {
     private var progressed = false; private var userPaused = false; private var tries = 0
     private val dog = Runnable {
         val v = current ?: return@Runnable
+        // faixa protegida do SoundCloud que não começa nunca: depois de ~18s pula pra próxima da fila
+        if (v.src == "sc" && !progressed && !userPaused && ScPlay.active) { h.postDelayed({ if (!progressed && !userPaused && current?.id == v.id && ScPlay.active) ScPlay.next() }, 10000); return@Runnable }
         if (v.src != "yt" || progressed || userPaused) return@Runnable
         if (tries >= 3) return@Runnable
         tries++
@@ -375,6 +377,8 @@ object YtPlayer {
             val v = current ?: return@post
             val w = web ?: return@post
             if (v.src == "yt" && loadedSrc == "yt") { loadedSrc = "ytw"; time = 0f; duration = 0f; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") }
+            // fila do SoundCloud/YouTube: essa não toca de jeito nenhum, segue pra próxima
+            else if (ScPlay.active && (v.src == "sc" || v.src == "yt")) ScPlay.next()
             else if (index < queue.size - 1) next()
         }.let {}
         @JavascriptInterface fun ready2() = Unit
