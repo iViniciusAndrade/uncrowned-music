@@ -35,6 +35,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Crash.install(this)
+        // internet caiu: o que tiver cópia no celular continua tocando dela
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onLost(network: android.net.Network) { runOnUiThread { if (::ui.isInitialized) runCatching { ui.swapLocal() } } }
+        }) }
         Prefs.init(this)
         Sync.init(this)
         runCatching { Sync.schedule(this) }
@@ -104,6 +108,8 @@ class PlayerUi(private val ctx: Context) {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             val c = controller ?: return
             val cur = c.currentMediaItem ?: return
+            // sem internet (ou falhou) e tem cópia no celular: continua dela
+            if (swapLocal()) return
             if (!cur.mediaId.startsWith("sc:") || retried == cur.mediaId) return
             retried = cur.mediaId
             val idx = c.currentMediaItemIndex; val pos = c.currentPosition
@@ -115,6 +121,22 @@ class PlayerUi(private val ctx: Context) {
         }
     }
     private var retried: String? = null
+    /* troca as músicas da fila que têm cópia no celular pra tocar dela (quando a internet cai) */
+    fun swapLocal(): Boolean {
+        val c = controller ?: return false
+        var swappedCur = false
+        val idx = c.currentMediaItemIndex; val pos = c.currentPosition; val was = c.playWhenReady
+        for (i in 0 until c.mediaItemCount) {
+            val it = c.getMediaItemAt(i)
+            val u = (it.requestMetadata.mediaUri ?: it.localConfiguration?.uri)?.toString() ?: continue
+            if (!u.startsWith("http")) continue
+            val loc = Sync.localFor(it.mediaId) ?: continue
+            c.replaceMediaItem(i, it.buildUpon().setUri(loc).setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(loc)).build()).build())
+            if (i == idx) swappedCur = true
+        }
+        if (swappedCur) { c.seekTo(idx, pos); c.prepare(); if (was) c.play() }
+        return swappedCur
+    }
     // músicas do SoundCloud (vêm prontas do ScPlay)
     fun setItems(items: List<MediaItem>) { val c = controller ?: return; YtPlayer.close(); retried = null; c.setMediaItems(items, 0, 0); c.prepare(); c.play() }
 

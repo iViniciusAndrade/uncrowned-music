@@ -90,6 +90,16 @@ object Sync {
     fun kept(): List<Track> = runCatching { JSONArray(Prefs.sp.getString("offapp", "[]")).let { a -> List(a.length()) { Track.from(a.getJSONObject(it)) } } }.getOrDefault(emptyList())
         .filter { File(android.net.Uri.parse(it.url).path ?: "").exists() }
     fun isKept(id: String) = kept().any { it.id == id }
+    fun keptUrl(id: String): String? = kept().firstOrNull { it.id == id }?.url
+    /* cópia no celular de uma música do player (Audius guardada no app ou SoundCloud/YouTube salva), se tiver */
+    fun localFor(mediaId: String?): String? = runCatching {
+        val m = mediaId ?: return@runCatching null
+        when {
+            m.startsWith("au:") -> keptUrl(m.removePrefix("au:"))
+            m.startsWith("sc:") -> syncedUri(YtVideo(m.removePrefix("sc:"), "", "", "", "sc"))
+            else -> null
+        }
+    }.getOrNull()
     private fun saveKept(l: List<Track>) { Prefs.sp.edit().putString("offapp", JSONArray(l.map { it.json() }).toString()).apply(); version++ }
     fun unkeep(t: Track) { runCatching { File(android.net.Uri.parse(t.url).path!!).delete() }; saveKept(kept().filter { it.id != t.id }) }
 

@@ -39,6 +39,8 @@ object ScPlay {
 
     private fun resolve(v: YtVideo, sc: YtVideo?): R {
         sc ?: return R.None("não achei no SoundCloud")
+        // já salva no celular: toca de lá (funciona sem internet)
+        (Sync.syncedUri(sc) ?: if (v !== sc) Sync.syncedUri(v) else null)?.let { u -> return R.Native(local(u, sc, v)) }
         val st = SoundCloudApi.stream(sc.id) ?: return R.None("no SoundCloud só tem a prévia de 30s")
         val art = sc.thumb.ifBlank { st.art }.ifBlank { v.thumb }
         if (st.web) return R.Web(sc.copy(thumb = art))
@@ -50,9 +52,15 @@ object ScPlay {
             .build()
         return R.Native(item)
     }
+    private fun local(u: String, sc: YtVideo, v: YtVideo): MediaItem = MediaItem.Builder().setMediaId("sc:" + sc.id).setUri(u)
+        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(u)).build())
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(sc.title.ifBlank { v.title }).setArtist(sc.channel.ifBlank { v.channel }).setGenre("Offline")
+            .setArtworkUri(sc.thumb.ifBlank { v.thumb }.takeIf { it.isNotBlank() }?.let(Uri::parse)).build()).build()
     /* tenta as melhores versões encontradas, uma por uma, até achar uma que toque inteira */
     private suspend fun resolve(v: YtVideo): R = runCatching {
         if (v.src == "sc") return@runCatching resolve(v, v)
+        // salva no celular (pelo Salvar do player do YouTube) ou sem internet: usa a cópia do celular
+        Sync.syncedUri(v)?.let { u -> return@runCatching R.Native(local(u, v, v)) }
         // "Mostrar vídeo" ligado: toca o vídeo do YouTube mesmo
         if (v.src == "yt" && YtStore.showVideo && !Eco.on) return@runCatching R.Web(v)
         val cands = ScMatch.candidates(v)

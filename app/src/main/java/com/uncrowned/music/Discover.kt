@@ -59,11 +59,13 @@ data class Track(
 ) {
     val mediaId get() = "au:$id"
     val stream get() = url.ifBlank { "${Audius.BASE}/tracks/$id/stream?app_name=${Audius.APP}" }
-    fun toItem(): MediaItem = MediaItem.Builder().setMediaId(mediaId).setUri(stream)
-        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(stream)).build())
+    // guardada no app: toca do celular (sem internet e sem gastar dados)
+    fun toItem(): MediaItem { val src = (if (url.isBlank()) Sync.keptUrl(id) else null) ?: stream
+        return MediaItem.Builder().setMediaId(mediaId).setUri(src)
+        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(src)).build())
         .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).setGenre(genre)
             .setArtworkUri(art.takeIf { it.isNotBlank() }?.let(Uri::parse)).build())
-        .build()
+        .build() }
     fun json() = JSONObject().put("id", id).put("t", title).put("a", artist).put("g", genre).put("d", duration).put("art", art).put("dl", downloadable).put("u", url)
     companion object {
         fun from(o: JSONObject) = Track(o.getString("id"), o.getString("t"), o.getString("a"), o.optString("g"), o.optLong("d"), o.optString("art"), o.optBoolean("dl"), o.optString("u"))
