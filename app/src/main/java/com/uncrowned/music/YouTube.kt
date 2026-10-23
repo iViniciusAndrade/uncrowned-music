@@ -190,13 +190,21 @@ object YtPlayer {
         stopOther?.invoke()
         queue = list; index = i
         // música do YouTube: acha a mesma no SoundCloud e toca de lá
-        if (target.src == "yt" && YtStore.scFirst) {
+        if (target.src == "yt") {
             val w0 = web
             scScope.launch {
                 val sc = ScMatch.find(target)
                 withContext(kotlinx.coroutines.Dispatchers.Main) {
                     if (index != i || queue.getOrNull(i)?.id != target.id) return@withContext
-                    if (sc != null) queue = queue.toMutableList().also { it[i] = sc }
+                    if (sc == null) {
+                        // no celular é tudo pelo SoundCloud: se não tem lá, pula pra próxima
+                        runCatching { android.widget.Toast.makeText(Sync.app, "\"${target.title}\" não está no SoundCloud, indo pra próxima", android.widget.Toast.LENGTH_SHORT).show() }
+                        if (i < queue.size - 1) play(queue, i + 1) else playing = false
+                        return@withContext
+                    }
+                    queue = queue.toMutableList().also { it[i] = sc }
+                    // já procura a próxima pra emendar sem espera
+                    queue.getOrNull(i + 1)?.takeIf { it.src == "yt" }?.let { nx -> scScope.launch { ScMatch.find(nx) } }
                     val v2 = current ?: return@withContext
                     YtStore.addHistory(v2)
                     val w = web ?: w0

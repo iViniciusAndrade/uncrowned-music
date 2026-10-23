@@ -16,14 +16,13 @@ object OnlineSearch {
 
     suspend fun search(q: String): Result = coroutineScope {
         val sc = async { OtherApi.soundcloud(q).getOrDefault(emptyList()) }
-        val yt = async { YtApi.search(q, YtStore.apiKey).getOrDefault(emptyList()) }
         val vm = async { if (YtStore.vimeoToken.isBlank()) emptyList() else OtherApi.vimeo(q, YtStore.vimeoToken).getOrDefault(emptyList()) }
         val au = async { Audius.search(q).getOrDefault(emptyList()) }
         val ia = async { Archive.search(q).getOrDefault(emptyList()) }
         // músicas vêm do SoundCloud; YouTube só entra se o SoundCloud não achar quase nada
         val scL = sc.await()
         Result(
-            (scL.take(40) + (if (!YtStore.scFirst || scL.size < 5) yt.await().take(20) else emptyList()) + vm.await().take(10)).distinctBy { it.src + it.id },
+            (scL.take(50) + vm.await().take(10)).distinctBy { it.src + it.id },
             (au.await().filter { it.downloadable } + ia.await()).take(15)
         )
     }
