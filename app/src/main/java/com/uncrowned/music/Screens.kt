@@ -113,6 +113,14 @@ fun App(ui: PlayerUi, perms: List<String>) {
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
+                    // sem permissão de notificação o Android não mostra a música tocando (barra, tela de bloqueio, central de controle)
+                    var notifOk by remember { mutableStateOf(androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) }
+                    LaunchedEffect(notifOk) { while (!notifOk) { delay(1500); notifOk = androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled() } }
+                    if (!notifOk) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .18f)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.NotificationsOff, null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Notificações desligadas: a música não aparece na barra nem na tela de bloqueio.", Modifier.weight(1f).padding(horizontal = 10.dp), fontSize = 12.sp, lineHeight = 15.sp)
+                        TextButton(onClick = { runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) } }) { Text("Ativar") }
+                    }
                     ScPlay.loading?.let { t -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Text("  Carregando \"$t\"…", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
                     if (ui.mediaId != null) MiniPlayer(ui) { expanded = true }
