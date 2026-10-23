@@ -31,9 +31,15 @@ import kotlinx.coroutines.launch
 /* O player da web (YouTube / SoundCloud oficial) sempre "acha" que está na tela,
    mesmo com a tela apagada ou o app no fundo — igual o Brave faz pra tocar em segundo plano. */
 class BgWebView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : WebView(ctx, attrs) {
-    override fun onWindowVisibilityChanged(visibility: Int) {
-        if (visibility != View.GONE) super.onWindowVisibilityChanged(View.VISIBLE) else super.onWindowVisibilityChanged(visibility)
+    init {
+        // o processo que roda a página não perde prioridade quando some da tela (senão o Android congela ele)
+        runCatching { setRendererPriorityPolicy(RENDERER_PRIORITY_IMPORTANT, false) }
     }
+    // tela apagou / app foi pro fundo: o Android manda "sumiu" (GONE/INVISIBLE). A página nunca fica sabendo.
+    override fun onWindowVisibilityChanged(visibility: Int) { super.onWindowVisibilityChanged(View.VISIBLE) }
+    override fun onVisibilityChanged(changedView: View, visibility: Int) { super.onVisibilityChanged(changedView, View.VISIBLE) }
+    override fun dispatchWindowVisibilityChanged(visibility: Int) { super.dispatchWindowVisibilityChanged(View.VISIBLE) }
+    override fun onPause() { if (!YtPlayer.playing) super.onPause() }
 }
 
 /* Serviço de "tocando agora" pro player da web: notificação com controles, tela de bloqueio,
@@ -41,6 +47,16 @@ class BgWebView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
 class WebPlayService : Service() {
     private var session: MediaSession? = null
     private var wake: PowerManager.WakeLock? = null
+    private var wifi: android.net.wifi.WifiManager.WifiLock? = null
+    // fone desconectado: pausa de verdade (e não deixa o "anti-pausa" voltar a tocar)
+    private val noisy = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: Intent?) { h.post { if (YtPlayer.playing) YtPlayer.toggle() } }
+    }
+    // a cada 4s com a música tocando: mantém a página acordada
+    private val keep = object : Runnable { override fun run() {
+        if (YtPlayer.current != null) { YtPlayer.web?.let { it.onResume(); it.resumeTimers() }; YtPlayer.guard() }
+        h.postDelayed(this, 4000)
+    } }
     private val h = Handler(Looper.getMainLooper())
     private var art: Bitmap? = null; private var artFor = ""
 
@@ -59,6 +75,9 @@ class WebPlayService : Service() {
             isActive = true
         }
         wake = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "uncrowned:web").apply { setReferenceCounted(false) }
+        wifi = runCatching { (applicationContext.getSystemService(WIFI_SERVICE) as android.net.wifi.WifiManager).createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "uncrowned:web").apply { setReferenceCounted(false) } }.getOrNull()
+        runCatching { registerReceiver(noisy, android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)) }
+        h.postDelayed(keep, 4000)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -96,7 +115,8 @@ class WebPlayService : Service() {
         runCatching {
             if (Build.VERSION.SDK_INT >= 29) startForeground(77, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) else startForeground(77, n)
         }
-        if (playing) wake?.acquire(4 * 60 * 60 * 1000L) else { runCatching { wake?.release() }; stopForeground(STOP_FOREGROUND_DETACH) }
+        if (playing) { wake?.acquire(4 * 60 * 60 * 1000L); runCatching { wifi?.acquire() } }
+        else { runCatching { wake?.release() }; runCatching { wifi?.release() }; if (YtPlayer.userPausedNow) stopForeground(STOP_FOREGROUND_DETACH) }
         // capa da música na notificação e na tela de bloqueio
         if (artFor != v.thumb && v.thumb.isNotBlank()) {
             artFor = v.thumb
@@ -107,7 +127,7 @@ class WebPlayService : Service() {
         }
     }
 
-    override fun onDestroy() { runCatching { wake?.release() }; session?.release(); session = null; super.onDestroy() }
+    override fun onDestroy() { h.removeCallbacks(keep); runCatching { unregisterReceiver(noisy) }; runCatching { wake?.release() }; runCatching { wifi?.release() }; session?.release(); session = null; super.onDestroy() }
 
     companion object {
         private var lastKey = ""

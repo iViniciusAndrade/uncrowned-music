@@ -260,7 +260,17 @@ object YtPlayer {
         if (w != null && loadedSrc != v.src) load(w, v) else js("player.loadVideoById('${v.id}')")
         startDog()
     }
-    fun toggle() { if (playing) userPaused = true; js(if (playing) "player.pauseVideo()" else "player.playVideo()") }
+    fun toggle() { userPaused = playing; js(if (playing) "player.pauseVideo()" else "player.playVideo()") }
+    val userPausedNow get() = userPaused
+    /* anti-pausa: se a música parou sem você mandar (tela apagou, Android/YouTube pausou), solta de novo.
+       Não mexe se foi você, se tem ligação, ou se o fone foi desconectado. */
+    private fun inCall() = runCatching { (Sync.app.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager).mode.let { it == android.media.AudioManager.MODE_IN_CALL || it == android.media.AudioManager.MODE_IN_COMMUNICATION || it == android.media.AudioManager.MODE_RINGTONE } }.getOrDefault(false)
+    private var wasPlaying = false
+    fun guard() {
+        if (current == null || userPaused || inCall() || !wasPlaying) return
+        if (!playing) { web?.let { it.onResume(); it.resumeTimers() }; js("player.playVideo()")
+            web?.evaluateJavascript("(function(){var f=document.querySelector('iframe');var d=null;try{d=f&&f.contentDocument}catch(e){};var v=(d||document).querySelector('video,audio');if(v&&v.paused&&!v.ended)v.play()})()", null) }
+    }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
     private val scScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
@@ -303,6 +313,10 @@ object YtPlayer {
     class Bridge {
         @JavascriptInterface fun state(s: Int) = h.post {
             playing = s == 1
+            if (s == 1) wasPlaying = true
+            if (s == 0) wasPlaying = false
+            // pausou sozinha (não foi você): volta a tocar
+            if (s == 2 && !userPaused && wasPlaying) h.postDelayed({ guard() }, 400)
             GlobalFx.sync(playing)
             runCatching { WebPlayService.update(Sync.app) }
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
