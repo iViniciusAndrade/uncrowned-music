@@ -85,23 +85,6 @@ fun App(ui: PlayerUi, perms: List<String>) {
     LaunchedEffect(granted, Prefs.hideVoice, Prefs.minDurationSec) { if (granted) Library.load(ctx) }
 
     val scope = rememberCoroutineScope()
-    // pede uma vez pro Android não "economizar bateria" no app (senão a Xiaomi corta a música com a tela apagada)
-    var askBattery by remember { mutableStateOf(false) }
-    LaunchedEffect(YtPlayer.playing) {
-        if (YtPlayer.playing && !Prefs.sp.getBoolean("askedbat", false)) {
-            val pm = ctx.getSystemService(android.os.PowerManager::class.java)
-            if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) askBattery = true else Prefs.sp.edit().putBoolean("askedbat", true).apply()
-        }
-    }
-    if (askBattery) AlertDialog(onDismissRequest = { askBattery = false; Prefs.sp.edit().putBoolean("askedbat", true).apply() },
-        title = { Text("Tocar com a tela apagada") },
-        text = { Text("Pra música do YouTube não parar quando a tela apaga, libere o Uncrowned da economia de bateria. É só tocar em Permitir na próxima tela.") },
-        confirmButton = { TextButton(onClick = {
-            askBattery = false; Prefs.sp.edit().putBoolean("askedbat", true).apply()
-            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:" + ctx.packageName))) }
-                .onFailure { runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
-        }) { Text("Liberar") } },
-        dismissButton = { TextButton(onClick = { askBattery = false; Prefs.sp.edit().putBoolean("askedbat", true).apply() }) { Text("Agora não") } })
     LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) }; YtPlayer.stopOther = { ui.stopLocal() }
         ScPlay.exoSet = { ui.setItems(it) }; ScPlay.exoAdd = { ui.controller?.addMediaItem(it) }; ScPlay.webPlay = { YtPlayer.playWeb(it) } }
     var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 3)) }
