@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
         coil.Coil.setImageLoader(coil.ImageLoader.Builder(this)
             .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.12).build() }
             .diskCache { coil.disk.DiskCache.Builder().directory(cacheDir.resolve("imagens")).maxSizeBytes(200L * 1024 * 1024).build() }
-            .respectCacheHeaders(false).allowRgb565(true).crossfade(false).build())
+            .respectCacheHeaders(false).allowRgb565(true).crossfade(true).build())
         handleIntent(intent)
         setContent { UncrownedTheme { App(ui, perms) } }
     }
