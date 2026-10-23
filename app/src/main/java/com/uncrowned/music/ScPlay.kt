@@ -35,11 +35,11 @@ object ScPlay {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null; private var pre: Job? = null
 
-    private sealed class R { class Native(val item: MediaItem) : R(); class Web(val v: YtVideo) : R(); object None : R() }
+    private sealed class R { class Native(val item: MediaItem) : R(); class Web(val v: YtVideo) : R(); class None(val why: String) : R() }
 
     private fun resolve(v: YtVideo, sc: YtVideo?): R {
-        sc ?: return R.None
-        val st = SoundCloudApi.stream(sc.id) ?: return R.None
+        sc ?: return R.None("não achei no SoundCloud")
+        val st = SoundCloudApi.stream(sc.id) ?: return R.None("no SoundCloud só tem a prévia de 30s")
         val art = sc.thumb.ifBlank { st.art }.ifBlank { v.thumb }
         if (st.web) return R.Web(sc.copy(thumb = art))
         val item = MediaItem.Builder().setMediaId("sc:" + sc.id).setUri(st.url)
@@ -50,7 +50,19 @@ object ScPlay {
             .build()
         return R.Native(item)
     }
-    private suspend fun resolve(v: YtVideo): R = runCatching { resolve(v, if (v.src == "sc") v else ScMatch.find(v)) }.getOrDefault(R.None)
+    /* tenta as melhores versões encontradas, uma por uma, até achar uma que toque inteira */
+    private suspend fun resolve(v: YtVideo): R = runCatching {
+        if (v.src == "sc") return@runCatching resolve(v, v)
+        val cands = ScMatch.candidates(v)
+        if (cands.isEmpty()) return@runCatching R.None("não achei no SoundCloud")
+        var last: R = R.None("no SoundCloud só tem a prévia de 30s (precisa do SoundCloud Go+)")
+        for ((h, _) in cands.filter { it.first.policy != "SNIP" }.take(4)) {
+            val r = resolve(v, YtVideo(h.path, h.title, h.artist, h.art, "sc"))
+            if (r !is R.None) return@runCatching r
+            last = r
+        }
+        last
+    }.getOrDefault(R.None("sem conexão com o SoundCloud"))
 
     private fun toast(t: String) { runCatching { Toast.makeText(Sync.app, t, Toast.LENGTH_SHORT).show() } }
 
@@ -70,7 +82,7 @@ object ScPlay {
                 when (r) {
                     is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, k + 1); return@launch }
                     is R.Web -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; exoLast = k; webPlay?.invoke(r.v) }; return@launch }
-                    R.None -> { if (!warned) { warned = true; val t = list[k].title; withContext(Dispatchers.Main) { toast("\"$t\" não está inteira no SoundCloud, indo pra próxima") } }
+                    is R.None -> { if (!warned) { warned = true; val t = list[k].title; val why = r.why; withContext(Dispatchers.Main) { toast("\"$t\": $why. Indo pra próxima") } }
                         k++; if (k < list.size) withContext(Dispatchers.Main) { loading = list[k].title } }
                 }
             }
@@ -88,7 +100,7 @@ object ScPlay {
                 when (r) {
                     is R.Native -> { val kk = k; withContext(Dispatchers.Main) { if (g == gen) { idxOf[r.item.mediaId] = kk; exoLast = kk; exoAdd?.invoke(r.item) } }; added++ }
                     is R.Web -> return@launch
-                    R.None -> {}
+                    is R.None -> {}
                 }
                 k++
             }

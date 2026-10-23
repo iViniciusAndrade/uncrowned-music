@@ -581,7 +581,7 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
 
 /* acha no SoundCloud a mesma música de um vídeo do YouTube */
 object ScMatch {
-    private val cache = HashMap<String, Pair<Long, YtVideo?>>()
+    private val cache = HashMap<String, Pair<Long, List<Pair<SoundCloudApi.Hit, Int>>>>()
     private fun n(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
         .replace(Regex("\\(.*?\\)|\\[.*?]"), " ").replace(Regex("\\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|ft\\.?.*|feat\\.?.*)\\b"), " ")
         .replace(Regex("[^a-z0-9]+"), " ").trim()
@@ -589,15 +589,17 @@ object ScMatch {
     private val JUNK = Regex("(?i)saved on|spotify|free download|\\bleak|snippet|preview|type beat|re-?upload|sped up|slowed|nightcore|remix|\\bcover\\b|\\b8d\\b|reverb|instrumental|karaok|acapella|\\blive\\b|ao vivo|mashup|\\bedit\\b|bootleg|tiktok")
     /* acha a mesma música no SoundCloud: título igual, artista certo (de preferência o perfil oficial),
        sem versão alterada (slowed, remix, cover...) e que dê pra ouvir inteira */
-    suspend fun find(v: YtVideo): YtVideo? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        cache[v.id]?.let { if (it.second != null || System.currentTimeMillis() - it.first < 600_000) return@withContext it.second }
+    suspend fun find(v: YtVideo): YtVideo? = candidates(v).firstOrNull { it.first.policy != "SNIP" }?.first?.let { YtVideo(it.path, it.title, it.artist, it.art, "sc") }
+    /* candidatas em ordem (a melhor primeiro); as que só têm prévia de 30s vêm marcadas (policy SNIP) */
+    suspend fun candidates(v: YtVideo): List<Pair<SoundCloudApi.Hit, Int>> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        cache[v.id]?.let { if (it.second.isNotEmpty() || System.currentTimeMillis() - it.first < 600_000) return@withContext it.second }
         var title = v.title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
         var artist = v.channel.replace(Regex("(?i) - Topic$"), "").replace(Regex("(?i)VEVO$"), "").trim()
         if (" - " in title) { artist = title.substringBefore(" - ").trim(); title = title.substringAfter(" - ").trim() }
         val nt = n(title); val ct0 = c(title); val ca0 = c(artist)
         val origJunk = JUNK.findAll(v.title).map { it.value.lowercase() }.toSet()
         fun score(h: SoundCloudApi.Hit): Int {
-            if (h.policy == "SNIP" || h.policy == "BLOCK") return -99
+            if (h.policy == "BLOCK") return -99
             val ht = n(h.title.replace(Regex("^.*? - "), { m -> if (c(m.value).contains(ca0) || ca0.contains(c(m.value).ifBlank { "#" })) "" else m.value }))
             val htc = ht.replace(" ", "")
             var s = when { htc == ct0 -> 6; htc.startsWith(ct0) || htc.endsWith(ct0) -> 4; htc.contains(ct0) -> 2; else -> return -99 }
@@ -612,12 +614,14 @@ object ScMatch {
             if (h.plays > 50_000) s += 1
             return s
         }
-        val q = "$artist $title".trim()
-        var hits = SoundCloudApi.searchRich(q)
-        if (hits.isEmpty()) hits = SoundCloudApi.searchRich(title)
-        val best = hits.map { it to score(it) }.filter { it.second >= 7 }.maxByOrNull { it.second }?.first
-        val r = best?.let { YtVideo(it.path, it.title, it.artist, it.art, "sc") }
-        if (hits.isNotEmpty() || r != null) cache[v.id] = System.currentTimeMillis() to r
+        // procura de mais de um jeito (artista + música, música + artista, só a música)
+        val hits = LinkedHashMap<String, SoundCloudApi.Hit>()
+        for (q in listOf("$artist $title".trim(), "$title $artist".trim(), title).distinct()) {
+            SoundCloudApi.searchRich(q).forEach { hits.putIfAbsent(it.path, it) }
+            if (hits.values.any { score(it) >= 9 && it.policy != "SNIP" }) break
+        }
+        val r = hits.values.map { it to score(it) }.filter { it.second >= 5 }.sortedByDescending { it.second }.take(6)
+        if (hits.isNotEmpty()) cache[v.id] = System.currentTimeMillis() to r
         r
     }
 }
