@@ -1033,6 +1033,10 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             }
         }
 
+        if (Secret.on) Group("Secreto", footer = "Navegador leve que usa o DNS one.one.one.one (1.1.1.1) e não guarda histórico, cache nem cookies: tudo some quando você fecha.") {
+            NavRow("Navegador privado", Icons.Rounded.TravelExplore) { BrowserActivity.open(ctxS) }
+        }
+
         AboutCard()
         Text("Uncrowned Music 1.4", Modifier.fillMaxWidth().padding(24.dp), textAlign = TextAlign.Center, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
