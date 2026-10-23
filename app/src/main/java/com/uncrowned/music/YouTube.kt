@@ -211,11 +211,22 @@ object YtPlayer {
     // começa sozinho: até a música andar, dá "play" de novo a cada 1,2s (sem precisar abrir o player)
     private var kicks = 0
     private val kick = object : Runnable { override fun run() {
-        if (progressed || userPaused || current == null || kicks++ > 12) return
-        web?.let { w -> w.onResume(); w.resumeTimers() }
-        js("try{player.unMute&&player.unMute();player.setVolume&&player.setVolume(100)}catch(e){};player.playVideo()")
-        web?.evaluateJavascript("(function(){var f=document.querySelector('iframe');var d=f&&f.contentDocument;var v=(d||document).querySelector('video,audio');if(v&&v.paused){v.muted=false;v.play()}})()", null)
-        h.postDelayed(this, 1200)
+        if (progressed || userPaused || current == null || kicks++ > 14) return
+        val w = web ?: return
+        w.onResume(); w.resumeTimers()
+        when {
+            // o player diz que está tocando mas o tempo não anda: pausa e solta de novo (é o que destrava)
+            playing && kicks % 2 == 0 -> { js("player.pauseVideo()"); h.postDelayed({ js("try{player.unMute();player.setVolume(100)}catch(e){};player.playVideo()") }, 350) }
+            // parado: toque de verdade no meio do vídeo (o navegador aceita como se fosse você)
+            !playing && kicks % 3 == 0 && w.width > 8 && w.height > 8 -> {
+                val t = android.os.SystemClock.uptimeMillis(); val x = w.width / 2f; val y = w.height / 2f
+                w.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+                w.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+            }
+            else -> js("try{player.unMute();player.setVolume(100)}catch(e){};player.playVideo()")
+        }
+        w.evaluateJavascript("(function(){var f=document.querySelector('iframe');var d=f&&f.contentDocument;var v=(d||document).querySelector('video');if(v){v.muted=false;if(v.paused)v.play()}})()", null)
+        h.postDelayed(this, 1500)
     } }
     private fun startDog() { progressed = false; userPaused = false; tries = 0; kicks = 0; h.removeCallbacks(dog); h.removeCallbacks(kick); h.postDelayed(dog, 8000); h.postDelayed(kick, 900) }
     fun load(w: WebView, v: YtVideo?) {
