@@ -68,7 +68,7 @@ object AdBlock {
         c.setRequestProperty("Accept-Encoding", "identity")
         if (c.responseCode != 200) null else {
             val html = c.inputStream.bufferedReader().use { it.readText() }
-            val tag = "<script>" + (if (strip) STRIP_JS else "") + EMBED_JS + "</script>"
+            val tag = "<script>" + BRAVE_JS + (if (strip) STRIP_JS else "") + EMBED_JS + "</script>"
             val i = html.indexOf("<head")
             val out = if (i >= 0) { val j = html.indexOf('>', i) + 1; html.substring(0, j) + tag + html.substring(j) } else tag + html
             val headers = mutableMapOf<String, String>()
@@ -76,6 +76,25 @@ object AdBlock {
             WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(out.toByteArray()))
         }
     } catch (e: Exception) { null }
+
+    /* O mesmo que o Brave faz no celular ao abrir o YouTube:
+       1) "tocar em segundo plano": a página acha que está sempre visível (não pausa com tela apagada/app no fundo)
+       2) Shields: além de cortar os servidores de anúncio, apaga a lista de anúncios das respostas do YouTube,
+          inclusive as que chegam por XHR (regras json-prune do uBlock que o Brave usa) */
+    const val BRAVE_JS = """(function(){ if(window.__uncB) return; window.__uncB=1;
+  try{ Object.defineProperty(document,'hidden',{configurable:true,get:function(){return false}});
+       Object.defineProperty(document,'visibilityState',{configurable:true,get:function(){return 'visible'}});
+       Object.defineProperty(document,'webkitHidden',{configurable:true,get:function(){return false}});
+       Object.defineProperty(document,'webkitVisibilityState',{configurable:true,get:function(){return 'visible'}}); }catch(e){}
+  ['visibilitychange','webkitvisibilitychange','pagehide','blur','freeze'].forEach(function(t){ window.addEventListener(t,function(e){e.stopImmediatePropagation()},true); document.addEventListener(t,function(e){e.stopImmediatePropagation()},true); });
+  var KEYS=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams','adBreakParams'];
+  function strip(o){ try{ if(!o||typeof o!=='object') return o; KEYS.forEach(function(k){ if(k in o) delete o[k]; }); if(o.playerResponse) strip(o.playerResponse); }catch(e){} return o; }
+  var X=XMLHttpRequest.prototype, op=X.open; X.open=function(m,u){ this.__u=String(u||''); return op.apply(this,arguments); };
+  var gd=Object.getOwnPropertyDescriptor(X,'responseText'), gr=Object.getOwnPropertyDescriptor(X,'response');
+  function fix(xhr,txt){ try{ if(!/\/youtubei\/v1\/(player|next)/.test(xhr.__u)||typeof txt!=='string') return txt; if(txt.indexOf('adPlacements')<0&&txt.indexOf('playerAds')<0&&txt.indexOf('adSlots')<0) return txt; return JSON.stringify(strip(JSON.parse(txt))); }catch(e){ return txt; } }
+  if(gd&&gd.get) Object.defineProperty(X,'responseText',{configurable:true,get:function(){ return fix(this,gd.get.call(this)); }});
+  if(gr&&gr.get) Object.defineProperty(X,'response',{configurable:true,get:function(){ var r=gr.get.call(this); return (this.responseType===''||this.responseType==='text')?fix(this,r):r; }});
+})();"""
 
     // roda dentro do player do YouTube: pula/silencia anúncio que passar e obedece a velocidade que o app mandar
     const val EMBED_JS = """(function(){ if(window.__uncE) return; window.__uncE=1; var R=1, ADB=true;
@@ -113,7 +132,7 @@ class AdBlockClient : WebViewClient() {
     }
     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        if (url?.contains("youtube.com/watch") == true && AdBlock.strip) view?.evaluateJavascript(AdBlock.STRIP_JS, null)
+        if (url?.contains("youtube.com/watch") == true) view?.evaluateJavascript(AdBlock.BRAVE_JS + if (AdBlock.strip) AdBlock.STRIP_JS else "", null)
     }
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
