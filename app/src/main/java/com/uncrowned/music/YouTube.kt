@@ -12,6 +12,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -204,6 +205,12 @@ object YtPlayer {
     fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    // velocidade do player online (muda o tom junto, igual slowed/nightcore)
+    var speed by mutableFloatStateOf(Prefs.sp.getFloat("ytspeed", 1f))
+    fun setSpeedTo(v: Float) { speed = v; Prefs.sp.edit().putFloat("ytspeed", v).apply(); applySpeed() }
+    fun applySpeed() { web?.evaluateJavascript("""(function(){function run(d){if(!d)return;d.querySelectorAll('video,audio').forEach(function(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;m.playbackRate=$speed;}catch(e){}})}
+      try{document.querySelectorAll('iframe').forEach(function(f){try{run(f.contentDocument)}catch(e){}})}catch(e){} try{run(document)}catch(e){}
+      try{if(window.player&&player.setPlaybackRate)player.setPlaybackRate($speed)}catch(e){} })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
     fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false } }
@@ -216,12 +223,18 @@ object YtPlayer {
         @JavascriptInterface fun state(s: Int) = h.post {
             playing = s == 1
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
+            if (s == 1 && speed != 1f) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             if (s == 0 && YtStore.autoNext) next()
         }.let {}
         @JavascriptInterface fun time(t: Float, d: Float) = h.post {
             time = t; duration = d
             // conta o tempo ouvido (Mais ouvidas / Momentos)
             if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
+        }.let {}
+        // vídeo que o dono bloqueou fora do YouTube: avisa e pula em vez de ficar travado
+        @JavascriptInterface fun err(code: Int) = h.post {
+            runCatching { android.widget.Toast.makeText(web?.context, "Essa não toca fora do YouTube (erro $code). Pulando…", android.widget.Toast.LENGTH_SHORT).show() }
+            if (index < queue.size - 1) next()
         }.let {}
         @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
     }
@@ -232,7 +245,7 @@ object YtPlayer {
 var player;
 function onYouTubeIframeAPIReady(){player=new YT.Player('p',{width:'100%',height:'100%',
 playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1},
-events:{onReady:function(){Android.ready()},onStateChange:function(e){Android.state(e.data)}}});}
+events:{onReady:function(){Android.ready()},onStateChange:function(e){Android.state(e.data)},onError:function(e){Android.err(e.data)}}});}
 setInterval(function(){if(player&&player.getCurrentTime){Android.time(player.getCurrentTime()||0,player.getDuration()||0)}},500);
 </script></body></html>"""
 
@@ -445,6 +458,11 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
                     Retro.NAMES.forEach { (k, n) -> FilterChip(retro == k, { retro = k; Retro.mode = k }, { Text(n) }) }
                     IconButton(onClick = { addOpen = true }) { Icon(Icons.Rounded.PlaylistAdd, "Adicionar à playlist") }
+                }
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Speed, null, Modifier.size(20.dp))
+                    listOf(0.75f to "Lento", 0.85f to "Slowed", 1f to "Normal", 1.15f to "Sped up", 1.25f to "Nightcore").forEach { (r, n) ->
+                        FilterChip(YtPlayer.speed == r, { YtPlayer.setSpeedTo(r) }, { Text(n) }) }
                 }
                 if (addOpen) {
                     var nome by remember { mutableStateOf("") }

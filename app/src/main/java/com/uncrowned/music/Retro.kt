@@ -134,7 +134,8 @@ class RetroProcessor : BaseAudioProcessor() {
     private var dsp: RetroDsp? = null
     private var chs = 2
     override fun onConfigure(input: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (input.encoding != C.ENCODING_PCM_16BIT) throw AudioProcessor.UnhandledAudioFormatException(input)
+        // formato diferente (24 bits, float...): deixa passar sem mexer, em vez de travar o player
+        if (input.encoding != C.ENCODING_PCM_16BIT) return AudioProcessor.AudioFormat.NOT_SET
         chs = input.channelCount
         dsp = RetroDsp(input.sampleRate, input.channelCount)
         return input

@@ -641,7 +641,7 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                     }
                 }
 
-                Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally)) {
                     ToolBtn(Icons.Rounded.FormatQuote, "Letra", showLyrics) { showLyrics = !showLyrics }
                     ToolBtn(Icons.Rounded.Timer, if (Sleep.endsAt.longValue > 0) "Timer ✓" else "Timer", Sleep.endsAt.longValue > 0) { showSleep = true }
                     val onRadio = ui.mediaId?.startsWith("au:radio-") == true
