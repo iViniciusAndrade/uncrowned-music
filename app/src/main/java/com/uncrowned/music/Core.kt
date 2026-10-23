@@ -217,7 +217,7 @@ object Sleep {
     var player: Player? = null
     val endsAt = mutableLongStateOf(0L)
     private val h = Handler(Looper.getMainLooper())
-    private val r = Runnable { player?.pause(); endsAt.longValue = 0L }
+    private val r = Runnable { player?.pause(); if (YtPlayer.playing) YtPlayer.toggle(); endsAt.longValue = 0L }
     fun start(minutes: Int) { cancel(); endsAt.longValue = System.currentTimeMillis() + minutes * 60_000L; h.postDelayed(r, minutes * 60_000L) }
     fun cancel() { h.removeCallbacks(r); endsAt.longValue = 0L }
 }

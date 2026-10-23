@@ -177,6 +177,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
                         ns != null -> SimilarScreen(ui, ns) { Nav.sim = null }
                         np == "pend" -> PendingScreen(ui) { Nav.page = null }
                         np == "kept" -> KeptScreen(ui) { Nav.page = null }
+                        np == "ia" -> AssistScreen(ui) { Nav.page = Nav.back() }
                         np == "cuts" -> CutsScreen(ui) { Nav.page = Nav.back() }
                         d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
                         np == "songs" -> AllSongsScreen(ui, back)
@@ -256,11 +257,13 @@ fun Group(title: String? = null, footer: String? = null, content: @Composable Co
 @Composable
 fun SearchField(value: String, onChange: (String) -> Unit) {
     val focus = LocalFocusManager.current
+    val voice = rememberVoice { onChange(it) }
     TextField(
         value, onChange, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp),
         placeholder = { Text("Buscar") },
         leadingIcon = { Icon(Icons.Rounded.Search, null) },
-        trailingIcon = { if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Cancel, null, Modifier.size(20.dp)) } },
+        // vazio: microfone pra buscar falando; com texto: limpar
+        trailingIcon = { if (value.isNotEmpty()) IconButton(onClick = { onChange("") }) { Icon(Icons.Rounded.Cancel, null, Modifier.size(20.dp)) } else IconButton(onClick = voice) { Icon(Icons.Rounded.Mic, "Buscar falando") } },
         singleLine = true, shape = RoundedCornerShape(12.dp),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -309,6 +312,16 @@ fun SongsTab(ui: PlayerUi) {
         item { Header("Buscar") }
         item { SearchField(query) { query = it } }
         if (q.isEmpty()) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .14f)).clickable { Nav.page = "ia" }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text("Assistente", fontWeight = FontWeight.SemiBold)
+                        Text("Pede por voz ou texto: \"toca Matuê em slowed\", \"desliga em 30 min\"", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Rounded.Mic, null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
             item { SearchHome { query = it } }
         } else if (false) {
             item {
