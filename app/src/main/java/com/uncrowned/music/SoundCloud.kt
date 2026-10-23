@@ -114,6 +114,31 @@ object SoundCloudApi {
         }.getOrNull()
     }
 
+    /* link do áudio pra tocar no player do app (com equalizador, velocidade, K7/vinil).
+       Prefere o MP3 direto; se não tiver, usa o HLS. Faixa só com prévia de 30s (SNIP) não serve. */
+    data class Stream(val url: String, val hls: Boolean, val duration: Long, val art: String)
+    fun stream(path: String): Stream? = runCatching {
+        var id = findClientId(false) ?: return null
+        val res = { cid: String -> http("https://api-v2.soundcloud.com/resolve?url=${URLEncoder.encode("https://soundcloud.com/$path", "UTF-8")}&client_id=$cid") }
+        var (c1, b1) = res(id)
+        if (c1 == 401 || c1 == 403) { id = findClientId(true) ?: return null; val r = res(id); c1 = r.first; b1 = r.second }
+        if (c1 !in 200..299) return null
+        val tr = JSONObject(b1)
+        if (tr.optString("kind") != "track" || tr.optString("policy") == "SNIP" || tr.optString("policy") == "BLOCK") return null
+        val tcs = tr.optJSONObject("media")?.optJSONArray("transcodings") ?: return null
+        val all = (0 until tcs.length()).map { tcs.getJSONObject(it) }
+        fun proto(o: JSONObject) = o.optJSONObject("format")?.optString("protocol").orEmpty()
+        fun mime(o: JSONObject) = o.optJSONObject("format")?.optString("mime_type").orEmpty()
+        val pick = all.firstOrNull { proto(it) == "progressive" }
+            ?: all.firstOrNull { proto(it) == "hls" && mime(it).contains("mp4") }
+            ?: all.firstOrNull { proto(it) == "hls" && mime(it).contains("mpeg") } ?: return null
+        val auth = tr.optString("track_authorization").takeIf { it.isNotBlank() }?.let { "&track_authorization=$it" } ?: ""
+        val (c2, b2) = http("${pick.optString("url")}?client_id=$id$auth")
+        if (c2 !in 200..299) return null
+        val url = JSONObject(b2).optString("url").ifBlank { return null }
+        Stream(url, proto(pick) == "hls", tr.optLong("duration"), tr.optString("artwork_url").replace("-large.", "-t500x500."))
+    }.getOrNull()
+
     suspend fun search(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
         runCatching {
             val api = runCatching { apiSearch(q, false) }.getOrNull()

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.launch
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -79,7 +80,23 @@ class PlayerUi(private val ctx: Context) {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync(player)
+        // link do SoundCloud venceu ou falhou: pega outro e continua do mesmo ponto
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            val c = controller ?: return
+            val cur = c.currentMediaItem ?: return
+            if (!cur.mediaId.startsWith("sc:") || retried == cur.mediaId) return
+            retried = cur.mediaId
+            val idx = c.currentMediaItemIndex; val pos = c.currentPosition
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                val n = ScPlay.refresh(cur.mediaId.removePrefix("sc:"))
+                if (n != null) { c.replaceMediaItem(idx, n.buildUpon().setMediaMetadata(cur.mediaMetadata).build()); c.prepare(); c.seekTo(idx, pos); c.play() }
+                else if (idx < c.mediaItemCount - 1) { c.seekToNextMediaItem(); c.prepare(); c.play() }
+            }
+        }
     }
+    private var retried: String? = null
+    // músicas do SoundCloud (vêm prontas do ScPlay)
+    fun setItems(items: List<MediaItem>) { val c = controller ?: return; YtPlayer.close(); retried = null; c.setMediaItems(items, 0, 0); c.prepare(); c.play() }
 
     fun connect() {
         if (controller != null) return

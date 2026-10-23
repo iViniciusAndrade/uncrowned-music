@@ -116,6 +116,7 @@ class PlaybackService : MediaSessionService() {
         val url = it.requestMetadata.mediaUri?.toString() ?: it.localConfiguration?.uri?.toString() ?: ""
         return when {
             id.startsWith("au:radio-") -> null
+            id.startsWith("sc:") -> LTrack(id, "sc", id.removePrefix("sc:"), title, artist, art, "")
             id.startsWith("au:") -> LTrack("au:" + id.removePrefix("au:"), "au", id.removePrefix("au:"), title, artist, art, url)
             id.startsWith("off:") -> LTrack("yt:" + id.removePrefix("off:"), "yt", id.removePrefix("off:"), title, artist, art, "")
             id.all { c -> c.isDigit() } -> LTrack("loc:$id", "loc", id, title, artist, art, "")

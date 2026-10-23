@@ -84,7 +84,8 @@ fun App(ui: PlayerUi, perms: List<String>) {
     LaunchedEffect(granted, Prefs.hideVoice, Prefs.minDurationSec) { if (granted) Library.load(ctx) }
 
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) }; YtPlayer.stopOther = { ui.stopLocal() } }
+    LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) }; YtPlayer.stopOther = { ui.stopLocal() }
+        ScPlay.setItems = { ui.setItems(it) }; ScPlay.addItem = { ui.controller?.addMediaItem(it) } }
     var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 3)) }
     LaunchedEffect(Unit) { Listen.init(ctx); Eco.init(ctx); Hunter.start(ctx) }
     // conta o tempo ouvido do player do YouTube também quando o app está aberto
@@ -112,6 +113,8 @@ fun App(ui: PlayerUi, perms: List<String>) {
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
+                    ScPlay.loading?.let { t -> Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Text("  Carregando \"$t\"…", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
                     if (ui.mediaId != null) MiniPlayer(ui) { expanded = true }
                     HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                     NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
@@ -653,8 +656,16 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                     }
                     ToolBtn(Icons.Rounded.QueueMusic, "Fila", false) { showQueue = true }
                     if (!onRadio) { Prefs.version.intValue; ToolBtn(Icons.Rounded.Album, Retro.NAMES[Retro.mode] ?: "Normal", Retro.mode.isNotEmpty()) { Retro.next(); Prefs.version.intValue++ } }
-                    // faixa de fonte aberta (Audius/Archive): guardar dentro do app pra tocar sem internet
                     val mid = ui.mediaId
+                    if (mid != null && mid.startsWith("sc:")) {
+                        Sync.version
+                        var showSync by remember { mutableStateOf(false) }
+                        val sv = YtVideo(mid.removePrefix("sc:"), ui.title, ui.artist, ui.art?.toString() ?: "", "sc")
+                        val done = Sync.syncedUri(sv) != null
+                        ToolBtn(if (done) Icons.Rounded.DownloadDone else Icons.Rounded.Download, if (done) "Offline ✓" else "Salvar", done) { showSync = true }
+                        if (showSync) SyncSheet(sv) { showSync = false }
+                    }
+                    // faixa de fonte aberta (Audius/Archive): guardar dentro do app pra tocar sem internet
                     if (mid != null && mid.startsWith("au:") && !onRadio) {
                         Sync.version
                         val item = ui.controller?.currentMediaItem

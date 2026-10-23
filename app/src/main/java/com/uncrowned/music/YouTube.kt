@@ -187,33 +187,16 @@ object YtPlayer {
             if (u != null && Sync.playLocal != null) { js("player.pauseVideo()"); Sync.playLocal?.invoke(u, target); return }
             runCatching { android.widget.Toast.makeText(Sync.app, "Sem internet: essa ainda não foi sincronizada", android.widget.Toast.LENGTH_SHORT).show() }
         }
-        stopOther?.invoke()
-        queue = list; index = i
-        // música do YouTube: acha a mesma no SoundCloud e toca de lá
-        if (target.src == "yt") {
-            val w0 = web
-            scScope.launch {
-                val sc = ScMatch.find(target)
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    if (index != i || queue.getOrNull(i)?.id != target.id) return@withContext
-                    if (sc == null) {
-                        // no celular é tudo pelo SoundCloud: se não tem lá, pula pra próxima
-                        runCatching { android.widget.Toast.makeText(Sync.app, "\"${target.title}\" não está no SoundCloud, indo pra próxima", android.widget.Toast.LENGTH_SHORT).show() }
-                        if (i < queue.size - 1) play(queue, i + 1) else playing = false
-                        return@withContext
-                    }
-                    queue = queue.toMutableList().also { it[i] = sc }
-                    // já procura a próxima pra emendar sem espera
-                    queue.getOrNull(i + 1)?.takeIf { it.src == "yt" }?.let { nx -> scScope.launch { ScMatch.find(nx) } }
-                    val v2 = current ?: return@withContext
-                    YtStore.addHistory(v2)
-                    val w = web ?: w0
-                    if (w != null && loadedSrc != v2.src) load(w, v2) else js("player.loadVideoById('${v2.id}')")
-                    startDog()
-                }
-            }
+        // YouTube e SoundCloud tocam no player do app, pelo SoundCloud (efeitos, velocidade e tela apagada funcionam)
+        if (target.src == "yt" || target.src == "sc") {
+            close()
+            val web2 = list.filter { it.src == "yt" || it.src == "sc" }
+            YtStore.addHistory(target)
+            ScPlay.play(web2, web2.indexOf(target).coerceAtLeast(0))
             return
         }
+        stopOther?.invoke()
+        queue = list; index = i
         val v = current ?: return
         YtStore.addHistory(v)
         val w = web
