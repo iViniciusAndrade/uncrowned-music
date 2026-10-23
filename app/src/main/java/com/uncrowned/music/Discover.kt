@@ -227,25 +227,6 @@ fun DiscoverTab(ui: PlayerUi) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Descobrir") { IconButton(onClick = { Nav.page = "themes" }) { Icon(Icons.Rounded.Palette, "Temas", tint = MaterialTheme.colorScheme.primary) } } }
-        item {
-            OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = { Text("Buscar e baixar músicas") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                trailingIcon = { if (results != null) IconButton(onClick = { results = null; q = "" }) { Icon(Icons.Rounded.Close, null) } },
-                singleLine = true, shape = MaterialTheme.shapes.large,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    loading = true; scope.launch { results = Audius.search(q).getOrDefault(emptyList()); loading = false }
-                }))
-        }
-        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }
-
-        val r = results
-        if (r != null) {
-            item { Section("RESULTADOS (${r.size})") }
-            itemsIndexed(r, key = { _, t -> "r" + t.id }) { i, t -> TrackRow(ui, t) { ui.playOnline(r, i) } }
-            return@LazyColumn
-        }
-
         item { WeeklyHero(ui, weekly, onNew = { scope.launch { weekly = Weekly.get(force = true) } }, onTaste = { onboarding = true }) }
         item {
             LazyRow(contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -259,7 +240,6 @@ fun DiscoverTab(ui: PlayerUi) {
             }
         }
         item { WeekCharts(ui, trending) }
-        item { PopularPlaylists(ui) { ytListOpen = it } }
 
         item { TasteCard { onboarding = true } }
 
@@ -370,11 +350,11 @@ fun WeeklyHero(ui: PlayerUi, weekly: List<Track>, onNew: () -> Unit, onTaste: ()
 @Composable
 fun WeekCharts(ui: PlayerUi, audius: List<Track>) {
     var gl by remember { mutableStateOf("BR") }
-    var src by remember { mutableStateOf("au") }
+    var src by remember { mutableStateOf("sc") }
     var all by remember { mutableStateOf(false) }
     var yt by remember { mutableStateOf<Ytm.Charts?>(null) }
     var sc by remember { mutableStateOf<List<YtVideo>?>(null) }
-    LaunchedEffect(gl) { yt = null; sc = null; yt = Ytm.charts(gl); sc = SoundCloudApi.charts(gl) }
+    LaunchedEffect(gl) { sc = null; sc = SoundCloudApi.charts(gl) }
     val accent = mapOf("au" to Color(0xFFCC33FF), "yt" to Color(0xFFFF3B30), "sc" to Color(0xFFFF7700))
     Column(Modifier.padding(top = 8.dp)) {
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -382,7 +362,7 @@ fun WeekCharts(ui: PlayerUi, audius: List<Track>) {
             listOf("BR" to "Brasil", "ZZ" to "Mundo").forEach { (k, n) -> FilterChip(gl == k, { gl = k; all = false }, { Text(n, fontSize = 12.sp) }, Modifier.padding(start = 6.dp)) }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("au" to "Audius", "yt" to "YouTube", "sc" to "SoundCloud").forEach { (k, n) ->
+            listOf("sc" to "SoundCloud", "au" to "Audius").forEach { (k, n) ->
                 val on = src == k
                 Text(n, Modifier.clip(RoundedCornerShape(50)).background(if (on) accent[k]!! else MaterialTheme.colorScheme.surfaceContainerHigh).clickable { src = k; all = false }.padding(horizontal = 14.dp, vertical = 8.dp),
                     color = if (on) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -397,19 +377,6 @@ fun WeekCharts(ui: PlayerUi, audius: List<Track>) {
                 if (list == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
                 else if (list.isEmpty()) Text("Não deu pra carregar agora.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else { (if (all) list else list.take(10)).forEachIndexed { i, v -> RankYtRow(i + 1, v) { ui.controller?.pause(); YtPlayer.play(list, i) } }; if (list.size > 10) MoreBtn(all) { all = !all } }
-            }
-        }
-        val vids = yt?.videos.orEmpty()
-        if (vids.isNotEmpty()) {
-            Text("Clipes em alta", Modifier.padding(start = 16.dp, top = 18.dp, bottom = 8.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(vids, key = { _, v -> "cv" + v.id }) { i, v ->
-                    Column(Modifier.width(220.dp).clickable { ui.controller?.pause(); YtPlayer.play(vids, i) }) {
-                        Art(v.thumb, Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(10.dp))
-                        Text(v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        Text(v.channel, maxLines = 1, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
             }
         }
     }

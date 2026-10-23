@@ -54,10 +54,11 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         val busy = ui.playing || YtPlayer.playing || RadioRecorder.recording != null || Exporter.running || Importer.busy
         runCatching { Listen.save() }
-        ui.disconnect(); super.onStop()
+        super.onStop()
         // ícone do tema: troca agora que você saiu do app (se nada estiver tocando)
         if (!busy) runCatching { Skins.applyPendingIcon(this) }
     }
+    override fun onDestroy() { runCatching { Listen.save() }; ui.disconnect(); super.onDestroy() }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }
     private fun handleIntent(i: Intent?) {
         i?.getStringExtra("hunt_station")?.let { runCatching { Hunter.pendingPlay = Track.from(org.json.JSONObject(it)) } }
@@ -80,6 +81,12 @@ class PlayerUi(private val ctx: Context) {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = sync(player)
+        // fila do SoundCloud: sabe em que música está e continua quando a fila do player acaba
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { ScPlay.onExoItem(mediaItem?.mediaId) }
+        override fun onPlaybackStateChanged(state: Int) {
+            val c = controller ?: return
+            if (state == Player.STATE_ENDED && c.currentMediaItem?.mediaId?.startsWith("sc:") == true) ScPlay.onExoEnded()
+        }
         // link do SoundCloud venceu ou falhou: pega outro e continua do mesmo ponto
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             val c = controller ?: return
@@ -140,14 +147,17 @@ class PlayerUi(private val ctx: Context) {
 
     val position: Long get() = controller?.currentPosition ?: 0L
 
+    // próxima/anterior: quando a fila do player acaba, a do SoundCloud continua
+    fun next() { val c = controller ?: return; if (!c.hasNextMediaItem() && ScPlay.active && c.currentMediaItem?.mediaId?.startsWith("sc:") == true) ScPlay.next() else c.seekToNext() }
+    fun prev() { val c = controller ?: return; if (!c.hasPreviousMediaItem() && c.currentPosition < 3000 && ScPlay.active && c.currentMediaItem?.mediaId?.startsWith("sc:") == true) ScPlay.prev() else c.seekToPrevious() }
     fun play(list: List<Song>, start: Int) {
         val c = controller ?: return
-        YtPlayer.close()
+        ScPlay.stop(); YtPlayer.close()
         c.setMediaItems(list.map { it.toItem() }, start, 0); c.prepare(); c.play()
     }
     fun playOnline(list: List<Track>, start: Int) {
         val c = controller ?: return
-        YtPlayer.close()
+        ScPlay.stop(); YtPlayer.close()
         c.setMediaItems(list.map { it.toItem() }, start, 0); c.prepare(); c.play()
     }
     // toca um arquivo do celular no lugar da música online (versão sincronizada)
@@ -155,7 +165,7 @@ class PlayerUi(private val ctx: Context) {
         val c = controller ?: return
         val item = MediaItem.Builder().setMediaId("off:" + v.id).setUri(uri)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(v.title).setArtist(v.channel).setArtworkUri(v.thumb.takeIf { it.isNotBlank() }?.let(Uri::parse)).build()).build()
-        YtPlayer.close()
+        ScPlay.stop(); YtPlayer.close()
         c.setMediaItem(item); c.prepare(); c.play()
     }
     // fecha o player de baixo quando começa a tocar online (um player só por vez)

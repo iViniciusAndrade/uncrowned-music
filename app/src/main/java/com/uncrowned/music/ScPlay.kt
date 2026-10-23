@@ -12,61 +12,99 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
-/* No celular as músicas online tocam no player do próprio app (o mesmo das offline):
-   pega o áudio do SoundCloud e entrega pro ExoPlayer. Assim equalizador, velocidade com tom,
-   K7/vinil, letra, notificação e tocar com a tela apagada funcionam igual às offline.
+/* No celular as músicas online tocam pelo SoundCloud, numa fila só:
+   - faixa com áudio aberto: toca no player do app (efeitos, velocidade, notificação, tela apagada)
+   - faixa protegida (selo/gravadora): toca no player oficial do SoundCloud, dentro do app
+   - faixa que não existe lá (ou só tem prévia de 30s): pula pra próxima
    Música que vem do YouTube Music (artista, álbum, paradas, playlists) é procurada no SoundCloud. */
 object ScPlay {
     var loading by mutableStateOf<String?>(null); private set
-    // mexe no player do app (setado pela tela principal)
-    var setItems: ((List<MediaItem>) -> Unit)? = null
-    var addItem: ((MediaItem) -> Unit)? = null
+    var active by mutableStateOf(false); private set
+    private var list: List<YtVideo> = emptyList()
+    var pos = -1; private set
+    // ganchos (setados pela tela principal)
+    var exoSet: ((List<MediaItem>) -> Unit)? = null
+    var exoAdd: ((MediaItem) -> Unit)? = null
+    var webPlay: ((YtVideo) -> Unit)? = null
+    private val idxOf = HashMap<String, Int>()
+    private var exoLast = -1
+    private var gen = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var job: Job? = null
+    private var job: Job? = null; private var pre: Job? = null
 
-    private suspend fun item(v: YtVideo): MediaItem? {
-        val sc = if (v.src == "sc") v else ScMatch.find(v) ?: return null
-        val st = SoundCloudApi.stream(sc.id) ?: return null
+    private sealed class R { class Native(val item: MediaItem) : R(); class Web(val v: YtVideo) : R(); object None : R() }
+
+    private fun resolve(v: YtVideo, sc: YtVideo?): R {
+        sc ?: return R.None
+        val st = SoundCloudApi.stream(sc.id) ?: return R.None
         val art = sc.thumb.ifBlank { st.art }.ifBlank { v.thumb }
-        return MediaItem.Builder().setMediaId("sc:" + sc.id).setUri(st.url)
+        if (st.web) return R.Web(sc.copy(thumb = art))
+        val item = MediaItem.Builder().setMediaId("sc:" + sc.id).setUri(st.url)
             .apply { if (st.hls) setMimeType(MimeTypes.APPLICATION_M3U8) }
             .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(st.url)).build())
             .setMediaMetadata(MediaMetadata.Builder().setTitle(sc.title).setArtist(sc.channel).setGenre("SoundCloud")
                 .setArtworkUri(art.takeIf { it.isNotBlank() }?.let(Uri::parse)).build())
             .build()
+        return R.Native(item)
     }
+    private suspend fun resolve(v: YtVideo): R = runCatching { resolve(v, if (v.src == "sc") v else ScMatch.find(v)) }.getOrDefault(R.None)
 
-    /* toca a lista a partir da música i: a primeira sai na hora, o resto vai entrando na fila em ordem */
-    fun play(list: List<YtVideo>, i: Int) {
-        job?.cancel()
-        val rest = list.drop(i).take(100)
-        if (rest.isEmpty()) return
-        loading = rest.first().title
+    private fun toast(t: String) { runCatching { Toast.makeText(Sync.app, t, Toast.LENGTH_SHORT).show() } }
+
+    fun play(l: List<YtVideo>, i: Int) { list = l.take(200); active = true; startAt(i) }
+    fun stop() { active = false; gen++; job?.cancel(); pre?.cancel(); loading = null }
+
+    /* começa na música i; se ela não estiver no SoundCloud, segue pra próxima que estiver */
+    fun startAt(i: Int) {
+        val g = ++gen; job?.cancel(); pre?.cancel()
+        if (i !in list.indices) { loading = null; return }
+        loading = list[i].title
         job = scope.launch {
-            var started = false
-            val sem = Semaphore(3)
-            val jobs = rest.map { v -> async { sem.withPermit { runCatching { item(v) }.getOrNull() } } }
-            for ((k, d) in jobs.withIndex()) {
-                val it = d.await()
-                withContext(Dispatchers.Main) {
-                    if (it == null) {
-                        if (k == 0) runCatching { Toast.makeText(Sync.app, "\"${rest[0].title}\" não está no SoundCloud, indo pra próxima", Toast.LENGTH_SHORT).show() }
-                    } else if (!started) { started = true; loading = null; setItems?.invoke(listOf(it)) }
-                    else addItem?.invoke(it)
+            var k = i; var warned = false
+            while (k < list.size) {
+                val r = resolve(list[k])
+                if (g != gen) return@launch
+                when (r) {
+                    is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, k + 1); return@launch }
+                    is R.Web -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; exoLast = k; webPlay?.invoke(r.v) }; return@launch }
+                    R.None -> { if (!warned) { warned = true; val t = list[k].title; withContext(Dispatchers.Main) { toast("\"$t\" não está inteira no SoundCloud, indo pra próxima") } }
+                        k++; if (k < list.size) withContext(Dispatchers.Main) { loading = list[k].title } }
                 }
             }
-            withContext(Dispatchers.Main) {
-                if (!started) { loading = null; runCatching { Toast.makeText(Sync.app, "Não achei essas músicas no SoundCloud", Toast.LENGTH_SHORT).show() } }
+            withContext(Dispatchers.Main) { if (g == gen) { loading = null; toast("Não achei as próximas no SoundCloud") } }
+        }
+    }
+
+    /* põe as próximas na fila do player do app (pra próxima, notificação e tela apagada funcionarem); para na primeira protegida */
+    private fun prefetch(g: Int, from: Int) {
+        pre = scope.launch {
+            var k = from; var added = 0
+            while (k < list.size && added < 25) {
+                val r = resolve(list[k])
+                if (g != gen) return@launch
+                when (r) {
+                    is R.Native -> { val kk = k; withContext(Dispatchers.Main) { if (g == gen) { idxOf[r.item.mediaId] = kk; exoLast = kk; exoAdd?.invoke(r.item) } }; added++ }
+                    is R.Web -> return@launch
+                    R.None -> {}
+                }
+                k++
             }
         }
     }
 
+    fun onExoItem(mediaId: String?) { if (mediaId != null) idxOf[mediaId]?.let { pos = it } }
+    // a fila do player do app acabou: continua depois da última que entrou nela
+    fun onExoEnded() { if (active) startAt(exoLast + 1) }
+    fun onWebEnded() { if (active) startAt(pos + 1) }
+    fun next() { if (active) startAt(pos + 1) }
+    fun prev() { if (active && pos > 0) startAt(pos - 1) }
+    fun hasNext() = active && pos < list.size - 1
+
     /* link venceu (o SoundCloud troca os links de tempos em tempos): pega um novo e continua do mesmo ponto */
-    suspend fun refresh(path: String): MediaItem? = withContext(Dispatchers.IO) { runCatching { item(YtVideo(path, "", "", "", "sc")) }.getOrNull() }
+    suspend fun refresh(path: String): MediaItem? = withContext(Dispatchers.IO) {
+        (runCatching { resolve(YtVideo(path, "", "", "", "sc"), YtVideo(path, "", "", "", "sc")) }.getOrNull() as? R.Native)?.item
+    }
 }

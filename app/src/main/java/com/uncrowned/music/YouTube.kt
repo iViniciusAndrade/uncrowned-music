@@ -247,8 +247,16 @@ object YtPlayer {
             else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
-    fun next() { if (index < queue.size - 1) play(queue, index + 1) }
-    fun prev() { if (time > 5) seek(0f) else if (index > 0) play(queue, index - 1) }
+    fun next() { if (ScPlay.active && current?.src == "sc") ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
+    fun prev() { if (time > 5) seek(0f) else if (ScPlay.active && current?.src == "sc") ScPlay.prev() else if (index > 0) play(queue, index - 1) }
+    // faixa protegida do SoundCloud: toca no player oficial deles (a fila continua no ScPlay)
+    fun playWeb(v: YtVideo) {
+        stopOther?.invoke()
+        queue = listOf(v); index = 0
+        val w = web
+        if (w != null && loadedSrc != v.src) load(w, v) else js("player.loadVideoById('${v.id}')")
+        startDog()
+    }
     fun toggle() { if (playing) userPaused = true; js(if (playing) "player.pauseVideo()" else "player.playVideo()") }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
@@ -291,7 +299,8 @@ object YtPlayer {
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 1 && speed != 1f) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
-            if (s == 0) when {
+            if (s == 0 && ScPlay.active && current?.src == "sc") ScPlay.onWebEnded()
+            else if (s == 0) when {
                 repeat == 2 -> { seek(0f); js("player.playVideo()") }
                 index < queue.size - 1 && (YtStore.autoNext || repeat == 1) -> next()
                 repeat == 1 && queue.isNotEmpty() -> play(queue, 0)
@@ -562,27 +571,43 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
 
 /* acha no SoundCloud a mesma música de um vídeo do YouTube */
 object ScMatch {
-    private val cache = HashMap<String, YtVideo?>()
+    private val cache = HashMap<String, Pair<Long, YtVideo?>>()
     private fun n(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
         .replace(Regex("\\(.*?\\)|\\[.*?]"), " ").replace(Regex("\\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|ft\\.?.*|feat\\.?.*)\\b"), " ")
         .replace(Regex("[^a-z0-9]+"), " ").trim()
-    suspend fun find(v: YtVideo): YtVideo? {
-        cache[v.id]?.let { return it }
-        if (cache.containsKey(v.id)) return null
+    private fun c(x: String) = n(x).replace(" ", "")
+    private val JUNK = Regex("(?i)saved on|spotify|free download|\\bleak|snippet|preview|type beat|re-?upload|sped up|slowed|nightcore|remix|\\bcover\\b|\\b8d\\b|reverb|instrumental|karaok|acapella|\\blive\\b|ao vivo|mashup|\\bedit\\b|bootleg|tiktok")
+    /* acha a mesma música no SoundCloud: título igual, artista certo (de preferência o perfil oficial),
+       sem versão alterada (slowed, remix, cover...) e que dê pra ouvir inteira */
+    suspend fun find(v: YtVideo): YtVideo? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        cache[v.id]?.let { if (it.second != null || System.currentTimeMillis() - it.first < 600_000) return@withContext it.second }
         var title = v.title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
         var artist = v.channel.replace(Regex("(?i) - Topic$"), "").replace(Regex("(?i)VEVO$"), "").trim()
         if (" - " in title) { artist = title.substringBefore(" - ").trim(); title = title.substringAfter(" - ").trim() }
-        val list = SoundCloudApi.search("$artist $title".trim()).getOrDefault(emptyList())
-        val nt = n(title); val na = n(artist)
-        val best = list.map { c ->
-            val ct = n(c.title); val ca = n(c.channel)
-            var s = 0
-            if (nt.isNotBlank() && (ct == nt || ct.contains(nt) || nt.contains(ct))) s += if (ct == nt) 3 else 2
-            if (na.isNotBlank() && (ca.contains(na) || na.contains(ca) || ct.contains(na))) s += 2
-            if (Regex("(?i)remix|cover|slowed|sped|nightcore|8d|reverb|instrumental|karaok").containsMatchIn(c.title) && !Regex("(?i)remix|cover|slowed|sped|nightcore").containsMatchIn(v.title)) s -= 2
-            c to s
-        }.filter { it.second >= 3 }.maxByOrNull { it.second }?.first
-        cache[v.id] = best
-        return best
+        val nt = n(title); val ct0 = c(title); val ca0 = c(artist)
+        val origJunk = JUNK.findAll(v.title).map { it.value.lowercase() }.toSet()
+        fun score(h: SoundCloudApi.Hit): Int {
+            if (h.policy == "SNIP" || h.policy == "BLOCK") return -99
+            val ht = n(h.title.replace(Regex("^.*? - "), { m -> if (c(m.value).contains(ca0) || ca0.contains(c(m.value).ifBlank { "#" })) "" else m.value }))
+            val htc = ht.replace(" ", "")
+            var s = when { htc == ct0 -> 6; htc.startsWith(ct0) || htc.endsWith(ct0) -> 4; htc.contains(ct0) -> 2; else -> return -99 }
+            val ha = c(h.artist); val hu = c(h.user)
+            if (ca0.isNotBlank() && (ha == ca0 || hu == ca0)) s += 5
+            else if (ca0.isNotBlank() && (ha.contains(ca0) || ca0.contains(ha.ifBlank { "#" }) || hu.contains(ca0) || ca0.contains(hu.ifBlank { "#" }))) s += 3
+            else if (ca0.isNotBlank() && c(h.title).contains(ca0)) s += 1
+            val junk = JUNK.findAll(h.title).map { it.value.lowercase() }.filter { it !in origJunk }.count()
+            s -= junk * 4
+            val extra = ht.split(" ").filter { it.isNotBlank() && !nt.contains(it) && !n(artist).contains(it) }.size
+            s -= minOf(3, maxOf(0, extra - 1))
+            if (h.plays > 50_000) s += 1
+            return s
+        }
+        val q = "$artist $title".trim()
+        var hits = SoundCloudApi.searchRich(q)
+        if (hits.isEmpty()) hits = SoundCloudApi.searchRich(title)
+        val best = hits.map { it to score(it) }.filter { it.second >= 7 }.maxByOrNull { it.second }?.first
+        val r = best?.let { YtVideo(it.path, it.title, it.artist, it.art, "sc") }
+        if (hits.isNotEmpty() || r != null) cache[v.id] = System.currentTimeMillis() to r
+        r
     }
 }

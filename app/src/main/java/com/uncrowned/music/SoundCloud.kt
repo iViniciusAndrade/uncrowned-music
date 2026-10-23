@@ -116,7 +116,8 @@ object SoundCloudApi {
 
     /* link do áudio pra tocar no player do app (com equalizador, velocidade, K7/vinil).
        Prefere o MP3 direto; se não tiver, usa o HLS. Faixa só com prévia de 30s (SNIP) não serve. */
-    data class Stream(val url: String, val hls: Boolean, val duration: Long, val art: String)
+    /* web = true: a faixa só tem áudio protegido (selo/gravadora); toca pelo player oficial do SoundCloud */
+    data class Stream(val url: String, val hls: Boolean, val duration: Long, val art: String, val web: Boolean = false)
     fun stream(path: String): Stream? = runCatching {
         var id = findClientId(false) ?: return null
         val res = { cid: String -> http("https://api-v2.soundcloud.com/resolve?url=${URLEncoder.encode("https://soundcloud.com/$path", "UTF-8")}&client_id=$cid") }
@@ -125,19 +126,40 @@ object SoundCloudApi {
         if (c1 !in 200..299) return null
         val tr = JSONObject(b1)
         if (tr.optString("kind") != "track" || tr.optString("policy") == "SNIP" || tr.optString("policy") == "BLOCK") return null
+        val art = tr.optString("artwork_url").replace("-large.", "-t500x500.").takeIf { it != "null" } ?: ""
         val tcs = tr.optJSONObject("media")?.optJSONArray("transcodings") ?: return null
         val all = (0 until tcs.length()).map { tcs.getJSONObject(it) }
         fun proto(o: JSONObject) = o.optJSONObject("format")?.optString("protocol").orEmpty()
         fun mime(o: JSONObject) = o.optJSONObject("format")?.optString("mime_type").orEmpty()
         val pick = all.firstOrNull { proto(it) == "progressive" }
             ?: all.firstOrNull { proto(it) == "hls" && mime(it).contains("mp4") }
-            ?: all.firstOrNull { proto(it) == "hls" && mime(it).contains("mpeg") } ?: return null
+            ?: all.firstOrNull { proto(it) == "hls" && mime(it).contains("mpeg") }
+        if (pick == null) return if (all.isNotEmpty()) Stream("", false, tr.optLong("duration"), art, web = true) else null
         val auth = tr.optString("track_authorization").takeIf { it.isNotBlank() }?.let { "&track_authorization=$it" } ?: ""
         val (c2, b2) = http("${pick.optString("url")}?client_id=$id$auth")
-        if (c2 !in 200..299) return null
-        val url = JSONObject(b2).optString("url").ifBlank { return null }
-        Stream(url, proto(pick) == "hls", tr.optLong("duration"), tr.optString("artwork_url").replace("-large.", "-t500x500."))
+        if (c2 !in 200..299) return Stream("", false, tr.optLong("duration"), art, web = true)
+        val url = JSONObject(b2).optString("url").ifBlank { return Stream("", false, tr.optLong("duration"), art, web = true) }
+        Stream(url, proto(pick) == "hls", tr.optLong("duration"), art)
     }.getOrNull()
+
+    /* busca com tudo que precisa pra achar a música certa (artista oficial, só prévia, duração, plays) */
+    data class Hit(val path: String, val title: String, val artist: String, val user: String, val policy: String, val dur: Long, val art: String, val plays: Long)
+    fun searchRich(q: String): List<Hit> = runCatching {
+        var id = findClientId(false) ?: return emptyList()
+        val url = { cid: String -> "https://api-v2.soundcloud.com/search/tracks?q=${URLEncoder.encode(q, "UTF-8")}&client_id=$cid&limit=40" }
+        var (code, body) = http(url(id))
+        if (code == 401 || code == 403) { id = findClientId(true) ?: return emptyList(); val r = http(url(id)); code = r.first; body = r.second }
+        if (code !in 200..299) return emptyList()
+        val col = JSONObject(body).optJSONArray("collection") ?: return emptyList()
+        (0 until col.length()).mapNotNull { i ->
+            val t = col.getJSONObject(i)
+            val path = t.optString("permalink_url").substringAfter("soundcloud.com/", ""); if (path.isBlank()) return@mapNotNull null
+            val user = t.optJSONObject("user")?.optString("username").orEmpty()
+            val pub = t.optJSONObject("publisher_metadata")?.optString("artist").orEmpty().takeIf { it != "null" } ?: ""
+            val art = t.optString("artwork_url").takeIf { it.isNotBlank() && it != "null" } ?: t.optJSONObject("user")?.optString("avatar_url").orEmpty()
+            Hit(path, t.optString("title"), pub.ifBlank { user }, user, t.optString("policy"), t.optLong("full_duration", t.optLong("duration")), art.replace("-large.", "-t500x500."), t.optLong("playback_count"))
+        }
+    }.getOrDefault(emptyList())
 
     suspend fun search(q: String): Result<List<YtVideo>> = withContext(Dispatchers.IO) {
         runCatching {

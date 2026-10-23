@@ -85,7 +85,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
 
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { Sync.playLocal = { u, v -> ui.playUri(u, v) }; YtPlayer.stopOther = { ui.stopLocal() }
-        ScPlay.setItems = { ui.setItems(it) }; ScPlay.addItem = { ui.controller?.addMediaItem(it) } }
+        ScPlay.exoSet = { ui.setItems(it) }; ScPlay.exoAdd = { ui.controller?.addMediaItem(it) }; ScPlay.webPlay = { YtPlayer.playWeb(it) } }
     var tab by rememberSaveable { mutableIntStateOf(Prefs.startTab.coerceIn(0, 3)) }
     LaunchedEffect(Unit) { Listen.init(ctx); Eco.init(ctx); Hunter.start(ctx) }
     // conta o tempo ouvido do player do YouTube também quando o app está aberto
@@ -552,7 +552,7 @@ fun MiniPlayer(ui: PlayerUi, onOpen: () -> Unit) {
                     Text(ui.artist, maxLines = 1, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 IconButton(onClick = { ui.toggle() }) { Icon(if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(30.dp)) }
-                IconButton(onClick = { ui.controller?.seekToNext() }) { Icon(Icons.Rounded.FastForward, null, Modifier.size(28.dp)) }
+                IconButton(onClick = { ui.next() }) { Icon(Icons.Rounded.FastForward, null, Modifier.size(28.dp)) }
             }
             if (Prefs.showProgressMini && ui.duration > 0)
                 LinearProgressIndicator(progress = { (pos.toFloat() / ui.duration).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp),
@@ -641,11 +641,11 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                     IconButton(onClick = { c?.shuffleModeEnabled = !ui.shuffle }) {
                         Icon(Icons.Rounded.Shuffle, null, tint = if (ui.shuffle) accent else Dim)
                     }
-                    IconButton(onClick = { c?.seekToPrevious() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastRewind, null, Modifier.size(46.dp), tint = Color.White) }
+                    IconButton(onClick = { ui.prev() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastRewind, null, Modifier.size(46.dp), tint = Color.White) }
                     IconButton(onClick = { ui.toggle() }, Modifier.size(80.dp)) {
                         Icon(if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, Modifier.size(64.dp), tint = Color.White)
                     }
-                    IconButton(onClick = { c?.seekToNext() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastForward, null, Modifier.size(46.dp), tint = Color.White) }
+                    IconButton(onClick = { ui.next() }, Modifier.size(64.dp)) { Icon(Icons.Rounded.FastForward, null, Modifier.size(46.dp), tint = Color.White) }
                     IconButton(onClick = { c?.repeatMode = (ui.repeat + 1) % 3 }) {
                         Icon(if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null,
                             tint = if (ui.repeat != Player.REPEAT_MODE_OFF) accent else Dim)
