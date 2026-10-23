@@ -40,11 +40,14 @@ object AdBlock {
 
     private val empty get() = WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
 
+    // modo 3 do player (o YouTube travou com o bloqueio total): só pula/silencia anúncio, não mexe na resposta
+    val strip: Boolean get() = on && YtPlayer.mode < 2
     fun intercept(req: WebResourceRequest): WebResourceResponse? {
         if (!on) return null
         val u = req.url; val host = u.host ?: return null; val path = u.path ?: ""
         if (hosts.any { host == it || host.endsWith(".$it") }) return empty
         if (host.endsWith("youtube.com") && paths.any { path.startsWith(it) }) return empty
+        if (!strip && host.endsWith("youtube.com")) return null
         if (host == "www.youtube.com" && path.startsWith("/embed/") && req.method == "GET" && !req.isForMainFrame) return embed(req)
         // página do YouTube (vídeos que não tocam embutidos): mesmo script que tira os anúncios
         if ((host == "m.youtube.com" || host == "www.youtube.com") && path == "/watch" && req.method == "GET" && req.isForMainFrame) return embed(req)
@@ -93,7 +96,7 @@ class AdBlockClient : WebViewClient() {
     }
     override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
         super.onPageStarted(view, url, favicon)
-        if (url?.contains("youtube.com/watch") == true) view?.evaluateJavascript("window.ADB=${AdBlock.on};" + AdBlock.STRIP_JS, null)
+        if (url?.contains("youtube.com/watch") == true && AdBlock.strip) view?.evaluateJavascript(AdBlock.STRIP_JS, null)
     }
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)

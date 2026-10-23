@@ -191,18 +191,35 @@ object YtPlayer {
         YtStore.addHistory(v)
         val w = web
         if (w != null && loadedSrc != v.src) load(w, v) else js("player.loadVideoById('${v.id}')")
+        startDog()
     }
+    /* Garantia de tocar: se em ~8s a música não andou, troca o jeito de tocar e tenta de novo, sozinho:
+       1) player embutido com bloqueio total de anúncio  2) página do YouTube com bloqueio total
+       3) página do YouTube só pulando/silenciando os anúncios. O jeito que funcionar fica guardado. */
+    var mode: Int get() = Prefs.sp.getInt("ytmode", 0); set(v) = Prefs.sp.edit().putInt("ytmode", v.coerceIn(0, 2)).apply()
+    private var progressed = false; private var userPaused = false; private var tries = 0
+    private val dog = Runnable {
+        val v = current ?: return@Runnable
+        if (v.src != "yt" || progressed || userPaused) return@Runnable
+        if (tries >= 3) return@Runnable
+        tries++
+        mode = (mode + 1).coerceAtMost(2)
+        web?.let { load(it, v) }
+        h.postDelayed(dogRef(), 9000)
+    }
+    private fun dogRef(): Runnable = dog
+    private fun startDog() { progressed = false; userPaused = false; tries = 0; h.removeCallbacks(dog); h.postDelayed(dog, 8000) }
     fun load(w: WebView, v: YtVideo?) {
         loadedSrc = v?.src ?: "yt"; time = 0f; duration = 0f
         when (v?.src) {
             "sc" -> w.loadDataWithBaseURL("https://w.soundcloud.com", SC_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
             "vm" -> w.loadDataWithBaseURL("https://uncrowned.app", VM_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
-            else -> w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
+            else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
     fun next() { if (index < queue.size - 1) play(queue, index + 1) }
     fun prev() { if (time > 5) seek(0f) else if (index > 0) play(queue, index - 1) }
-    fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
+    fun toggle() { if (playing) userPaused = true; js(if (playing) "player.pauseVideo()" else "player.playVideo()") }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
     // 0 = não repete, 1 = repete a lista, 2 = repete esta música
@@ -250,6 +267,7 @@ object YtPlayer {
             }
         }.let {}
         @JavascriptInterface fun time(t: Float, d: Float) = h.post {
+            if (t > 0.6f && !progressed) { progressed = true; h.removeCallbacks(dog) }
             time = t; duration = d
             // conta o tempo ouvido (Mais ouvidas / Momentos)
             if (playing && speed != 1f && ticks % 6 == 0) applySpeed()
