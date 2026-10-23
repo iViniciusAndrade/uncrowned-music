@@ -17,14 +17,40 @@ import kotlin.random.Random
    corta graves e agudos como o aparelho antigo, satura de leve, faz a "oscilação" da fita
    e mistura chiado (K7) ou estalos (vinil). */
 object Retro {
-    val NAMES = mapOf("" to "Normal", "k7" to "Fita K7", "vinil" to "Vinil")
+    val NAMES = mapOf("" to "Normal", "k7" to "Fita K7", "vinil" to "Vinil", "black" to "Black Metal")
     var mode: String get() = Prefs.sp.getString("retro", "") ?: ""; set(v) { Prefs.sp.edit().putString("retro", v).apply(); YtPlayer.applyRetro() }
-    fun next() { mode = when (mode) { "" -> "k7"; "k7" -> "vinil"; else -> "" } }
+    fun next() { mode = when (mode) { "" -> "k7"; "k7" -> "vinil"; "vinil" -> "black"; else -> "" } }
+    /* Black Metal (1ª onda, 1981–1986: Venom, Bathory, Hellhammer, demos de fita):
+       gravado ao vivo em estúdio de garagem/gravador caseiro, fita rodando em meia velocidade e cópia de cópia
+       de fita (tape trading). Resultado: som mono e abafado, embolado no médio-grave, saturado até rachar,
+       chiado alto, zumbido de tomada, fita oscilando e um eco curto de sala pequena. */
 
     /* mesmo código que roda no PC: entra dentro do player do YouTube/SoundCloud (Web Audio) */
     const val JS_SRC = """function(c, mode) {
   var inp = c.createGain(), out = c.createGain();
   if (!mode) { inp.connect(out); return { input: inp, output: out, mode: '', stop: function(){} }; }
+  if (mode === 'black') {
+    var B = function(type, f, g, q) { var b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; if (g != null) b.gain.value = g; if (q != null) b.Q.value = q; return b; };
+    inp.channelCount = 1; inp.channelCountMode = 'explicit'; inp.channelInterpretation = 'speakers';
+    var h1 = B('highpass', 90, null, 0.7), mud = B('peaking', 400, 5, 0.8), pres = B('peaking', 2500, -3, 0.9), pre = B('lowpass', 6500, null, 0.6);
+    var sh = c.createWaveShaper(), K = 5, N = 2048, cvb = new Float32Array(N), off = Math.tanh(K * 0.12), nk = Math.tanh(K * 1.12) - off;
+    for (var i = 0; i < N; i++) { var x = i / (N - 1) * 2 - 1; cvb[i] = (Math.tanh(K * (x + 0.12)) - off) / nk; } sh.curve = cvb; sh.oversample = '2x';
+    var post = B('lowpass', 4800, null, 0.7), dc = B('highpass', 70, null, 0.7);
+    var dlb = c.createDelay(0.05); dlb.delayTime.value = 0.012;
+    var o1 = c.createOscillator(), g1 = c.createGain(); o1.frequency.value = 0.5; g1.gain.value = 0.0025; o1.connect(g1); g1.connect(dlb.delayTime); o1.start();
+    var o2 = c.createOscillator(), g2 = c.createGain(); o2.frequency.value = 7.5; g2.gain.value = 0.0004; o2.connect(g2); g2.connect(dlb.delayTime); o2.start();
+    var echo = c.createDelay(0.3); echo.delayTime.value = 0.09; var fb = c.createGain(); fb.gain.value = 0.35; var wet = c.createGain(); wet.gain.value = 0.28; var ef = B('lowpass', 3000, null, 0.7);
+    var lvl = c.createGain(); lvl.gain.value = 0.8;
+    inp.connect(h1); h1.connect(mud); mud.connect(pres); pres.connect(pre); pre.connect(sh); sh.connect(post); post.connect(dc); dc.connect(dlb);
+    dlb.connect(lvl); dlb.connect(echo); echo.connect(ef); ef.connect(fb); fb.connect(echo); ef.connect(wet); wet.connect(lvl); lvl.connect(out);
+    var L = c.sampleRate * 4, nb = c.createBuffer(1, L, c.sampleRate), nd = nb.getChannelData(0), br = 0;
+    for (var i = 0; i < L; i++) { var w = Math.random() * 2 - 1; br = 0.97 * br + 0.03 * w; nd[i] = w * 0.5 + br * 1.5; }
+    var nsb = c.createBufferSource(); nsb.buffer = nb; nsb.loop = true; var nh = B('highpass', 300, null, 0.7), nl = B('lowpass', 7000, null, 0.7), ngb = c.createGain(); ngb.gain.value = 0.04;
+    nsb.connect(nh); nh.connect(nl); nl.connect(ngb); ngb.connect(out); nsb.start();
+    var hum = c.createOscillator(), hg = c.createGain(); hum.frequency.value = 50; hg.gain.value = 0.006; hum.connect(hg); hg.connect(out); hum.start();
+    var hum3 = c.createOscillator(), hg3 = c.createGain(); hum3.frequency.value = 150; hg3.gain.value = 0.003; hum3.connect(hg3); hg3.connect(out); hum3.start();
+    return { input: inp, output: out, mode: mode, stop: function() { try { o1.stop(); o2.stop(); nsb.stop(); hum.stop(); hum3.stop(); } catch (e) {} } };
+  }
   var tape = mode === 'k7';
   var bq = function(type, f, g, q) { var b = c.createBiquadFilter(); b.type = type; b.frequency.value = f; if (g != null) b.gain.value = g; if (q != null) b.Q.value = q; return b; };
   var hp = bq('highpass', tape ? 70 : 35), ls = bq('lowshelf', 180, tape ? -4 : -2), mid = bq('peaking', 1500, tape ? 2 : 1.5, 0.7), lp = bq('lowpass', tape ? 7000 : 11000, null, 0.5);
@@ -84,6 +110,11 @@ class RetroDsp(private val rate: Int, private val ch: Int) {
     }
     var mode = ""; private set
     private var chain = emptyList<Bq>(); private var noiseF: Bq? = null
+    // black metal: filtros depois da distorção, eco de sala pequena, zumbido de tomada
+    private var post = emptyList<Bq>(); private var noiseF2: Bq? = null
+    private val echoLen = (rate * 0.1).toInt() + 4
+    private val echo = Array(maxOf(1, ch)) { DoubleArray(echoLen) }
+    private var ep = 0
     private var k = 1.0; private var wowD = 0.0; private var flutD = 0.0; private var noiseG = 0.0
     private val ringLen = (rate * 0.06).toInt() + 4
     private val ring = Array(maxOf(1, ch)) { DoubleArray(ringLen) }
@@ -94,6 +125,13 @@ class RetroDsp(private val rate: Int, private val ch: Int) {
         if (m == mode) return
         mode = m; val tape = m == "k7"
         if (m.isEmpty()) return
+        if (m == "black") {
+            chain = listOf(Bq("hp", 90.0, 0.0, 0.7, rate), Bq("pk", 400.0, 5.0, 0.8, rate), Bq("pk", 2500.0, -3.0, 0.9, rate), Bq("lp", minOf(rate / 2.2, 6500.0), 0.0, 0.6, rate))
+            post = listOf(Bq("lp", minOf(rate / 2.2, 4800.0), 0.0, 0.7, rate), Bq("hp", 70.0, 0.0, 0.7, rate))
+            noiseF = Bq("hp", 300.0, 0.0, 0.7, rate); noiseF2 = Bq("lp", minOf(rate / 2.2, 7000.0), 0.0, 0.7, rate)
+            k = 5.0; wowD = 0.0025; flutD = 0.0004; noiseG = 0.04
+            return
+        }
         chain = listOf(Bq("hp", if (tape) 70.0 else 35.0, 0.0, 0.707, rate), Bq("ls", 180.0, if (tape) -4.0 else -2.0, 0.707, rate),
             Bq("pk", 1500.0, if (tape) 2.0 else 1.5, 0.7, rate), Bq("lp", minOf(rate / 2.2, if (tape) 7000.0 else 11000.0), 0.0, 0.5, rate))
         noiseF = if (tape) Bq("bp", 4000.0, 0.0, 1.0, rate) else Bq("hp", 1200.0, 0.0, 0.707, rate)
@@ -104,6 +142,7 @@ class RetroDsp(private val rate: Int, private val ch: Int) {
     fun frame(x: DoubleArray) {
         if (mode.isEmpty()) return
         val t = n.toDouble() / rate
+        if (mode == "black") { black(x, t); return }
         val delay = (0.012 + wowD * sin(2 * PI * 0.55 * t) + flutD * sin(2 * PI * 6.5 * t)) * rate
         // ruído do mesmo jeito do PC
         val tape = mode == "k7"
@@ -126,6 +165,32 @@ class RetroDsp(private val rate: Int, private val ch: Int) {
             x[c] = ring[c][i0] * (1 - fr) + ring[c][i1] * fr + nz
         }
         wp = (wp + 1) % ringLen; n++
+    }
+
+    private fun black(x: DoubleArray, t: Double) {
+        val delay = (0.012 + wowD * sin(2 * PI * 0.5 * t) + flutD * sin(2 * PI * 7.5 * t)) * rate
+        // chiado de cópia de fita + zumbido de 50 Hz da tomada
+        val w = rnd.nextDouble() * 2 - 1; brown = 0.97 * brown + 0.03 * w
+        val nz = noiseF2!!.run(noiseF!!.run(w * 0.5 + brown * 1.5, 7), 7) * noiseG + 0.006 * sin(2 * PI * 50 * t) + 0.003 * sin(2 * PI * 150 * t)
+        // quase mono, como as demos da época
+        val nc = minOf(ch, ring.size); var mono = 0.0; for (c in 0 until nc) mono += x[c]; mono /= maxOf(1, nc)
+        val off = tanh(k * 0.12); val nk = tanh(k * 1.12) - off
+        val eD = (0.09 * rate).toInt().coerceAtMost(echoLen - 1)
+        for (c in 0 until nc) {
+            var v = mono * 0.85 + x[c] * 0.15
+            for (b in chain) v = b.run(v, c)
+            v = (tanh(k * (v + 0.12)) - off) / nk          // pré barato saturado (assimétrico)
+            for (b in post) v = b.run(v, c)
+            ring[c][wp] = v
+            var rp = wp - delay; while (rp < 0) rp += ringLen
+            val i0 = rp.toInt() % ringLen; val i1 = (i0 + 1) % ringLen; val fr = rp - Math.floor(rp)
+            val d = ring[c][i0] * (1 - fr) + ring[c][i1] * fr
+            var ri = ep - eD; if (ri < 0) ri += echoLen
+            val e = echo[c][ri]
+            echo[c][ep] = d + 0.35 * e * 0.8
+            x[c] = (d + 0.28 * e) * 0.8 + nz
+        }
+        wp = (wp + 1) % ringLen; ep = (ep + 1) % echoLen; n++
     }
 }
 

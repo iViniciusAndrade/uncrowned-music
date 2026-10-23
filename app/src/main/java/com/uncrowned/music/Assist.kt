@@ -110,7 +110,7 @@ object Assist {
 
     private const val SYS = """Você é o assistente do app de música Uncrowned. Transforme o pedido em UMA linha de JSON, sem mais nada:
 {"acao":"...","valor":"...","resposta":"..."}
-acao pode ser: tocar (valor = música/artista/gênero pra buscar), pausar, continuar, proxima, anterior, velocidade (valor = número de 0.5 a 1.5), timer (valor = minutos), aleatorio, repetir, efeito (valor = k7, vinil ou normal), conversa (só responder).
+acao pode ser: tocar (valor = música/artista/gênero pra buscar), pausar, continuar, proxima, anterior, velocidade (valor = número de 0.5 a 1.5), timer (valor = minutos), aleatorio, repetir, efeito (valor = k7, vinil, black ou normal), conversa (só responder).
 resposta = frase curta e descontraída em português do Brasil.
 Exemplos:
 pedido: me dá uma vibe triste pra chorar no banho -> {"acao":"tocar","valor":"músicas tristes","resposta":"Separei umas pra chorar em paz."}
@@ -161,6 +161,7 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
         if (has("cancela o timer", "tira o timer", "sem timer")) { Sleep.cancel(); return "Timer cancelado." }
         if (has("aleatorio", "embaralha", "shuffle")) { if (web) YtPlayer.shuffleRest() else ui.controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }; return "Embaralhei." }
         if (has("repete", "repetir", "repeat")) { if (web) YtPlayer.cycleRepeat() else ui.controller?.let { it.repeatMode = (it.repeatMode + 1) % 3 }; return "Repetição trocada." }
+        if (has("black metal", "black", "trve", "kvlt", "necro")) { Retro.mode = "black"; Prefs.version.intValue++; return "Modo Black Metal: som de garagem de 1984. 🤘" }
         if (has("k7", "fita", "cassete")) { Retro.mode = "k7"; Prefs.version.intValue++; return "Som de fita K7 ligado." }
         if (has("vinil", "disco")) { Retro.mode = "vinil"; Prefs.version.intValue++; return "Som de vinil ligado." }
         if (has("sem efeito", "tira o efeito", "efeito normal")) { Retro.mode = ""; Prefs.version.intValue++; return "Efeito desligado." }
@@ -206,7 +207,7 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
                 "velocidade" -> valor.replace(',', '.').toFloatOrNull()?.let { speed(it.coerceIn(0.5f, 1.5f), "") }
                 "timer" -> valor.filter { it.isDigit() }.toIntOrNull()?.let { Sleep.start(it.coerceIn(1, 600)); "" }
                 "aleatorio" -> rules(ui, "aleatorio"); "repetir" -> rules(ui, "repete")
-                "efeito" -> { Retro.mode = when (norm(valor)) { "k7" -> "k7"; "vinil" -> "vinil"; else -> "" }; Prefs.version.intValue++; "" }
+                "efeito" -> { Retro.mode = when (norm(valor)) { "k7" -> "k7"; "vinil" -> "vinil"; "black", "black metal" -> "black"; else -> "" }; Prefs.version.intValue++; "" }
                 else -> null
             }
         }

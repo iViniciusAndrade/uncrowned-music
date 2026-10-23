@@ -38,6 +38,7 @@ object GlobalFx {
                 var mb = if (Prefs.eqEnabled) Prefs.band(b) else 0
                 // som de aparelho antigo: corta graves fundos e agudos, sobe o meio
                 if (retro == "k7") mb += when { f < 90 -> -900; f < 250 -> -400; f in 1000..2500 -> 250; f > 9000 -> -1500; f > 6000 -> -900; else -> 0 }
+                if (retro == "black") mb += when { f < 120 -> -1500; f in 250..700 -> 600; f in 2000..4000 -> -300; f > 5000 -> -1500; else -> 0 }
                 if (retro == "vinil") mb += when { f < 50 -> -500; f < 250 -> -200; f in 1000..2500 -> 150; f > 12000 -> -900; else -> 0 }
                 e.setBandLevel(b.toShort(), mb.coerceIn(lo.toInt(), hi.toInt()).toShort())
             }
@@ -59,12 +60,16 @@ object GlobalFx {
             }.getOrNull() ?: return@Thread
             t.play()
             val rnd = Random(11); val out = ShortArray(1024)
-            var brown = 0.0; var crack = 0; var z1 = 0.0; var z2 = 0.0; var hp = 0.0; var lastIn = 0.0
+            var brown = 0.0; var crack = 0; var z1 = 0.0; var z2 = 0.0; var hp = 0.0; var lastIn = 0.0; var ph = 0L
             while (noiseMode.isNotEmpty()) {
-                val tape = noiseMode == "k7"
+                val tape = noiseMode == "k7"; val bm = noiseMode == "black"
                 for (i in out.indices) {
                     var nz: Double
-                    if (tape) { val w = rnd.nextDouble() * 2 - 1; brown = 0.97 * brown + 0.03 * w; nz = (w * 0.6 + brown * 2) * 0.5
+                    if (bm) { val w = rnd.nextDouble() * 2 - 1; brown = 0.97 * brown + 0.03 * w
+                        // chiado forte de fita copiada + zumbido de 50 Hz
+                        hp = 0.96 * (hp + (w * 0.5 + brown * 1.5) - lastIn); lastIn = w * 0.5 + brown * 1.5
+                        val tt = ph++ / sr.toDouble(); nz = hp * 0.04 + 0.006 * sin(2 * PI * 50 * tt) + 0.003 * sin(2 * PI * 150 * tt) }
+                    else if (tape) { val w = rnd.nextDouble() * 2 - 1; brown = 0.97 * brown + 0.03 * w; nz = (w * 0.6 + brown * 2) * 0.5
                         // passa-banda leve em torno de 4 kHz (chiado de fita)
                         z1 += 0.45 * (nz - z1); z2 += 0.08 * (z1 - z2); nz = (z1 - z2) * 0.9 * 0.022 * 3.2 }
                     else {
@@ -84,7 +89,7 @@ object GlobalFx {
 
     /* oscilação da fita no player da web: velocidade varia de leve (wow 0,55 Hz) */
     fun wowRate(base: Float, tMs: Long): Float {
-        val d = when (Retro.mode) { "k7" -> 0.004; "vinil" -> 0.0015; else -> return base }
+        val d = when (Retro.mode) { "k7" -> 0.004; "vinil" -> 0.0015; "black" -> 0.006; else -> return base }
         return (base * (1 + d * sin(2 * PI * 0.55 * tMs / 1000.0))).toFloat()
     }
 
