@@ -46,6 +46,8 @@ object AdBlock {
         if (hosts.any { host == it || host.endsWith(".$it") }) return empty
         if (host.endsWith("youtube.com") && paths.any { path.startsWith(it) }) return empty
         if (host == "www.youtube.com" && path.startsWith("/embed/") && req.method == "GET" && !req.isForMainFrame) return embed(req)
+        // página do YouTube (vídeos que não tocam embutidos): mesmo script que tira os anúncios
+        if ((host == "m.youtube.com" || host == "www.youtube.com") && path == "/watch" && req.method == "GET" && req.isForMainFrame) return embed(req)
         return null
     }
 
@@ -82,4 +84,19 @@ object AdBlock {
 class AdBlockClient : WebViewClient() {
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? =
         request?.let { AdBlock.intercept(it) } ?: super.shouldInterceptRequest(view, request)
+    // não deixa a página do YouTube pular pro app do YouTube nem sair do player
+    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+        val u = request?.url ?: return false
+        if (u.scheme != "http" && u.scheme != "https") return true
+        val h = u.host ?: ""
+        return !(h.endsWith("youtube.com") || h.endsWith("soundcloud.com") || h.endsWith("vimeo.com") || h.endsWith("google.com") || h.endsWith("gstatic.com"))
+    }
+    override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+        super.onPageStarted(view, url, favicon)
+        if (url?.contains("youtube.com/watch") == true) view?.evaluateJavascript("window.ADB=${AdBlock.on};" + AdBlock.STRIP_JS, null)
+    }
+    override fun onPageFinished(view: WebView?, url: String?) {
+        super.onPageFinished(view, url)
+        if (url?.contains("youtube.com/watch") == true) view?.evaluateJavascript("window.ADB=${AdBlock.on};" + YtPlayer.WATCH_JS, null)
+    }
 }

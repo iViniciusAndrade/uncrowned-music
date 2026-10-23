@@ -205,6 +205,20 @@ object YtPlayer {
     fun toggle() = js(if (playing) "player.pauseVideo()" else "player.playVideo()")
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    // controla o vídeo da página do YouTube igual ao player embutido (play, pausa, tempo, fim)
+    const val WATCH_JS = """(function(){ if(window.__uncW) return; window.__uncW=1;
+  var st=-1; function V(){return document.querySelector('video')}
+  window.player={playVideo:function(){window.__uncPausedByUser=0;var v=V();v&&v.play()},pauseVideo:function(){window.__uncPausedByUser=1;var v=V();v&&v.pause()},seekTo:function(s){var v=V();if(v)v.currentTime=s},
+    loadVideoById:function(id){location.href='https://m.youtube.com/watch?v='+id}};
+  var css=document.createElement('style');css.textContent='ytm-mobile-topbar-renderer,ytm-pivot-bar-renderer,.mobile-topbar-header,ytm-item-section-renderer,ytm-companion-slot,ytm-promoted-sparkles-web-renderer,.ytm-autonav-bar{display:none!important}body{background:#000!important}';document.documentElement.appendChild(css);
+  setInterval(function(){ var v=V(); if(!v) return;
+    try{ if(v.paused && !v.ended && !window.__uncPausedByUser && v.readyState>2 && v.currentTime<1) v.play(); }catch(e){}
+    var s=v.ended?0:(v.paused?2:1); if(s!==st){st=s;Android.state(s)}
+    Android.time(v.currentTime||0, isFinite(v.duration)?v.duration:0);
+    if(window.ADB!==false){ var ad=document.querySelector('.ad-showing,.ad-interrupting'); var sk=document.querySelector('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-skip-ad-button,[id^="skip-button"] button'); if(sk) sk.click();
+      if(ad){ v.muted=true; window.__m=1; if(isFinite(v.duration)&&v.duration<=180) v.currentTime=Math.max(0,v.duration-0.05);} else if(window.__m){ v.muted=false; window.__m=0; } }
+  }, 500);
+})();"""
     // velocidade do player online (muda o tom junto, igual slowed/nightcore)
     var speed by mutableFloatStateOf(Prefs.sp.getFloat("ytspeed", 1f))
     fun setSpeedTo(v: Float) { speed = v; Prefs.sp.edit().putFloat("ytspeed", v).apply(); applySpeed() }
@@ -233,9 +247,12 @@ object YtPlayer {
             if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
         }.let {}
         // vídeo que o dono bloqueou fora do YouTube: avisa e pula em vez de ficar travado
+        // vídeo que o dono não deixa tocar embutido: abre a página do próprio YouTube (com o bloqueador de anúncios) e toca por lá
         @JavascriptInterface fun err(code: Int) = h.post {
-            runCatching { android.widget.Toast.makeText(web?.context, "Essa não toca fora do YouTube (erro $code). Pulando…", android.widget.Toast.LENGTH_SHORT).show() }
-            if (index < queue.size - 1) next()
+            val v = current ?: return@post
+            val w = web ?: return@post
+            if (v.src == "yt" && loadedSrc == "yt") { loadedSrc = "ytw"; time = 0f; duration = 0f; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") }
+            else if (index < queue.size - 1) next()
         }.let {}
         @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
     }
