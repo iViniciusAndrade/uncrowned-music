@@ -164,6 +164,8 @@ object YtStore {
     var vimeoToken: String get() = Prefs.sp.getString("vmtoken", "") ?: ""; set(v) = Prefs.sp.edit().putString("vmtoken", v.trim()).apply()
     var source: String get() = Prefs.sp.getString("osrc", "yt") ?: "yt"; set(v) = Prefs.sp.edit().putString("osrc", v).apply()
     var showVideo: Boolean get() = Prefs.sp.getBoolean("ytvideo", true); set(v) = Prefs.sp.edit().putBoolean("ytvideo", v).apply()
+    // toca pelo SoundCloud: música que vem do YouTube (artista, álbum, paradas, playlists) é procurada no SoundCloud e toca de lá
+    var scFirst: Boolean get() = Prefs.sp.getBoolean("scfirst", true); set(v) = Prefs.sp.edit().putBoolean("scfirst", v).apply()
 }
 
 /* ---------- Estado do player do YouTube ---------- */
@@ -187,6 +189,23 @@ object YtPlayer {
         }
         stopOther?.invoke()
         queue = list; index = i
+        // música do YouTube: acha a mesma no SoundCloud e toca de lá
+        if (target.src == "yt" && YtStore.scFirst) {
+            val w0 = web
+            scScope.launch {
+                val sc = ScMatch.find(target)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (index != i || queue.getOrNull(i)?.id != target.id) return@withContext
+                    if (sc != null) queue = queue.toMutableList().also { it[i] = sc }
+                    val v2 = current ?: return@withContext
+                    YtStore.addHistory(v2)
+                    val w = web ?: w0
+                    if (w != null && loadedSrc != v2.src) load(w, v2) else js("player.loadVideoById('${v2.id}')")
+                    startDog()
+                }
+            }
+            return
+        }
         val v = current ?: return
         YtStore.addHistory(v)
         val w = web
@@ -242,6 +261,7 @@ object YtPlayer {
     fun toggle() { if (playing) userPaused = true; js(if (playing) "player.pauseVideo()" else "player.playVideo()") }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    private val scScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     // 0 = não repete, 1 = repete a lista, 2 = repete esta música
     var repeat by mutableIntStateOf(Prefs.sp.getInt("ytrepeat", 0))
     fun cycleRepeat() { repeat = (repeat + 1) % 3; Prefs.sp.edit().putInt("ytrepeat", repeat).apply() }
@@ -553,5 +573,32 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/* acha no SoundCloud a mesma música de um vídeo do YouTube */
+object ScMatch {
+    private val cache = HashMap<String, YtVideo?>()
+    private fun n(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+        .replace(Regex("\\(.*?\\)|\\[.*?]"), " ").replace(Regex("\\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|ft\\.?.*|feat\\.?.*)\\b"), " ")
+        .replace(Regex("[^a-z0-9]+"), " ").trim()
+    suspend fun find(v: YtVideo): YtVideo? {
+        cache[v.id]?.let { return it }
+        if (cache.containsKey(v.id)) return null
+        var title = v.title.replace(Regex("\\s*[(\\[].*?[)\\]]"), "").trim()
+        var artist = v.channel.replace(Regex("(?i) - Topic$"), "").replace(Regex("(?i)VEVO$"), "").trim()
+        if (" - " in title) { artist = title.substringBefore(" - ").trim(); title = title.substringAfter(" - ").trim() }
+        val list = SoundCloudApi.search("$artist $title".trim()).getOrDefault(emptyList())
+        val nt = n(title); val na = n(artist)
+        val best = list.map { c ->
+            val ct = n(c.title); val ca = n(c.channel)
+            var s = 0
+            if (nt.isNotBlank() && (ct == nt || ct.contains(nt) || nt.contains(ct))) s += if (ct == nt) 3 else 2
+            if (na.isNotBlank() && (ca.contains(na) || na.contains(ca) || ct.contains(na))) s += 2
+            if (Regex("(?i)remix|cover|slowed|sped|nightcore|8d|reverb|instrumental|karaok").containsMatchIn(c.title) && !Regex("(?i)remix|cover|slowed|sped|nightcore").containsMatchIn(v.title)) s -= 2
+            c to s
+        }.filter { it.second >= 3 }.maxByOrNull { it.second }?.first
+        cache[v.id] = best
+        return best
     }
 }
