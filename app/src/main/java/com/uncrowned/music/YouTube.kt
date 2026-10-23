@@ -609,6 +609,8 @@ object ScMatch {
             if (ca0.isNotBlank() && (ha == ca0 || hu == ca0)) s += 5
             else if (ca0.isNotBlank() && (ha.contains(ca0) || ca0.contains(ha.ifBlank { "#" }) || hu.contains(ca0) || ca0.contains(hu.ifBlank { "#" }))) s += 3
             else if (ca0.isNotBlank() && c(h.title).contains(ca0)) s += 1
+            // artista diferente = outra música com o mesmo nome: não serve
+            else if (ca0.isNotBlank()) return -99
             val junk = JUNK.findAll(h.title).map { it.value.lowercase() }.filter { it !in origJunk }.count()
             s -= junk * 4
             val extra = ht.split(" ").filter { it.isNotBlank() && !nt.contains(it) && !n(artist).contains(it) }.size
