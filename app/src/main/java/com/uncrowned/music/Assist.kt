@@ -93,8 +93,13 @@ object Assist {
             dl = -1f
         }.onFailure { dl = -1f }
     }
-    fun deleteModel(c: Context) { release(); modelFile(c).delete(); File(modelFile(c).path + ".part").delete() }
-    fun release() { runCatching { llm?.close() }; llm = null }
+    fun deleteModel(c: Context) { if (thinking || dl >= 0f) return; release(); modelFile(c).delete(); File(modelFile(c).path + ".part").delete() }
+    // não fecha a IA no meio de uma resposta (isso derrubaria o app): fecha assim que ela terminar
+    private val lock = Any(); private var thinking = false; private var closeLater = false
+    fun release() = synchronized(lock) { if (thinking) closeLater = true else { runCatching { llm?.close() }; llm = null } }
+    private val bg = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+    // download continua mesmo se você sair da tela
+    fun startDownload(c: Context, done: (Result<Unit>) -> Unit) { if (dl >= 0f) return; dl = 0f; bg.launch { val r = download(c.applicationContext); withContext(Dispatchers.Main) { done(r) } } }
 
     private fun engine(c: Context): com.google.mediapipe.tasks.genai.llminference.LlmInference {
         llm?.let { return it }
@@ -115,7 +120,9 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
 
     private fun askModel(c: Context, text: String): String {
         val p = "<|im_start|>system\n$SYS<|im_end|>\n<|im_start|>user\npedido: $text<|im_end|>\n<|im_start|>assistant\n"
-        return engine(c).generateResponse(p)
+        synchronized(lock) { thinking = true; closeLater = false }
+        try { return engine(c).generateResponse(p) }
+        finally { synchronized(lock) { thinking = false; if (closeLater) { closeLater = false; runCatching { llm?.close() }; llm = null } } }
     }
 
     private fun norm(s: String) = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").trim()
@@ -146,8 +153,8 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
         if (has("continua", "continuar", "despausa", "solta o som", "volta a tocar", "play")) { if (web) { if (!YtPlayer.playing) YtPlayer.toggle() } else ui.controller?.play(); return "Bora." }
         if (has("proxima", "pula", "pular", "passa", "skip", "next")) { if (web) YtPlayer.next() else ui.next(); return "Próxima." }
         if (has("anterior", "volta uma", "musica anterior", "voltar")) { if (web) YtPlayer.prev() else ui.prev(); return "Voltei uma." }
-        if (has("slowed", "lento", "devagar", "desacelera")) return speed(0.85f, "Slowed ligado.")
-        if (has("sped up", "speed up", "acelera", "rapido")) return speed(1.15f, "Sped up ligado.")
+        if (has("slowed", "mais devagar", "mais lento", "desacelera", "muito rapido")) return speed(0.85f, "Slowed ligado.")
+        if (has("sped up", "speed up", "acelera", "mais rapido", "muito lento")) return speed(1.15f, "Sped up ligado.")
         if (has("nightcore")) return speed(1.25f, "Nightcore ligado.")
         if (has("velocidade normal", "normaliza", "tira o slowed", "velocidade padrao")) return speed(1f, "Velocidade normal.")
         Regex("velocidade (\\d+([.,]\\d+)?)").find(t)?.let { val v = it.groupValues[1].replace(',', '.').toFloat().let { x -> if (x > 3) x / 100f else x }; return speed(v.coerceIn(0.5f, 1.5f), "Velocidade em ${"%.2f".format(v.coerceIn(0.5f, 1.5f))}x.") }
@@ -235,9 +242,9 @@ fun AssistScreen(ui: PlayerUi, onBack: () -> Unit) {
                         LinearProgressIndicator({ Assist.dl }, Modifier.fillMaxWidth().padding(top = 6.dp))
                     } else {
                         Text("IA local (opcional): entende pedidos do seu jeito, sem internet e sem chave. Baixa uma vez (~520 MB, melhor no Wi-Fi).", fontSize = 13.sp)
-                        OutlinedButton(onClick = { scope.launch {
-                            val r = Assist.download(ctx); has = Assist.hasModel(ctx)
-                            android.widget.Toast.makeText(ctx, if (r.isSuccess) "IA instalada" else "Não deu: ${r.exceptionOrNull()?.message}", android.widget.Toast.LENGTH_LONG).show()
+                        OutlinedButton(onClick = { val app = ctx.applicationContext; Assist.startDownload(ctx) { r ->
+                            has = Assist.hasModel(app)
+                            android.widget.Toast.makeText(app, if (r.isSuccess) "IA instalada" else "Não deu: ${r.exceptionOrNull()?.message}", android.widget.Toast.LENGTH_LONG).show()
                         } }, Modifier.padding(top = 6.dp)) { Icon(Icons.Rounded.Download, null); Text(" Baixar IA local") }
                     }
                 }

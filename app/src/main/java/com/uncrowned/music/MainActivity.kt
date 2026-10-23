@@ -140,11 +140,14 @@ class PlayerUi(private val ctx: Context) {
     // músicas do SoundCloud (vêm prontas do ScPlay)
     fun setItems(items: List<MediaItem>) { val c = controller ?: return; YtPlayer.close(); retried = null; c.setMediaItems(items, 0, 0); c.prepare(); c.play() }
 
+    private var connecting = false
     fun connect() {
-        if (controller != null) return
+        if (controller != null || connecting) return
+        connecting = true
         val token = SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))
         val f = MediaController.Builder(ctx, token).buildAsync()
         f.addListener({
+            connecting = false
             runCatching { f.get() }.getOrNull()?.let { c -> controller = c; c.addListener(listener); sync(c) }
         }, ContextCompat.getMainExecutor(ctx))
     }
