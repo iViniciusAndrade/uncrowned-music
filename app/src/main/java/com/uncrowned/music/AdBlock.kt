@@ -43,8 +43,10 @@ object AdBlock {
     // modo 3 do player (o YouTube travou com o bloqueio total): só pula/silencia anúncio, não mexe na resposta
     val strip: Boolean get() = on && YtPlayer.mode < 2
     fun intercept(req: WebResourceRequest): WebResourceResponse? {
-        if (!on) return null
         val u = req.url; val host = u.host ?: return null; val path = u.path ?: ""
+        // o player do YouTube recebe sempre o script de velocidade/pular anúncio (e o de tirar anúncio, se ligado)
+        if (host == "www.youtube.com" && path.startsWith("/embed/") && req.method == "GET" && !req.isForMainFrame) return embed(req)
+        if (!on) return null
         if (hosts.any { host == it || host.endsWith(".$it") }) return empty
         if (host.endsWith("youtube.com") && paths.any { path.startsWith(it) }) return empty
         if (!strip && host.endsWith("youtube.com")) return null
@@ -60,11 +62,13 @@ object AdBlock {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 10000; c.readTimeout = 15000
         req.requestHeaders.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        // o YouTube recusa player sem "de onde veio" (erro 152/153): manda o endereço do app
+        if (req.requestHeaders.keys.none { it.equals("Referer", true) }) c.setRequestProperty("Referer", YtPlayer.ORIGIN + "/")
         CookieManager.getInstance().getCookie(url)?.let { c.setRequestProperty("Cookie", it) }
         c.setRequestProperty("Accept-Encoding", "identity")
         if (c.responseCode != 200) null else {
             val html = c.inputStream.bufferedReader().use { it.readText() }
-            val tag = "<script>$STRIP_JS</script>"
+            val tag = "<script>" + (if (strip) STRIP_JS else "") + EMBED_JS + "</script>"
             val i = html.indexOf("<head")
             val out = if (i >= 0) { val j = html.indexOf('>', i) + 1; html.substring(0, j) + tag + html.substring(j) } else tag + html
             val headers = mutableMapOf<String, String>()
@@ -72,6 +76,19 @@ object AdBlock {
             WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(out.toByteArray()))
         }
     } catch (e: Exception) { null }
+
+    // roda dentro do player do YouTube: pula/silencia anúncio que passar e obedece a velocidade que o app mandar
+    const val EMBED_JS = """(function(){ if(window.__uncE) return; window.__uncE=1; var R=1, ADB=true;
+  window.addEventListener('message',function(e){ var d=e.data; if(!d||!d.unc) return; if(d.unc==='rate') R=+d.r||1; if(d.unc==='adb') ADB=!!d.on; });
+  setInterval(function(){ var v=document.querySelector('video'); if(!v) return;
+    try{ v.preservesPitch=false; v.webkitPreservesPitch=false; if(Math.abs(v.playbackRate-R)>0.0005) v.playbackRate=R; }catch(e){}
+    if(!ADB) return;
+    var sk=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,[id^="skip-button"] button'); if(sk) sk.click();
+    var ad=document.querySelector('.ad-showing');
+    if(ad){ v.muted=true; window.__m=1; if(isFinite(v.duration)&&v.duration>0&&v.duration<=180) v.currentTime=Math.max(0,v.duration-0.05); }
+    else if(window.__m){ v.muted=false; window.__m=0; }
+  }, 250);
+})();"""
 
     // roda na página do app (mesma origem do player), então enxerga dentro dele
     const val SKIP_JS = """setInterval(function(){ if(!window.ADB) return; try{

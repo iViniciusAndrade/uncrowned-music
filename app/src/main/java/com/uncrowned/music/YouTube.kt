@@ -206,7 +206,9 @@ object YtPlayer {
     /* Garantia de tocar: se em ~8s a música não andou, troca o jeito de tocar e tenta de novo, sozinho:
        1) player embutido com bloqueio total de anúncio  2) página do YouTube com bloqueio total
        3) página do YouTube só pulando/silenciando os anúncios. O jeito que funcionar fica guardado. */
-    var mode: Int get() = Prefs.sp.getInt("ytmode", 0); set(v) = Prefs.sp.edit().putInt("ytmode", v.coerceIn(0, 2)).apply()
+    var mode: Int get() = Prefs.sp.getInt("ytmode2", 0); set(v) = Prefs.sp.edit().putInt("ytmode2", v.coerceIn(0, 2)).apply()
+    // endereço do app pro YouTube: ele recusa (erro 152) player que se apresenta como o próprio youtube.com
+    const val ORIGIN = "https://uncrowned.app"
     private var progressed = false; private var userPaused = false; private var tries = 0
     private val dog = Runnable {
         val v = current ?: return@Runnable
@@ -244,7 +246,7 @@ object YtPlayer {
         when (v?.src) {
             "sc" -> w.loadDataWithBaseURL("https://w.soundcloud.com", SC_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
             "vm" -> w.loadDataWithBaseURL("https://uncrowned.app", VM_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
-            else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL("https://www.youtube.com", HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
+            else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL(ORIGIN, HTML.replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
     fun next() { if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
@@ -286,7 +288,7 @@ object YtPlayer {
     // velocidade com tom junto em qualquer player da web, inclusive o áudio escondido que o player cria (e o da faixa protegida)
     private fun applyRate(r: Float) { web?.evaluateJavascript("""(function(){var R=$r;window.__uncRate=R;function set(m){try{m.preservesPitch=false;m.mozPreservesPitch=false;m.webkitPreservesPitch=false;if(Math.abs(m.playbackRate-R)>0.0005)m.playbackRate=R;}catch(e){}}
       function run(d,w){try{if(d)d.querySelectorAll('video,audio').forEach(set)}catch(e){} try{if(w&&w.__uncEls)w.__uncEls.forEach(set)}catch(e){}}
-      try{document.querySelectorAll('iframe').forEach(function(f){try{if(typeof __p==='function')__p(f)}catch(e){} try{run(f.contentDocument,f.contentWindow)}catch(e){}})}catch(e){} run(document,window);
+      try{document.querySelectorAll('iframe').forEach(function(f){try{f.contentWindow.postMessage({unc:'rate',r:R},'*')}catch(e){} try{if(typeof __p==='function')__p(f)}catch(e){} try{run(f.contentDocument,f.contentWindow)}catch(e){}})}catch(e){} run(document,window);
       })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
@@ -338,7 +340,7 @@ object YtPlayer {
 function __p(f){try{var w=f.contentWindow;if(!w||w.__uncP)return;w.__uncP=1;w.__uncEls=w.__uncEls||[];var P=w.HTMLMediaElement.prototype,op=P.play;P.play=function(){try{if(w.__uncEls.indexOf(this)<0)w.__uncEls.push(this);if(window.__uncRate){this.preservesPitch=false;this.webkitPreservesPitch=false;this.playbackRate=window.__uncRate}}catch(e){}return op.apply(this,arguments)}}catch(e){}}
 var player;
 function onYouTubeIframeAPIReady(){player=new YT.Player('p',{width:'100%',height:'100%',
-playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1},
+playerVars:{autoplay:1,playsinline:1,rel:0,modestbranding:1,origin:location.origin},
 events:{onReady:function(){try{__p(player.getIframe())}catch(e){};Android.ready()},onStateChange:function(e){Android.state(e.data)},onError:function(e){Android.err(e.data)}}});}
 setInterval(function(){if(player&&player.getCurrentTime){Android.time(player.getCurrentTime()||0,player.getDuration()||0)}},500);
 </script></body></html>"""
