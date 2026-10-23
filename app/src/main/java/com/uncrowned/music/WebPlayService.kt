@@ -78,6 +78,7 @@ class WebPlayService : Service() {
         wifi = runCatching { (applicationContext.getSystemService(WIFI_SERVICE) as android.net.wifi.WifiManager).createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "uncrowned:web").apply { setReferenceCounted(false) } }.getOrNull()
         runCatching { registerReceiver(noisy, android.content.IntentFilter(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)) }
         h.postDelayed(keep, 4000)
+        inst = this
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -93,8 +94,18 @@ class WebPlayService : Service() {
 
     private fun pi(action: String, code: Int) = PendingIntent.getService(this, code, Intent(this, WebPlayService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
-    private fun show() {
-        val v = YtPlayer.current ?: run { stopSelf(); return }
+    fun show() {
+        val v = YtPlayer.current ?: run {
+            /* a música acabou/trocou antes do serviço subir: o Android exige mostrar a notificação mesmo assim
+               (senão fecha o app), então mostra e já tira */
+            runCatching {
+                val n = (if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, "webplay") else Notification.Builder(this)).setSmallIcon(R.drawable.ic_note).setContentTitle("Uncrowned").build()
+                if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("webplay", "Tocando agora", NotificationManager.IMPORTANCE_LOW))
+                if (Build.VERSION.SDK_INT >= 29) startForeground(77, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK) else startForeground(77, n)
+            }
+            runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+            stopSelf(); return
+        }
         val playing = YtPlayer.playing
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel("webplay", "Tocando agora", NotificationManager.IMPORTANCE_LOW))
@@ -127,10 +138,12 @@ class WebPlayService : Service() {
         }
     }
 
-    override fun onDestroy() { h.removeCallbacks(keep); runCatching { unregisterReceiver(noisy) }; runCatching { wake?.release() }; runCatching { wifi?.release() }; session?.release(); session = null; super.onDestroy() }
+    override fun onDestroy() { if (inst === this) inst = null; h.removeCallbacks(keep); runCatching { unregisterReceiver(noisy) }; runCatching { wake?.release() }; runCatching { wifi?.release() }; session?.release(); session = null; super.onDestroy() }
 
     companion object {
         private var lastKey = ""
+        // serviço já rodando: atualiza direto (sem pedir pro Android iniciar de novo, o que pode falhar com o app no fundo)
+        private var inst: WebPlayService? = null
         // chamado quando o player da web começa, pausa ou troca de música
         fun update(ctx: Context) {
             val v = YtPlayer.current
@@ -138,7 +151,8 @@ class WebPlayService : Service() {
             if (key == lastKey) return
             lastKey = key
             val i = Intent(ctx, WebPlayService::class.java)
-            if (v == null) { ctx.stopService(i); return }
+            if (v == null) { inst?.let { s -> runCatching { s.stopForeground(Service.STOP_FOREGROUND_REMOVE) } }; ctx.stopService(i); return }
+            inst?.let { s -> runCatching { s.show() }; return }
             runCatching { if (Build.VERSION.SDK_INT >= 26 && YtPlayer.playing) ctx.startForegroundService(i) else ctx.startService(i) }
         }
     }

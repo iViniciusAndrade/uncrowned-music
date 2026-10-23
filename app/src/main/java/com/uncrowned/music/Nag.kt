@@ -98,8 +98,6 @@ object Nag {
         if (now - used < GAP || now - s.getLong("nagged", 0L) < GAP) return
         val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         if (h < 10 || h >= 22) return
-        // tocando algo agora (app em segundo plano) também conta como uso
-        if (YtPlayer.playing) { touch(c); return }
         fire(c)
     }
 }

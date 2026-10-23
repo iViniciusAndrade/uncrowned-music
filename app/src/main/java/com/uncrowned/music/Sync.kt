@@ -84,6 +84,11 @@ object Sync {
 
     private fun syncedMap() = runCatching { JSONObject(Prefs.sp.getString("synced", "{}")) }.getOrDefault(JSONObject())
     fun syncedUri(v: YtVideo): String? = syncedMap().optString(key(v)).ifBlank { null }
+    // o arquivo salvo ainda existe? (você pode ter apagado da pasta Música)
+    fun uriOk(u: String): Boolean = runCatching {
+        if (u.startsWith("file:")) File(android.net.Uri.parse(u).path ?: "").exists()
+        else app.contentResolver.openFileDescriptor(android.net.Uri.parse(u), "r")?.use { true } ?: false
+    }.getOrDefault(false)
     private fun markSynced(v: YtVideo, uri: String) { val m = syncedMap(); m.put(key(v), uri); Prefs.sp.edit().putString("synced", m.toString()).apply(); version++ }
 
     // músicas guardadas dentro do app (ouvir offline sem virar arquivo)
@@ -96,7 +101,7 @@ object Sync {
         val m = mediaId ?: return@runCatching null
         when {
             m.startsWith("au:") -> keptUrl(m.removePrefix("au:"))
-            m.startsWith("sc:") -> syncedUri(YtVideo(m.removePrefix("sc:"), "", "", "", "sc"))
+            m.startsWith("sc:") -> syncedUri(YtVideo(m.removePrefix("sc:"), "", "", "", "sc"))?.takeIf { uriOk(it) }
             else -> null
         }
     }.getOrNull()

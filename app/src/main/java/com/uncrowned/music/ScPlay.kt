@@ -40,7 +40,7 @@ object ScPlay {
     private fun resolve(v: YtVideo, sc: YtVideo?): R {
         sc ?: return R.None("não achei no SoundCloud")
         // já salva no celular: toca de lá (funciona sem internet)
-        (Sync.syncedUri(sc) ?: if (v !== sc) Sync.syncedUri(v) else null)?.let { u -> return R.Native(local(u, sc, v)) }
+        (Sync.syncedUri(sc)?.takeIf { Sync.uriOk(it) } ?: if (v !== sc) Sync.syncedUri(v)?.takeIf { Sync.uriOk(it) } else null)?.let { u -> return R.Native(local(u, sc, v)) }
         val st = SoundCloudApi.stream(sc.id) ?: return R.None("no SoundCloud só tem a prévia de 30s")
         val art = sc.thumb.ifBlank { st.art }.ifBlank { v.thumb }
         if (st.web) return R.Web(sc.copy(thumb = art))
@@ -58,9 +58,11 @@ object ScPlay {
             .setArtworkUri(sc.thumb.ifBlank { v.thumb }.takeIf { it.isNotBlank() }?.let(Uri::parse)).build()).build()
     /* tenta as melhores versões encontradas, uma por uma, até achar uma que toque inteira */
     private suspend fun resolve(v: YtVideo): R = runCatching {
-        if (v.src == "sc") return@runCatching resolve(v, v)
+        if (v.src == "sc") return@runCatching (if (!Sync.online() && Sync.syncedUri(v) == null) R.None("sem internet e não está salva no celular") else resolve(v, v))
         // salva no celular (pelo Salvar do player do YouTube) ou sem internet: usa a cópia do celular
-        Sync.syncedUri(v)?.let { u -> return@runCatching R.Native(local(u, v, v)) }
+        Sync.syncedUri(v)?.takeIf { Sync.uriOk(it) }?.let { u -> return@runCatching R.Native(local(u, v, v)) }
+        // sem internet: pula rápido até a próxima que estiver salva no celular
+        if (!Sync.online()) return@runCatching R.None("sem internet e não está salva no celular")
         // "Mostrar vídeo" ligado: toca o vídeo do YouTube mesmo
         if (v.src == "yt" && YtStore.showVideo && !Eco.on) return@runCatching R.Web(v)
         val cands = ScMatch.candidates(v)
@@ -95,7 +97,8 @@ object ScPlay {
                 when (r) {
                     is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, k + 1); return@launch }
                     is R.Web -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; exoLast = k; webPlay?.invoke(r.v) }; return@launch }
-                    is R.None -> { if (!warned) { warned = true; val t = list[k].title; val why = r.why; withContext(Dispatchers.Main) { toast("\"$t\": $why. Indo pra próxima") } }
+                    is R.None -> {
+                        if (!warned) { warned = true; val t = list[k].title; val why = r.why; withContext(Dispatchers.Main) { toast("\"$t\": $why. Indo pra próxima") } }
                         k++; if (k < list.size) { val kk = k; withContext(Dispatchers.Main) { if (g == gen) { pending = kk; loading = list[kk].title } } } }
                 }
             }
