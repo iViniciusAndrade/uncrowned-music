@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Crash.install(this)
         Prefs.init(this)
         Sync.init(this)
         runCatching { Sync.schedule(this) }

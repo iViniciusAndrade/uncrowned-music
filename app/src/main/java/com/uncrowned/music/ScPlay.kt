@@ -54,7 +54,7 @@ object ScPlay {
     private suspend fun resolve(v: YtVideo): R = runCatching {
         if (v.src == "sc") return@runCatching resolve(v, v)
         // "Mostrar vídeo" ligado: toca o vídeo do YouTube mesmo
-        if (v.src == "yt" && YtStore.showVideo) return@runCatching R.Web(v)
+        if (v.src == "yt" && YtStore.showVideo && !Eco.on) return@runCatching R.Web(v)
         val cands = ScMatch.candidates(v)
         // não existe no SoundCloud: toca pelo player oficial do YouTube em vez de pular
         if (cands.isEmpty() || cands.all { it.first.policy == "SNIP" }) return@runCatching if (v.src == "yt") R.Web(v) else R.None("não achei no SoundCloud")
@@ -73,9 +73,11 @@ object ScPlay {
     fun stop() { active = false; gen++; job?.cancel(); pre?.cancel(); loading = null }
 
     /* começa na música i; se ela não estiver no SoundCloud, segue pra próxima que estiver */
+    private var pending = -1
     fun startAt(i: Int) {
         val g = ++gen; job?.cancel(); pre?.cancel()
-        if (i !in list.indices) { loading = null; return }
+        if (i !in list.indices) { loading = null; pending = -1; return }
+        pending = i
         loading = list[i].title
         job = scope.launch {
             var k = i; var warned = false
@@ -86,7 +88,7 @@ object ScPlay {
                     is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, k + 1); return@launch }
                     is R.Web -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; exoLast = k; webPlay?.invoke(r.v) }; return@launch }
                     is R.None -> { if (!warned) { warned = true; val t = list[k].title; val why = r.why; withContext(Dispatchers.Main) { toast("\"$t\": $why. Indo pra próxima") } }
-                        k++; if (k < list.size) withContext(Dispatchers.Main) { loading = list[k].title } }
+                        k++; if (k < list.size) { val kk = k; withContext(Dispatchers.Main) { if (g == gen) { pending = kk; loading = list[kk].title } } } }
                 }
             }
             withContext(Dispatchers.Main) { if (g == gen) { loading = null; toast("Não achei as próximas no SoundCloud") } }
@@ -114,8 +116,10 @@ object ScPlay {
     // a fila do player do app acabou: continua depois da última que entrou nela
     fun onExoEnded() { if (active) startAt(exoLast + 1) }
     fun onWebEnded() { if (active) startAt(pos + 1) }
-    fun next() { if (active) startAt(pos + 1) }
-    fun prev() { if (active && pos > 0) startAt(pos - 1) }
+    // apertou próxima várias vezes enquanto carregava: avança a partir da que estava carregando
+    private fun base() = if (loading != null && pending >= 0) pending else pos
+    fun next() { if (active && base() + 1 < list.size) startAt(base() + 1) }
+    fun prev() { if (active && base() > 0) startAt(base() - 1) }
     fun hasNext() = active && pos < list.size - 1
 
     /* link venceu (o SoundCloud troca os links de tempos em tempos): pega um novo e continua do mesmo ponto */

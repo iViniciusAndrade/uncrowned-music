@@ -95,6 +95,23 @@ fun App(ui: PlayerUi, perms: List<String>) {
     var expanded by remember { mutableStateOf(false) }
     var showEq by remember { mutableStateOf(false) }
     var ytExpanded by remember { mutableStateOf(false) }
+    /* a fila passa de um player pro outro (música do app <-> player do YouTube/SoundCloud):
+       se a tela do player estava aberta, abre a do player que está tocando agora (nada de tela vazia) */
+    val webCur = YtPlayer.current
+    LaunchedEffect(webCur?.id, ui.queue.isEmpty()) {
+        if (!(expanded || ytExpanded)) return@LaunchedEffect
+        if (webCur != null && ui.queue.isEmpty()) { expanded = false; ytExpanded = true }
+        else if (webCur == null && ui.queue.isNotEmpty()) { ytExpanded = false; expanded = true }
+        else if (webCur == null && ui.queue.isEmpty()) { delay(2500); ytExpanded = false; if (ScPlay.loading == null) expanded = false }
+    }
+    // o app fechou sozinho da última vez: mostra o motivo pra copiar
+    var crash by remember { mutableStateOf(Crash.take(ctx)) }
+    crash?.let { txt -> AlertDialog(onDismissRequest = { crash = null }, title = { Text("O app fechou sozinho da última vez") },
+        text = { Text("Copia o erro e me manda que eu corrijo.", fontSize = 14.sp) },
+        confirmButton = { TextButton(onClick = {
+            ctx.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("erro", txt))
+            android.widget.Toast.makeText(ctx, "Erro copiado", android.widget.Toast.LENGTH_SHORT).show(); crash = null }) { Text("Copiar erro") } },
+        dismissButton = { TextButton(onClick = { crash = null }) { Text("Fechar") } }) }
     var detail by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
     var playlistDetail by remember { mutableStateOf<String?>(null) }
 
@@ -191,6 +208,14 @@ fun App(ui: PlayerUi, perms: List<String>) {
             FullPlayer(ui, onClose = { expanded = false }, onEq = { showEq = true })
         }
         if (ytExpanded) YtPlayerBar(true) { ytExpanded = it }
+        // carregando a próxima: aparece também com o player aberto (pra não ficar apertando sem saber)
+        val ld = ScPlay.loading
+        if ((expanded || ytExpanded) && ld != null) Box(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 60.dp), contentAlignment = Alignment.TopCenter) {
+            Row(Modifier.padding(horizontal = 24.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                Text("  Carregando \"$ld\"…", fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
         AnimatedVisibility(showEq, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }) {
             EqualizerScreen { showEq = false }
         }
