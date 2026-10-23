@@ -164,7 +164,7 @@ object YtStore {
     var autoNext: Boolean get() = Prefs.sp.getBoolean("ytauto", true); set(v) = Prefs.sp.edit().putBoolean("ytauto", v).apply()
     var vimeoToken: String get() = Prefs.sp.getString("vmtoken", "") ?: ""; set(v) = Prefs.sp.edit().putString("vmtoken", v.trim()).apply()
     var source: String get() = Prefs.sp.getString("osrc", "yt") ?: "yt"; set(v) = Prefs.sp.edit().putString("osrc", v).apply()
-    val showVideo: Boolean get() = false   // no celular não mostra vídeo, só a capa
+    var showVideo: Boolean get() = Prefs.sp.getBoolean("ytvideo2", false); set(v) { Prefs.sp.edit().putBoolean("ytvideo2", v).apply(); Prefs.version.intValue++ }
     // toca pelo SoundCloud: música que vem do YouTube (artista, álbum, paradas, playlists) é procurada no SoundCloud e toca de lá
     var scFirst: Boolean get() = Prefs.sp.getBoolean("scfirst", true); set(v) = Prefs.sp.edit().putBoolean("scfirst", v).apply()
 }
@@ -182,6 +182,7 @@ object YtPlayer {
     private var loadedSrc: String? = null
     fun play(list: List<YtVideo>, i: Int) {
         val target = list.getOrNull(i) ?: return
+        cuts = null
         // sem internet: toca a versão que já foi sincronizada pro celular
         if (!Sync.online()) {
             val u = Sync.syncedUri(target)
@@ -247,13 +248,15 @@ object YtPlayer {
         when (v?.src) {
             "sc" -> w.loadDataWithBaseURL("https://w.soundcloud.com", SC_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
             "vm" -> w.loadDataWithBaseURL("https://uncrowned.app", VM_HTML.replace("__ID__", v.id), "text/html", "utf-8", null)
-            else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}") } else w.loadDataWithBaseURL(ORIGIN, HTML.replace("<body>", "<body><script>${AdBlock.BRAVE_JS}</script>").replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
+            else -> if (mode >= 1 && v != null) { loadedSrc = "ytw"; w.loadUrl("https://m.youtube.com/watch?v=${v.id}" + (seg()?.let { "&t=${it.first.toInt()}s" } ?: "")) } else w.loadDataWithBaseURL(ORIGIN, HTML.replace("<body>", "<body><script>${AdBlock.BRAVE_JS}</script>").replace("</body>", "<script>var ADB=${AdBlock.on};${AdBlock.SKIP_JS}</script></body>"), "text/html", "utf-8", null)
         }
     }
-    fun next() { if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
-    fun prev() { if (time > 5) seek(0f) else if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.prev() else if (index > 0) play(queue, index - 1) }
+    fun next() { val cl = cuts; if (cl != null) { if (index < cl.size - 1) playCuts(cl, index + 1); return }; if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.next() else if (index < queue.size - 1) play(queue, index + 1) }
+    fun prev() { val cl = cuts; val sg = seg(); if (cl != null && sg != null) { if (time - sg.first > 5 || index == 0) seek(sg.first) else playCuts(cl, index - 1); return }
+        if (time > 5) seek(0f) else if (ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.prev() else if (index > 0) play(queue, index - 1) }
     // faixa protegida do SoundCloud: toca no player oficial deles (a fila continua no ScPlay)
     fun playWeb(v: YtVideo) {
+        cuts = null
         stopOther?.invoke()
         queue = listOf(v); index = 0
         val w = web
@@ -273,6 +276,29 @@ object YtPlayer {
     }
     fun seek(s: Float) = js("player.seekTo($s, true)")
     private var ticks = 0
+    /* ---------- Recortes: tocar só um trecho do vídeo ---------- */
+    var cuts: List<Cuts.Cut>? = null; private set
+    private var segDone = false
+    fun seg(): Pair<Float, Float>? = cuts?.getOrNull(index)?.let { it.start to it.end }
+    fun loadCmd(v: YtVideo): String = seg()?.let { (s, e) -> "player.loadVideoById({videoId:'${v.id}',startSeconds:$s,endSeconds:$e})" } ?: "player.loadVideoById('${v.id}')"
+    fun playCuts(list: List<Cuts.Cut>, i: Int) {
+        val c = list.getOrNull(i) ?: return
+        ScPlay.stop(); stopOther?.invoke()
+        cuts = list; segDone = false
+        queue = list.map { YtVideo(it.vid, it.name, it.artist, it.thumb, "yt") }; index = i
+        val w = web; val v = current ?: return
+        if (w != null && loadedSrc != "yt") load(w, v) else js(loadCmd(v))
+        startDog()
+    }
+    private fun cutEnded() {
+        val l = cuts ?: return
+        when {
+            repeat == 2 -> playCuts(l, index)
+            index < l.size - 1 -> playCuts(l, index + 1)
+            repeat == 1 -> playCuts(l, 0)
+            else -> js("player.pauseVideo()")
+        }
+    }
     private val scScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
     // 0 = não repete, 1 = repete a lista, 2 = repete esta música
     var repeat by mutableIntStateOf(Prefs.sp.getInt("ytrepeat", 0))
@@ -322,7 +348,8 @@ object YtPlayer {
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 1 && (speed != 1f || Retro.mode.isNotEmpty())) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
-            if (s == 0 && ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.onWebEnded()
+            if (s == 0 && cuts != null) { if (!segDone) { segDone = true; cutEnded() } }
+            else if (s == 0 && ScPlay.active && (current?.src == "sc" || current?.src == "yt")) ScPlay.onWebEnded()
             else if (s == 0) when {
                 repeat == 2 -> { seek(0f); js("player.playVideo()") }
                 index < queue.size - 1 && (YtStore.autoNext || repeat == 1) -> next()
@@ -335,6 +362,8 @@ object YtPlayer {
             // conta o tempo ouvido (Mais ouvidas / Momentos)
             // velocidade (e a oscilação da fita no K7/vinil) aplicada pelo app, por fora do player
             if (playing && (speed != 1f && ticks % 6 == 0 || Retro.mode.isNotEmpty())) applySpeed()
+            // recorte: chegou no fim do trecho -> próximo
+            seg()?.let { (_, e) -> if (playing && t >= e - 0.25f && !segDone) { segDone = true; cutEnded() } }
             if (ticks == 0) GlobalFx.sync(playing)
             if (playing && ++ticks >= 10) { ticks = 0; current?.let { v -> runCatching { Listen.tick(LTrack("${v.src}:${v.id}", v.src, v.id, v.title, v.channel, v.thumb, ""), 5) } } }
         }.let {}
@@ -347,7 +376,7 @@ object YtPlayer {
             else if (index < queue.size - 1) next()
         }.let {}
         @JavascriptInterface fun ready2() = Unit
-        @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js("player.loadVideoById('${it.id}')") } }.let {}
+        @JavascriptInterface fun ready() = h.post { current?.takeIf { it.src == "yt" }?.let { js(loadCmd(it)) } }.let {}
     }
 
     const val HTML = """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -517,13 +546,16 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                 Sync.version
                 val synced = Sync.syncedUri(v) != null
                 var showSync by remember { mutableStateOf(false) }
-                Spacer(Modifier.size(48.dp))
+                IconButton(onClick = { YtStore.showVideo = !YtStore.showVideo }) {
+                    Icon(if (YtStore.showVideo) Icons.Rounded.Videocam else Icons.Rounded.VideocamOff, "Mostrar vídeo", tint = if (YtStore.showVideo) accent else LocalContentColor.current)
+                }
                 if (showSync) SyncSheet(v) { showSync = false }
             }
-            val showVid = false
+            Prefs.version.intValue
+            val showVid = expanded && YtStore.showVideo && !Eco.on && v.src == "yt"
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Box(Modifier.width(if (expanded) 1.dp else 78.dp)) {
-                    YtWebPlayer(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                Box(if (showVid) Modifier.fillMaxWidth() else Modifier.width(if (expanded) 1.dp else 78.dp)) {
+                    YtWebPlayer(if (showVid) Modifier.fillMaxWidth().aspectRatio(16f / 9f).padding(vertical = 8.dp) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     if (!expanded) Art(v.thumb, Modifier.matchParentSize(), MaterialTheme.shapes.small)
                 }
                 if (!expanded) {
@@ -574,6 +606,9 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
                     ToolBtn(Icons.Rounded.Speed, "${"%.2f".format(YtPlayer.speed)}x", YtPlayer.speed != 1f) { speedOpen = true }
                     ToolBtn(Icons.Rounded.Album, Retro.NAMES[retro] ?: "Normal", retro.isNotEmpty()) { Retro.next(); retro = Retro.mode }
                     ToolBtn(Icons.Rounded.PlaylistAdd, "Playlist", false) { addOpen = true }
+                    var cutOpen by remember { mutableStateOf(false) }
+                    if (v.src == "yt") ToolBtn(Icons.Rounded.ContentCut, "Recorte", false) { cutOpen = true }
+                    if (cutOpen) CutSheet(v) { cutOpen = false }
                     Sync.version
                     val sDone = Sync.syncedUri(v) != null
                     ToolBtn(if (sDone) Icons.Rounded.DownloadDone else Icons.Rounded.Download, if (sDone) "Offline ✓" else "Salvar", sDone) { syncOpen = true }

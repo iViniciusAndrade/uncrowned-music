@@ -125,6 +125,9 @@ fun LibraryTab(ui: PlayerUi, onPlaylist: (String) -> Unit) {
         item { LRow(Icons.Rounded.Favorite, "Favoritas", "${Prefs.favs().size} offline") { onPlaylist(FAVS) } }
         item { LRow(Icons.Rounded.CloudQueue, "Favoritos online", "${YtStore.favs().size} faixas") { onPlaylist(ONLINE_FAVS) } }
         item { LRow(Icons.Rounded.History, "Ouvidas recentemente", "Histórico") { onPlaylist(ONLINE_HIST) } }
+        Cuts.version
+        val nc = Cuts.list().size
+        if (nc > 0) item { LRow(Icons.Rounded.ContentCut, "Recortes", "$nc ${if (nc == 1) "trecho" else "trechos"} marcados") { Nav.page = "cuts" } }
         if (kept > 0) item { LRow(Icons.Rounded.OfflinePin, "Guardadas no app", "$kept • tocam sem internet") { Nav.page = "kept" } }
         if (pend > 0) item { LRow(Icons.Rounded.CloudSync, "Pra sincronizar", "$pend pendentes • baixam sozinhas no Wi-Fi") { Nav.page = "pend" } }
         items(oplists, key = { "op" + it.name }) { p ->

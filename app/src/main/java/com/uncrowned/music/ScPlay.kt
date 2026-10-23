@@ -53,6 +53,8 @@ object ScPlay {
     /* tenta as melhores versões encontradas, uma por uma, até achar uma que toque inteira */
     private suspend fun resolve(v: YtVideo): R = runCatching {
         if (v.src == "sc") return@runCatching resolve(v, v)
+        // "Mostrar vídeo" ligado: toca o vídeo do YouTube mesmo
+        if (v.src == "yt" && YtStore.showVideo) return@runCatching R.Web(v)
         val cands = ScMatch.candidates(v)
         // não existe no SoundCloud: toca pelo player oficial do YouTube em vez de pular
         if (cands.isEmpty() || cands.all { it.first.policy == "SNIP" }) return@runCatching if (v.src == "yt") R.Web(v) else R.None("não achei no SoundCloud")

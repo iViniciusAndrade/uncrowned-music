@@ -176,6 +176,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
                         ns != null -> SimilarScreen(ui, ns) { Nav.sim = null }
                         np == "pend" -> PendingScreen(ui) { Nav.page = null }
                         np == "kept" -> KeptScreen(ui) { Nav.page = null }
+                        np == "cuts" -> CutsScreen(ui) { Nav.page = Nav.back() }
                         d != null -> SongList(ui, d.second, title = d.first, onBack = { detail = null })
                         np == "songs" -> AllSongsScreen(ui, back)
                         np == "albums" -> Column { Header("Álbuns", onBack = back); Box(Modifier.weight(1f)) { AlbumsTab { detail = it } } }
@@ -989,6 +990,8 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             var adb by remember { mutableStateOf(AdBlock.on) }
             SwitchRow("Bloquear anúncios", "Corta propaganda do YouTube e pula o que passar", adb) { adb = it; AdBlock.on = it; YtPlayer.web?.evaluateJavascript("window.ADB=$it", null) }
 
+            Div()
+            SwitchRow("Mostrar vídeo", "Músicas do YouTube tocam com o vídeo no player (gasta mais internet e bateria)", YtStore.showVideo) { YtStore.showVideo = it }
             Div()
             var aw by remember { mutableStateOf(Sync.autoWifi) }
             SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
