@@ -252,13 +252,17 @@ Não invente ações que o usuário não pediu."""
 
     private fun norm(s: String) = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").trim()
 
+    private val main = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
     fun send(c: Context, ui: PlayerUi, text0: String, scope: kotlinx.coroutines.CoroutineScope) {
         val text = text0.trim(); if (text.isEmpty() || busy) return
         msgs.add(Msg(true, text))
         busy = true
-        scope.launch {
-            val reply = runCatching { handle(c, ui, text) }.getOrElse { "Deu ruim aqui: ${it.message ?: "erro"}" }
-            msgs.add(Msg(false, reply)); busy = false
+        // roda fora da tela: continua com o app minimizado ou se você sair do Assistente
+        main.launch {
+            try {
+                val reply = runCatching { handle(c.applicationContext, ui, text) }.getOrElse { "Deu ruim aqui: ${it.message ?: "erro"}" }
+                msgs.add(Msg(false, reply))
+            } finally { busy = false }
         }
     }
 
