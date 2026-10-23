@@ -108,6 +108,22 @@ fun LibraryTab(ui: PlayerUi, onPlaylist: (String) -> Unit) {
                 }
             }
         }
+        // últimas que entraram no celular
+        val recent = Library.songs.sortedByDescending { it.dateAdded }.take(12)
+        if (recent.isNotEmpty()) {
+            item { Row(verticalAlignment = Alignment.CenterVertically) { Section("Adicionadas recentemente"); Spacer(Modifier.weight(1f)); TextButton(onClick = { Prefs.sp.edit().putString("libsort", "recent").apply(); Nav.page = "songs" }, Modifier.padding(top = 14.dp, end = 8.dp)) { Text("Ver todas") } } }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    itemsIndexed(recent, key = { _, x -> "rc" + x.id }) { i, x ->
+                        Column(Modifier.width(112.dp).clickable { ui.play(recent, i) }) {
+                            Art(x.art, Modifier.size(112.dp), RoundedCornerShape(10.dp))
+                            Text(x.title, Modifier.padding(top = 5.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(x.artist, maxLines = 1, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
         item { Section("Pra você") }
         item {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -172,19 +188,36 @@ private fun LRow(icon: ImageVector, title: String, sub: String, onClick: () -> U
 @Composable
 fun AllSongsScreen(ui: PlayerUi, onBack: () -> Unit) {
     var q by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf("title") }
+    // ordem lembrada; padrão: as que entraram por último primeiro
+    var sort by remember { mutableStateOf(Prefs.sp.getString("libsort", "recent") ?: "recent") }
     var favOnly by rememberSaveable { mutableStateOf(false) }
     Prefs.version.intValue
     val favs = Prefs.favs()
     val l = Library.songs.filter { (q.isBlank() || it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)) && (!favOnly || it.id.toString() in favs) }
-        .let { x -> when (sort) { "artist" -> x.sortedBy { it.artist.lowercase() }; "recent" -> x.sortedByDescending { it.dateAdded }; "duration" -> x.sortedByDescending { it.duration }; else -> x } }
+        .let { x ->
+            when (sort) {
+                "recent" -> x.sortedByDescending { it.dateAdded }
+                "old" -> x.sortedBy { it.dateAdded }
+                "title" -> x.sortedBy { it.title.lowercase() }
+                "artist" -> x.sortedWith(compareBy({ it.artist.lowercase() }, { it.album.lowercase() }, { it.title.lowercase() }))
+                "album" -> x.sortedWith(compareBy({ it.album.lowercase() }, { it.title.lowercase() }))
+                "duration" -> x.sortedByDescending { it.duration }
+                "short" -> x.sortedBy { it.duration }
+                "plays" -> { val m = remember(Listen.version) { Listen.stats("all").songs.associate { it.first.key to it.second } }; x.sortedByDescending { m["loc:${it.id}"] ?: 0L } }
+                "year" -> x.sortedByDescending { it.year }
+                else -> x
+            }
+        }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Músicas", onBack = onBack) }
+        item { Text("${l.size} músicas offline", Modifier.padding(horizontal = 20.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { SearchField(q) { q = it } }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(favOnly, { favOnly = !favOnly }, { Text("Favoritas") }, leadingIcon = { Icon(Icons.Rounded.Favorite, null, Modifier.size(16.dp)) })
-                listOf("title" to "A-Z", "artist" to "Artista", "recent" to "Recentes", "duration" to "Duração").forEach { (k, n) -> FilterChip(sort == k, { sort = k }, { Text(n) }) }
+                listOf("recent" to "Mais recentes", "old" to "Mais antigas", "plays" to "Mais ouvidas", "title" to "A-Z", "artist" to "Artista", "album" to "Álbum",
+                    "year" to "Ano", "duration" to "Mais longas", "short" to "Mais curtas").forEach { (k, n) ->
+                    FilterChip(sort == k, { sort = k; Prefs.sp.edit().putString("libsort", k).apply() }, { Text(n) }) }
             }
         }
         if (l.isNotEmpty()) item { PlayShuffleRow(ui, l) }
