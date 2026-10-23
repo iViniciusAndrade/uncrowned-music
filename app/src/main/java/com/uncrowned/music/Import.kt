@@ -160,7 +160,7 @@ object Importer {
     }
 
     // "artista - música" vira música tocável do YouTube Music
-    private val cache = HashMap<String, YtVideo?>()
+    private val cache: MutableMap<String, YtVideo?> = java.util.Collections.synchronizedMap(HashMap())
     private suspend fun resolve(items: List<Item>, onStep: () -> Unit): List<YtVideo> = withContext(Dispatchers.IO) {
         val sem = Semaphore(6)
         items.map { it2 -> async { sem.withPermit {

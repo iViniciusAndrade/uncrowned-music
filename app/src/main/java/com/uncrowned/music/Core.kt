@@ -226,7 +226,7 @@ object Sleep {
 data class Lyrics(val synced: List<Pair<Long, String>>?, val plain: String?, val source: String = "")
 
 object LyricsApi {
-    private val cache = HashMap<String, Lyrics>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Lyrics>()
     private val lrc = Regex("""\[(\d+):(\d+)(?:[.:](\d+))?](.*)""")
 
     suspend fun get(artist: String, title: String, durationMs: Long): Lyrics = withContext(Dispatchers.IO) {
@@ -255,7 +255,8 @@ object LyricsApi {
             // se a fonte sincronizada não achou, tenta o Letras.mus.br
             if (l.synced == null && l.plain == null && Prefs.lyricsSource != "letras") letrasMus(artist, title)?.let { Lyrics(null, it, "Letras.mus.br") } ?: l else l
         }
-        cache[key] = res
+        // sem letra (ou sem internet): não guarda, pra tentar de novo depois
+        if (res.synced != null || res.plain != null) cache[key] = res
         res
     }
 

@@ -18,6 +18,8 @@ object Nag {
     private var sp: android.content.SharedPreferences? = null
     private var lastWrite = 0L
     private fun sp(c: Context) = sp ?: c.applicationContext.getSharedPreferences("nag", Context.MODE_PRIVATE).also { sp = it }
+    // deixa pronto pra marcar uso mesmo quando só o serviço de música está rodando (sem a tela aberta)
+    fun prime(c: Context) { sp(c) }
     // chamado a cada tique de música ouvida (sem contexto à mão)
     fun touchListen() { val s = sp ?: return; val now = System.currentTimeMillis(); if (now - lastWrite < 300_000) return; lastWrite = now; s.edit().putLong("used", now).apply() }
 

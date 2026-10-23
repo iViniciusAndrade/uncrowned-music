@@ -78,9 +78,9 @@ object Sync {
     private fun saveVids(k: String, l: List<YtVideo>) { Prefs.sp.edit().putString(k, JSONArray(l.map { it.json() }).toString()).apply(); version++ }
     fun key(v: YtVideo) = "${v.src}:${v.id}"
     fun pending() = vids("syncpend")
-    fun addPending(v: YtVideo) { if (pending().none { key(it) == key(v) }) saveVids("syncpend", pending() + v) }
-    fun removePending(v: YtVideo) = saveVids("syncpend", pending().filter { key(it) != key(v) })
-    fun clearPending() = saveVids("syncpend", emptyList())
+    @Synchronized fun addPending(v: YtVideo) { if (pending().none { key(it) == key(v) }) saveVids("syncpend", pending() + v) }
+    @Synchronized fun removePending(v: YtVideo) = saveVids("syncpend", pending().filter { key(it) != key(v) })
+    @Synchronized fun clearPending() = saveVids("syncpend", emptyList())
 
     private fun syncedMap() = runCatching { JSONObject(Prefs.sp.getString("synced", "{}")) }.getOrDefault(JSONObject())
     fun syncedUri(v: YtVideo): String? = syncedMap().optString(key(v)).ifBlank { null }
@@ -89,7 +89,7 @@ object Sync {
         if (u.startsWith("file:")) File(android.net.Uri.parse(u).path ?: "").exists()
         else app.contentResolver.openFileDescriptor(android.net.Uri.parse(u), "r")?.use { true } ?: false
     }.getOrDefault(false)
-    private fun markSynced(v: YtVideo, uri: String) { val m = syncedMap(); m.put(key(v), uri); Prefs.sp.edit().putString("synced", m.toString()).apply(); version++ }
+    @Synchronized private fun markSynced(v: YtVideo, uri: String) { val m = syncedMap(); m.put(key(v), uri); Prefs.sp.edit().putString("synced", m.toString()).apply(); version++ }
 
     // músicas guardadas dentro do app (ouvir offline sem virar arquivo)
     fun kept(): List<Track> = runCatching { JSONArray(Prefs.sp.getString("offapp", "[]")).let { a -> List(a.length()) { Track.from(a.getJSONObject(it)) } } }.getOrDefault(emptyList())
@@ -105,8 +105,8 @@ object Sync {
             else -> null
         }
     }.getOrNull()
-    private fun saveKept(l: List<Track>) { Prefs.sp.edit().putString("offapp", JSONArray(l.map { it.json() }).toString()).apply(); version++ }
-    fun unkeep(t: Track) { runCatching { File(android.net.Uri.parse(t.url).path!!).delete() }; saveKept(kept().filter { it.id != t.id }) }
+    @Synchronized private fun saveKept(l: List<Track>) { Prefs.sp.edit().putString("offapp", JSONArray(l.map { it.json() }).toString()).apply(); version++ }
+    @Synchronized fun unkeep(t: Track) { runCatching { File(android.net.Uri.parse(t.url).path!!).delete() }; saveKept(kept().filter { it.id != t.id }) }
 
     var autoWifi: Boolean get() = Prefs.sp.getBoolean("syncwifi", true); set(v) { Prefs.sp.edit().putBoolean("syncwifi", v).apply(); schedule(app) }
 
@@ -161,7 +161,7 @@ object Sync {
         }.toList()
     }.getOrDefault(emptyList())
 
-    private val cache = HashMap<String, Pair<Long, List<Cand>>>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Cand>>>()
     suspend fun candidates(v: YtVideo): List<Cand> = withContext(Dispatchers.IO) {
         val (title, artist) = ref(v)
         val k = nrm(artist) + "|" + nrm(title)

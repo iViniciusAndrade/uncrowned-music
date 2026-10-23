@@ -94,7 +94,10 @@ class WebPlayService : Service() {
 
     private fun pi(action: String, code: Int) = PendingIntent.getService(this, code, Intent(this, WebPlayService::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
+    private var dead = false
     fun show() {
+        // capa que chegou depois do serviço fechar: não religa nada (senão a trava de tela ficava presa)
+        if (dead) return
         val v = YtPlayer.current ?: run {
             /* a música acabou/trocou antes do serviço subir: o Android exige mostrar a notificação mesmo assim
                (senão fecha o app), então mostra e já tira */
@@ -138,7 +141,7 @@ class WebPlayService : Service() {
         }
     }
 
-    override fun onDestroy() { if (inst === this) inst = null; h.removeCallbacks(keep); runCatching { unregisterReceiver(noisy) }; runCatching { wake?.release() }; runCatching { wifi?.release() }; session?.release(); session = null; super.onDestroy() }
+    override fun onDestroy() { dead = true; if (inst === this) inst = null; h.removeCallbacks(keep); runCatching { unregisterReceiver(noisy) }; runCatching { wake?.release() }; runCatching { wifi?.release() }; session?.release(); session = null; super.onDestroy() }
 
     companion object {
         private var lastKey = ""

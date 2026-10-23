@@ -32,7 +32,7 @@ object ScPlay {
     private val idxOf = HashMap<String, Int>()
     private var exoLast = -1
     private var gen = 0
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> })
     private var job: Job? = null; private var pre: Job? = null
 
     private sealed class R { class Native(val item: MediaItem) : R(); class Web(val v: YtVideo) : R(); class None(val why: String) : R() }
@@ -86,6 +86,8 @@ object ScPlay {
     private var pending = -1
     fun startAt(i: Int) {
         val g = ++gen; job?.cancel(); pre?.cancel()
+        // cópia da fila: se outra lista começar a tocar no meio, essa busca não lê a nova (evita fechar o app)
+        val list = this.list
         if (i !in list.indices) { loading = null; pending = -1; return }
         pending = i
         loading = list[i].title
@@ -95,7 +97,7 @@ object ScPlay {
                 val r = resolve(list[k])
                 if (g != gen) return@launch
                 when (r) {
-                    is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, k + 1); return@launch }
+                    is R.Native -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; idxOf.clear(); idxOf[r.item.mediaId] = k; exoLast = k; exoSet?.invoke(listOf(r.item)) }; prefetch(g, list, k + 1); return@launch }
                     is R.Web -> { withContext(Dispatchers.Main) { if (g != gen) return@withContext; loading = null; pos = k; exoLast = k; webPlay?.invoke(r.v) }; return@launch }
                     is R.None -> {
                         if (!warned) { warned = true; val t = list[k].title; val why = r.why; withContext(Dispatchers.Main) { toast("\"$t\": $why. Indo pra próxima") } }
@@ -107,7 +109,7 @@ object ScPlay {
     }
 
     /* põe as próximas na fila do player do app (pra próxima, notificação e tela apagada funcionarem); para na primeira protegida */
-    private fun prefetch(g: Int, from: Int) {
+    private fun prefetch(g: Int, list: List<YtVideo>, from: Int) {
         pre = scope.launch {
             var k = from; var added = 0
             while (k < list.size && added < 25) {

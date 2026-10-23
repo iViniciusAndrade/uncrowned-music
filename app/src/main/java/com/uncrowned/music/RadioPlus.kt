@@ -115,7 +115,7 @@ object Hunter {
     var nowPlaying = mutableStateMapOf<String, String>()
     var scanning by mutableStateOf(false)
     var pendingPlay by mutableStateOf<Track?>(null)
-    private val seen = HashMap<String, Long>()
+    private val seen = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private var job: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 

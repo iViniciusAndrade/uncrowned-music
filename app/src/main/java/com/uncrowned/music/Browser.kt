@@ -65,6 +65,7 @@ class BrowserActivity : Activity() {
     private lateinit var lock: TextView
     private var proxied = false
     private var wiped = false
+    private var counted = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,8 +75,12 @@ class BrowserActivity : Activity() {
             finish(); return
         }
         // sobra de uma sessão que fechou na marra: apaga antes de abrir a pasta
-        NavWipe.run(this)
-        runCatching { WebView.setDataDirectorySuffix(NavWipe.SUFFIX) }
+        // (só se for a primeira tela do navegador nesse processo, senão apagaria a que está aberta)
+        if (alive++ == 0) {
+            NavWipe.run(this)
+            runCatching { WebView.setDataDirectorySuffix(NavWipe.SUFFIX) }
+        }
+        counted = true
 
         val bg = Color.parseColor("#0E0E10"); val fg = Color.WHITE; val dim = Color.parseColor("#8E8E93")
         window.statusBarColor = bg; window.navigationBarColor = bg
@@ -189,16 +194,18 @@ class BrowserActivity : Activity() {
     }
 
     override fun onDestroy() {
-        wipeAll()
+        val last = counted && --alive == 0
+        counted = false
+        destroyWeb()
         super.onDestroy()
-        if (Build.VERSION.SDK_INT >= 28 && isFinishing) {
-            // processo só do navegador: encerra pra não sobrar nada na memória
+        if (last) {
+            // última tela do navegador: apaga tudo e encerra o processo pra não sobrar nada na memória
+            wipeAll()
             Process.killProcess(Process.myPid())
         }
     }
 
-    private fun wipeAll() {
-        if (wiped) return; wiped = true
+    private fun destroyWeb() {
         web?.let { w ->
             runCatching {
                 w.stopLoading(); w.loadUrl("about:blank")
@@ -207,6 +214,10 @@ class BrowserActivity : Activity() {
             }
         }
         web = null
+    }
+
+    private fun wipeAll() {
+        if (wiped) return; wiped = true
         runCatching { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush() }
         runCatching { WebStorage.getInstance().deleteAllData() }
         if (proxied) runCatching { ProxyController.getInstance().clearProxyOverride(Executor { it.run() }) {} }
@@ -217,6 +228,7 @@ class BrowserActivity : Activity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     companion object {
+        private var alive = 0    // telas do navegador abertas nesse processo
         const val HOME = "https://lite.duckduckgo.com/lite/"
         const val SEARCH = "https://duckduckgo.com/?q="
         fun open(c: Context) {

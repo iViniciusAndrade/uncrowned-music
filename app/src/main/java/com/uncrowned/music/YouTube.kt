@@ -236,8 +236,8 @@ object YtPlayer {
             // parado: toque de verdade no meio do vídeo (o navegador aceita como se fosse você)
             !playing && kicks % 3 == 0 && w.width > 8 && w.height > 8 -> {
                 val t = android.os.SystemClock.uptimeMillis(); val x = w.width / 2f; val y = w.height / 2f
-                w.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
-                w.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0))
+                android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0).let { e -> w.dispatchTouchEvent(e); e.recycle() }
+                android.view.MotionEvent.obtain(t, t + 60, android.view.MotionEvent.ACTION_UP, x, y, 0).let { e -> w.dispatchTouchEvent(e); e.recycle() }
             }
             else -> js("try{player.unMute();player.setVolume(100)}catch(e){};player.playVideo()")
         }
@@ -429,7 +429,9 @@ vp.on('timeupdate',function(d){Android.time(d.seconds,d.duration)});
 @Composable
 fun YtWebPlayer(modifier: Modifier) {
     AndroidView(modifier = modifier, factory = { ctx ->
-        (YtPlayer.web ?: BgWebView(ctx).apply {
+        // o player é reaproveitado entre telas: troca o contexto pra tela atual em vez de segurar a antiga na memória
+        YtPlayer.web?.let { (it.context as? android.content.MutableContextWrapper)?.baseContext = ctx }
+        (YtPlayer.web ?: BgWebView(android.content.MutableContextWrapper(ctx)).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.domStorageEnabled = true
@@ -652,7 +654,7 @@ fun YtPlayerBar(expanded: Boolean, onExpand: (Boolean) -> Unit) {
 
 /* acha no SoundCloud a mesma música de um vídeo do YouTube */
 object ScMatch {
-    private val cache = HashMap<String, Pair<Long, List<Pair<SoundCloudApi.Hit, Int>>>>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Pair<SoundCloudApi.Hit, Int>>>>()
     private fun n(x: String) = java.text.Normalizer.normalize(x.lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
         .replace(Regex("\\(.*?\\)|\\[.*?]"), " ").replace(Regex("\\b(official|oficial|video|audio|lyrics?|letra|clipe|hd|4k|visualizer|ft\\.?.*|feat\\.?.*)\\b"), " ")
         .replace(Regex("[^a-z0-9]+"), " ").trim()

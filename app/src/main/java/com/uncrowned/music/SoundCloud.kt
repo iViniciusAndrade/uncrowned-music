@@ -71,7 +71,7 @@ object SoundCloudApi {
     }
 
     /* mais tocadas da semana no SoundCloud (paradas oficiais; renova o código se vencer) */
-    private val chartCache = HashMap<String, Pair<Long, List<YtVideo>>>()
+    private val chartCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<YtVideo>>>()
     suspend fun charts(region: String): List<YtVideo> {
         chartCache[region]?.let { if (System.currentTimeMillis() - it.first < 3 * 3600_000L) return it.second }
         return chartsNet(region).also { if (it.isNotEmpty()) chartCache[region] = System.currentTimeMillis() to it }

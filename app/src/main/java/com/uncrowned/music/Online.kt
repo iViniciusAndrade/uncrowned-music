@@ -35,7 +35,7 @@ data class SongInfo(
 )
 
 object SongInfoApi {
-    private val cache = HashMap<String, SongInfo>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, SongInfo>()
 
     suspend fun lookup(title: String, artist: String, localAlbum: String?, localYear: Int?): SongInfo = withContext(Dispatchers.IO) {
         val key = "$artist|$title"
@@ -60,7 +60,7 @@ object SongInfoApi {
             found.optInt("trackNumber").takeIf { it > 0 }?.let { "$it de ${found.optInt("trackCount")}" },
             "Apple Music / iTunes"
         ) else SongInfo(cleanTitle, cleanArtist, localAlbum, localYear?.takeIf { it > 0 }?.toString(), null, null, null, "Arquivo local")
-        cache[key] = info
+        if (found != null) cache[key] = info
         info
     }
 }

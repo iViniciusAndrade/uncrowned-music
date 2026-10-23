@@ -16,7 +16,7 @@ data class YtmAlbum(val title: String, val artist: String, val year: String, val
 
 object Ytm {
     private const val VER = "1.20250101.01.00"
-    private val cache = HashMap<String, Pair<Long, Any>>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Any>>()
     @Suppress("UNCHECKED_CAST")
     private fun <T> cached(k: String, ttl: Long, f: () -> T): T {
         val hit = cache[k]

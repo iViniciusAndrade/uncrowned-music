@@ -30,6 +30,7 @@ object Listen {
     private var lastKey: String? = null; private var acc = 0; private var logged = false
 
     @Synchronized fun init(c: Context) {
+        runCatching { Nag.prime(c) }
         if (loaded) return
         file = File(c.applicationContext.filesDir, "listen.json"); loaded = true
         runCatching {

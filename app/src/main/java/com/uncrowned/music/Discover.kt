@@ -95,7 +95,7 @@ object Audius {
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     suspend fun search(q: String) = runCatching { parse(get("/tracks/search?query=${enc(q)}")) }
-    private val trendCache = HashMap<String, Pair<Long, List<Track>>>()
+    private val trendCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Track>>>()
     // guarda por 1 hora: abrir o Descobrir de novo não baixa tudo outra vez
     suspend fun trending(genre: String? = null, time: String = "week"): Result<List<Track>> {
         val k = "$genre|$time"

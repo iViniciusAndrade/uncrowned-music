@@ -31,14 +31,16 @@ import androidx.media3.session.SessionToken
 
 class MainActivity : ComponentActivity() {
     private lateinit var ui: PlayerUi
+    // internet caiu: troca pra cópia do celular (desligado no onDestroy, senão a tela antiga fica presa na memória)
+    private val netCb = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: android.net.Network) { runOnUiThread { if (::ui.isInitialized && !isDestroyed) runCatching { ui.swapLocal() } } }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Crash.install(this)
         // internet caiu: o que tiver cópia no celular continua tocando dela
-        runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onLost(network: android.net.Network) { runOnUiThread { if (::ui.isInitialized) runCatching { ui.swapLocal() } } }
-        }) }
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(netCb) }
         Prefs.init(this)
         Secret.init()
         Sync.init(this)
@@ -76,7 +78,10 @@ class MainActivity : ComponentActivity() {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) runCatching { coil.Coil.imageLoader(this).memoryCache?.trimMemory(level) }
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) runCatching { coil.Coil.imageLoader(this).memoryCache?.clear() }
     }
-    override fun onDestroy() { runCatching { Listen.save() }; ui.disconnect(); super.onDestroy() }
+    override fun onDestroy() {
+        runCatching { getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(netCb) }
+        runCatching { Listen.save() }; ui.disconnect(); super.onDestroy()
+    }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handleIntent(intent) }
     private fun handleIntent(i: Intent?) {
         i?.getStringExtra("hunt_station")?.let { runCatching { Hunter.pendingPlay = Track.from(org.json.JSONObject(it)) } }
@@ -98,7 +103,7 @@ class PlayerUi(private val ctx: Context) {
     var index by mutableIntStateOf(0)
 
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = sync(player)
+        override fun onEvents(player: Player, events: Player.Events) = sync(player, events.contains(Player.EVENT_TIMELINE_CHANGED) || events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION))
         // fila do SoundCloud: sabe em que música está e continua quando a fila do player acaba
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { ScPlay.onExoItem(mediaItem?.mediaId) }
         override fun onPlaybackStateChanged(state: Int) {
@@ -111,8 +116,9 @@ class PlayerUi(private val ctx: Context) {
             val cur = c.currentMediaItem ?: return
             // sem internet (ou falhou) e tem cópia no celular: continua dela
             if (swapLocal()) return
-            if (!cur.mediaId.startsWith("sc:") || retried == cur.mediaId) return
-            retried = cur.mediaId
+            val now = System.currentTimeMillis()
+            if (!cur.mediaId.startsWith("sc:") || (retried == cur.mediaId && now - retriedAt < 60_000)) return
+            retried = cur.mediaId; retriedAt = now
             val idx = c.currentMediaItemIndex; val pos = c.currentPosition
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                 val n = ScPlay.refresh(cur.mediaId.removePrefix("sc:"))
@@ -122,6 +128,7 @@ class PlayerUi(private val ctx: Context) {
         }
     }
     private var retried: String? = null
+    private var retriedAt = 0L
     /* troca as músicas da fila que têm cópia no celular pra tocar dela (quando a internet cai) */
     fun swapLocal(): Boolean {
         val c = controller ?: return false
@@ -160,7 +167,8 @@ class PlayerUi(private val ctx: Context) {
     private var lastGenre = ""
     private var lastArtist = ""
 
-    private fun sync(p: Player) {
+    // fila grande (biblioteca inteira): só remonta a lista quando ela muda de verdade, não a cada evento
+    private fun sync(p: Player, queueChanged: Boolean = true) {
         val m = p.mediaMetadata
         val newId = p.currentMediaItem?.mediaId
         if (newId != lastId) {
@@ -181,7 +189,7 @@ class PlayerUi(private val ctx: Context) {
         shuffle = p.shuffleModeEnabled
         repeat = p.repeatMode
         index = p.currentMediaItemIndex
-        queue = List(p.mediaItemCount) { p.getMediaItemAt(it) }
+        if (queueChanged || queue.size != p.mediaItemCount) queue = List(p.mediaItemCount) { p.getMediaItemAt(it) }
     }
 
     val position: Long get() = controller?.currentPosition ?: 0L
