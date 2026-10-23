@@ -64,7 +64,8 @@ private val Dim = Color.White.copy(alpha = 0.6f)
 fun Art(model: Any?, modifier: Modifier, shape: Shape = RoundedCornerShape(8.dp)) {
     Box(modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
         Icon(painterResource(R.drawable.ic_note), null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxSize(0.4f))
-        AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        // modo Extremo: não baixa nem guarda imagem nenhuma
+        if (!Eco.extreme) AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 }
 
@@ -593,7 +594,7 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
     var showInfo by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { while (true) { pos = ui.position; delay(200) } }
     val accent = MaterialTheme.colorScheme.primary
-    val artScale by animateFloatAsState(if (Prefs.artPulse && !ui.playing) 0.82f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "art")
+    val artScale by animateFloatAsState(if (Prefs.artPulse && !Eco.on && !ui.playing) 0.82f else 1f, spring(dampingRatio = 0.6f, stiffness = 300f), label = "art")
 
     // mesmo visual do player online: fundo do tema, origem no topo, botão de play grande na cor do tema
     val Dim = MaterialTheme.colorScheme.onSurfaceVariant
@@ -618,7 +619,7 @@ fun FullPlayer(ui: PlayerUi, onClose: () -> Unit, onEq: () -> Unit) {
                         }
                         val rot = rememberInfiniteTransition(label = "disc")
                         val angle by rot.animateFloat(0f, 360f, infiniteRepeatable(tween(12000, easing = LinearEasing)), label = "a")
-                        val spin = Prefs.artShape == "disc" && ui.playing
+                        val spin = Prefs.artShape == "disc" && ui.playing && !Eco.on
                         Art(ui.art, Modifier.fillMaxWidth(Prefs.artSize).aspectRatio(1f)
                             .graphicsLayer(scaleX = artScale, scaleY = artScale)
                             .then(if (spin) Modifier.rotate(angle) else Modifier), if (Prefs.artShape == "rounded") MaterialTheme.shapes.extraLarge else shape)
@@ -875,6 +876,7 @@ val ACCENTS = listOf(
 
 @Composable
 fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
+    val ctxS = LocalContext.current
     Prefs.version.intValue
     var hex by remember { mutableStateOf("") }
     val notifOpts = listOf("none" to "Nenhum", "shuffle" to "Aleatório", "repeat" to "Repetir", "like" to "Favoritar",
@@ -884,7 +886,9 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
         SkinGallery()
         TextButton(onClick = { Nav.page = "themes" }, Modifier.padding(start = 12.dp)) { Icon(Icons.Rounded.Palette, null); Text("  Ver todos os temas em tela cheia") }
         Group("Economia de bateria", footer = if (Eco.bySystem) "Ligado agora porque o celular está em economia de bateria." else "Corta o que gasta à toa (fundo do tema, vídeo, fontes, borrão) sem mexer em tocar, buscar, baixar ou gravar.") {
-            ChoiceRow("Modo economia", listOf("auto" to "Automático", "on" to "Sempre", "off" to "Nunca"), Eco.mode) { Eco.mode = it; Prefs.version.intValue++ }
+            ChoiceRow("Modo economia", listOf("auto" to "Automático", "on" to "Sempre", "extremo" to "Extremo", "off" to "Nunca"), Eco.mode) { Eco.mode = it; if (it != "extremo") Hunter.start(ctxS); Prefs.version.intValue++ }
+            if (Eco.extreme) Text("Modo Extremo: só o essencial pra tocar música. Sem capas e fotos, sem paradas e playlists no Descobrir, sem caçador de rádio, sem animações e fundo preto puro. Tocar, buscar, fila, tela apagada e controles continuam iguais.",
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         Group("Aparência") {

@@ -16,7 +16,11 @@ object Eco {
     var mode: String get() = Prefs.sp.getString("eco", "auto") ?: "auto"; set(v) { Prefs.sp.edit().putString("eco", v).apply(); refresh() }
     private var systemSaver by mutableStateOf(false)
     private var forced by mutableStateOf(false)
-    val on: Boolean get() = forced || (mode == "auto" && systemSaver)
+    private var extremeS by mutableStateOf(false)
+    /* modo Extremo: só tocar música. Sem capas/fotos, sem paradas e playlists automáticas, sem caçador de rádio,
+       sem animação, fundo preto puro (gasta menos em tela OLED) e vídeo do YouTube sempre na menor qualidade */
+    val extreme: Boolean get() = extremeS
+    val on: Boolean get() = forced || extremeS || (mode == "auto" && systemSaver)
     val bySystem: Boolean get() = mode == "auto" && systemSaver
     private var registered = false
     private lateinit var app: Context
@@ -31,6 +35,8 @@ object Eco {
     }
     fun refresh() {
         forced = mode == "on"
+        extremeS = mode == "extremo"
+        if (extremeS) runCatching { Hunter.stop() }
         systemSaver = runCatching { app.getSystemService(PowerManager::class.java).isPowerSaveMode }.getOrDefault(false)
     }
 }

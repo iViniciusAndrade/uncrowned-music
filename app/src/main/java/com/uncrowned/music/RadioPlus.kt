@@ -124,7 +124,7 @@ object Hunter {
     fun start(ctx: Context) {
         val app = ctx.applicationContext
         job?.cancel()
-        if (!on || artists().isEmpty()) return
+        if (!on || artists().isEmpty() || Eco.extreme) return
         job = scope.launch { while (isActive) { runCatching { cycle(app) }; delay((if (Eco.on) 10 else 2) * 60_000L) } }
     }
     fun stop() { job?.cancel(); job = null }

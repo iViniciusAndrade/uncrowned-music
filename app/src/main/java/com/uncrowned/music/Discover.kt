@@ -244,8 +244,13 @@ fun DiscoverTab(ui: PlayerUi) {
                 }
             }
         }
-        item { WeekCharts(ui, trending) }
-        item { PopularPlaylists(ui) { ytListOpen = it } }
+        if (Eco.extreme) item {
+            Text("Modo economia Extremo ligado: paradas e playlists ficam desligadas pra gastar o mínimo. Use Buscar pra achar músicas.",
+                Modifier.padding(16.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            item { WeekCharts(ui, trending) }
+            item { PopularPlaylists(ui) { ytListOpen = it } }
+        }
 
         item { TasteCard { onboarding = true } }
 

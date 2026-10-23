@@ -215,8 +215,10 @@ fun UncrownedTheme(content: @Composable () -> Unit) {
         background = Color.Black, surface = Color.Black,
         surfaceContainer = Color(0xFF141414), surfaceContainerHigh = Color(0xFF222224), surfaceContainerLow = Color(0xFF050505)
     )
-    // tema escolhido: cores próprias (fundo, cards, texto)
-    Skins.current?.let { sk ->
+    // tema escolhido: cores próprias (fundo, cards, texto); no modo Extremo, preto puro
+    if (Eco.extreme) scheme = scheme.copy(background = Color.Black, surface = Color.Black, surfaceContainer = Color(0xFF111111), surfaceContainerHigh = Color(0xFF1C1C1C), surfaceContainerLow = Color.Black,
+        onBackground = Color(0xFFEDEDED), onSurface = Color(0xFFEDEDED), onSurfaceVariant = Color(0xFF8E8E93))
+    else Skins.current?.let { sk ->
         val bg = Color(sk.bg); val card = Color(sk.card); val card2 = Color(sk.card2); val txt = Color(sk.text)
         scheme = scheme.copy(background = bg, surface = bg, surfaceContainer = card, surfaceContainerHigh = card2, surfaceContainerLow = bg,
             onBackground = txt, onSurface = txt, onSurfaceVariant = Color(sk.dim),
