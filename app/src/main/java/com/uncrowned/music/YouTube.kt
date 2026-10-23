@@ -293,7 +293,7 @@ object YtPlayer {
       })();""", null) }
     var stopOther: (() -> Unit)? = null
     // fecha o player online (quando começa a tocar uma música offline)
-    fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false }; GlobalFx.sync(false) }
+    fun close() { js("player.pauseVideo()"); if (queue.isNotEmpty()) { queue = emptyList(); index = -1; playing = false }; GlobalFx.sync(false); runCatching { WebPlayService.update(Sync.app) } }
     // modo retrô dentro do player do YouTube/SoundCloud
     // faixa protegida do SoundCloud não pode passar pelo processamento da página (ficaria muda): o efeito vem do celular (GlobalFx)
     fun applyRetro() { if (current?.src != "sc") web?.evaluateJavascript(Retro.js(Retro.mode), null); GlobalFx.sync(playing && current != null); applySpeed() }
@@ -304,6 +304,7 @@ object YtPlayer {
         @JavascriptInterface fun state(s: Int) = h.post {
             playing = s == 1
             GlobalFx.sync(playing)
+            runCatching { WebPlayService.update(Sync.app) }
             if (s == 1 && Retro.mode.isNotEmpty()) { applyRetro(); h.postDelayed({ applyRetro() }, 1500) }
             if (s == 1 && (speed != 1f || Retro.mode.isNotEmpty())) { applySpeed(); h.postDelayed({ applySpeed() }, 800) }
             // terminou: repetir esta, repetir a lista, ou seguir pra próxima
@@ -379,7 +380,7 @@ vp.on('timeupdate',function(d){Android.time(d.seconds,d.duration)});
 @Composable
 fun YtWebPlayer(modifier: Modifier) {
     AndroidView(modifier = modifier, factory = { ctx ->
-        (YtPlayer.web ?: WebView(ctx).apply {
+        (YtPlayer.web ?: BgWebView(ctx).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.domStorageEnabled = true
