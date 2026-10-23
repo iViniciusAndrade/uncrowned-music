@@ -56,20 +56,28 @@ object Assist {
     val msgs = mutableStateListOf<Msg>()
     var busy by mutableStateOf(false)
 
-    // IA local
-    const val MODEL_URL = "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"
-    const val MODEL_SIZE = 546_660_344L
-    private fun modelFile(c: Context) = File(c.filesDir, "ia/qwen05.task")
-    fun hasModel(c: Context) = modelFile(c).length() == MODEL_SIZE
+    /* ---------- IA local ---------- */
+    data class Model(val id: String, val name: String, val desc: String, val url: String, val size: Long, val ctx: Int)
+    val MODELS = listOf(
+        Model("q15", "Qwen 2.5 1.5B (esperta)", "≈1,6 GB • bem mais esperta, conversa melhor", "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.task", 1_598_556_720L, 4096),
+        Model("q05", "Qwen 2.5 0.5B (leve)", "≈520 MB • rápida, mas bem limitada", "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task", 546_660_344L, 1280),
+    )
+    private fun file(c: Context, m: Model) = File(c.filesDir, "ia/${if (m.id == "q05") "qwen05" else m.id}.task")
+    fun installed(c: Context, m: Model) = file(c, m).length() == m.size
+    // a melhor instalada
+    fun active(c: Context): Model? = MODELS.firstOrNull { installed(c, it) }
+    fun hasModel(c: Context) = active(c) != null
     var dl by mutableFloatStateOf(-1f)   // progresso do download (0..1), -1 = parado
+    var dlId by mutableStateOf("")
     private var llm: com.google.mediapipe.tasks.genai.llminference.LlmInference? = null
+    private var llmId = ""
 
-    suspend fun download(c: Context): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun download(c: Context, m: Model): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val f = modelFile(c); f.parentFile?.mkdirs()
+            val f = file(c, m); f.parentFile?.mkdirs()
             val part = File(f.path + ".part")
-            dl = (part.length().toFloat() / MODEL_SIZE)
-            var url = MODEL_URL; var con: HttpURLConnection
+            dl = (part.length().toFloat() / m.size)
+            var url = m.url; var con: HttpURLConnection
             var hops = 0
             while (true) {
                 con = URL(url).openConnection() as HttpURLConnection
@@ -84,45 +92,84 @@ object Assist {
             con.inputStream.use { inp ->
                 java.io.FileOutputStream(part, true).use { o ->
                     val buf = ByteArray(256 * 1024); var n = part.length()
-                    while (true) { val r = inp.read(buf); if (r < 0) break; o.write(buf, 0, r); n += r; if (n > MODEL_SIZE) error("arquivo diferente do esperado"); dl = n.toFloat() / MODEL_SIZE }
+                    while (true) { val r = inp.read(buf); if (r < 0) break; o.write(buf, 0, r); n += r; if (n > m.size) error("arquivo diferente do esperado"); dl = n.toFloat() / m.size }
                 }
             }
             con.disconnect()
-            if (part.length() != MODEL_SIZE) error("download incompleto, tente de novo (ele continua de onde parou)")
+            if (part.length() != m.size) error("download incompleto, tente de novo (ele continua de onde parou)")
             part.renameTo(f)
             dl = -1f
         }.onFailure { dl = -1f }
     }
-    fun deleteModel(c: Context) { if (thinking || dl >= 0f) return; release(); modelFile(c).delete(); File(modelFile(c).path + ".part").delete() }
+    fun deleteModel(c: Context, m: Model) { if (thinking || dl >= 0f) return; release(); file(c, m).delete(); File(file(c, m).path + ".part").delete() }
     // não fecha a IA no meio de uma resposta (isso derrubaria o app): fecha assim que ela terminar
     private val lock = Any(); private var thinking = false; private var closeLater = false
-    fun release() = synchronized(lock) { if (thinking) closeLater = true else { runCatching { llm?.close() }; llm = null } }
+    fun release() = synchronized(lock) { if (thinking) closeLater = true else { runCatching { llm?.close() }; llm = null; llmId = "" } }
     private val bg = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
     // download continua mesmo se você sair da tela
-    fun startDownload(c: Context, done: (Result<Unit>) -> Unit) { if (dl >= 0f) return; dl = 0f; bg.launch { val r = download(c.applicationContext); withContext(Dispatchers.Main) { done(r) } } }
+    fun startDownload(c: Context, m: Model, done: (Result<Unit>) -> Unit) { if (dl >= 0f) return; dl = 0f; dlId = m.id; bg.launch { val r = download(c.applicationContext, m); withContext(Dispatchers.Main) { done(r) } } }
 
-    private fun engine(c: Context): com.google.mediapipe.tasks.genai.llminference.LlmInference {
-        llm?.let { return it }
+    private fun engine(c: Context, m: Model): com.google.mediapipe.tasks.genai.llminference.LlmInference {
+        if (llmId == m.id) llm?.let { return it }
+        runCatching { llm?.close() }; llm = null
         val o = com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(modelFile(c).path).setMaxTokens(768).setMaxTopK(20).build()
-        return com.google.mediapipe.tasks.genai.llminference.LlmInference.createFromOptions(c, o).also { llm = it }
+            .setModelPath(file(c, m).path).setMaxTokens(minOf(m.ctx, 2048)).setMaxTopK(40).build()
+        return com.google.mediapipe.tasks.genai.llminference.LlmInference.createFromOptions(c, o).also { llm = it; llmId = m.id }
     }
 
-    private const val SYS = """Você é o assistente do app de música Uncrowned. Transforme o pedido em UMA linha de JSON, sem mais nada:
-{"acao":"...","valor":"...","resposta":"..."}
-acao pode ser: tocar (valor = música/artista/gênero pra buscar), pausar, continuar, proxima, anterior, velocidade (valor = número de 0.5 a 1.5), timer (valor = minutos), aleatorio, repetir, efeito (valor = k7, vinil, black ou normal), conversa (só responder).
-resposta = frase curta e descontraída em português do Brasil.
-Exemplos:
-pedido: me dá uma vibe triste pra chorar no banho -> {"acao":"tocar","valor":"músicas tristes","resposta":"Separei umas pra chorar em paz."}
-pedido: tá muito rápido isso -> {"acao":"velocidade","valor":"0.85","resposta":"Desacelerei pra você."}
-pedido: vou dormir daqui meia hora -> {"acao":"timer","valor":"30","resposta":"Desligo em 30 minutos. Bom sono."}
-pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assistente do Uncrowned. Me pede música que eu toco."}"""
+    private fun sys(): String {
+        val hoje = java.text.SimpleDateFormat("EEEE, d 'de' MMMM 'de' yyyy, HH:mm", java.util.Locale("pt", "BR")).format(java.util.Date())
+        val tocando = YtPlayer.current?.let { "${it.title} — ${it.channel}" } ?: "nada"
+        return """Você é a IA do Uncrowned, um app de música, rodando direto no celular do usuário. Fale em português do Brasil, à vontade e direto, como um amigo. Converse sobre qualquer assunto, sem enrolar.
+Hoje é $hoje. Tocando agora: $tocando.
+Ferramentas (use só quando precisar):
+- Pra pesquisar na internet (notícias, fatos, algo que você não sabe ou que muda com o tempo), responda APENAS uma linha: BUSCAR: termos da pesquisa
+  Depois você recebe os resultados e responde com base neles.
+- Se o usuário pedir algo do app, escreva sua resposta e no fim uma linha: AÇÃO: tocar <o que buscar> | pausar | continuar | proxima | anterior | velocidade <0.5 a 1.5> | timer <minutos> | aleatorio | repetir | efeito <k7|vinil|black|normal>
+Não invente ações que o usuário não pediu."""
+    }
 
-    private fun askModel(c: Context, text: String): String {
-        val p = "<|im_start|>system\n$SYS<|im_end|>\n<|im_start|>user\npedido: $text<|im_end|>\n<|im_start|>assistant\n"
+    // conversa com memória das últimas mensagens (cabe no limite do modelo)
+    private fun prompt(m: Model, extra: List<Pair<String, String>>): String {
+        val budget = (if (m.ctx >= 4096) 2048 else 1100) * 3   // ~3 letras por token
+        val turns = ArrayList<String>()
+        var used = 0
+        for (msg in (msgs.map { (if (it.me) "user" else "assistant") to it.text } + extra).asReversed()) {
+            val t = "<|im_start|>${msg.first}\n${msg.second.take(1500)}<|im_end|>\n"
+            if (used + t.length > budget && turns.isNotEmpty()) break
+            used += t.length; turns.add(0, t)
+        }
+        return "<|im_start|>system\n${sys()}<|im_end|>\n" + turns.joinToString("") + "<|im_start|>assistant\n"
+    }
+
+    private fun gen(c: Context, m: Model, p: String): String {
         synchronized(lock) { thinking = true; closeLater = false }
-        try { return engine(c).generateResponse(p) }
-        finally { synchronized(lock) { thinking = false; if (closeLater) { closeLater = false; runCatching { llm?.close() }; llm = null } } }
+        try { return engine(c, m).generateResponse(p).replace("<|im_end|>", "").trim() }
+        finally { synchronized(lock) { thinking = false; if (closeLater) { closeLater = false; runCatching { llm?.close() }; llm = null; llmId = "" } } }
+    }
+
+    /* ---------- internet (sem chave): DuckDuckGo + Wikipédia ---------- */
+    private fun httpGet(u: String): String {
+        val con = URL(u).openConnection() as HttpURLConnection
+        con.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36")
+        con.connectTimeout = 10000; con.readTimeout = 12000
+        return try { con.inputStream.bufferedReader().readText() } finally { con.disconnect() }
+    }
+    private fun strip(h: String) = android.text.Html.fromHtml(h, android.text.Html.FROM_HTML_MODE_LEGACY).toString().replace(Regex("\\s+"), " ").trim()
+    fun webSearch(q: String): String {
+        val out = StringBuilder()
+        runCatching {
+            val h = httpGet("https://html.duckduckgo.com/html/?kl=br-pt&q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+            val titles = Regex("class=\"result__a\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).findAll(h).map { strip(it.groupValues[1]) }.toList()
+            val snips = Regex("class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL).findAll(h).map { strip(it.groupValues[1]) }.toList()
+            titles.zip(snips).take(5).forEachIndexed { i, (t, sn) -> out.append("${i + 1}. $t: $sn\n") }
+        }
+        if (out.length < 80) runCatching {
+            val j = JSONObject(httpGet("https://pt.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=3&srsearch=" + java.net.URLEncoder.encode(q, "UTF-8")))
+            val a = j.getJSONObject("query").getJSONArray("search")
+            for (i in 0 until a.length()) { val o = a.getJSONObject(i); out.append("- ${o.optString("title")}: ${strip(o.optString("snippet"))}\n") }
+        }
+        return out.toString().ifBlank { "(nenhum resultado)" }.take(2400)
     }
 
     private fun norm(s: String) = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").trim()
@@ -197,29 +244,48 @@ pedido: quem é você -> {"acao":"conversa","valor":"","resposta":"Sou o assiste
 
     private suspend fun handle(c: Context, ui: PlayerUi, text: String): String {
         val t = norm(text).trimEnd('.', '!', '?')
-        withContext(Dispatchers.Main) { rules(ui, t) }?.let { return it }
+        val m = if (Eco.extreme) null else active(c)
+        // comandos rápidos: "toca X" sempre; os outros só em frase curta (senão vira conversa com a IA)
+        if (m == null || t.split(" ").size <= 5 || Regex("^(toca|tocar|toque|bota|coloca|poe|quero ouvir|ouvir) ").containsMatchIn(t))
+            withContext(Dispatchers.Main) { rules(ui, t) }?.let { return it }
         if (Eco.extreme) return "No modo Extremo a IA fica desligada pra economizar. $HELP"
-        if (!hasModel(c)) return "Esse eu não entendi. Baixe a IA local aqui em cima pra eu entender pedidos do seu jeito. $HELP"
-        val out = withContext(Dispatchers.Default) { askModel(c, text) }
-        val j = Regex("\\{.*\\}", RegexOption.DOT_MATCHES_ALL).find(out)?.value?.let { runCatching { JSONObject(it) }.getOrNull() }
-            ?: return out.trim().ifBlank { "Não entendi." }
-        var acao = j.optString("acao"); val valor = j.optString("valor"); val resp = j.optString("resposta")
-        // a IA pequena inventa de tocar música em qualquer frase: só executa se você pediu algo mesmo
-        val pediu = Regex("(toca|tocar|toque|bota|coloca|poe|quero|ouvir|escutar|musica|som|vibe|playlist|pausa|para|proxima|pula|volta|anterior|velocidade|slowed|rapido|lento|devagar|timer|desliga|dormir|aleatorio|embaralha|repete|efeito|k7|vinil|black)").containsMatchIn(t)
-        if (!pediu) acao = "conversa"
-        val done = withContext(Dispatchers.Main) {
-            when (acao) {
-                "tocar" -> if (valor.isNotBlank()) play(ui, valor) else null
-                "pausar" -> rules(ui, "pausa"); "continuar" -> rules(ui, "continua")
-                "proxima" -> rules(ui, "proxima"); "anterior" -> rules(ui, "anterior")
-                "velocidade" -> valor.replace(',', '.').toFloatOrNull()?.let { speed(it.coerceIn(0.5f, 1.5f), "") }
-                "timer" -> valor.filter { it.isDigit() }.toIntOrNull()?.let { Sleep.start(it.coerceIn(1, 600)); "" }
-                "aleatorio" -> rules(ui, "aleatorio"); "repetir" -> rules(ui, "repete")
-                "efeito" -> { Retro.mode = when (norm(valor)) { "k7" -> "k7"; "vinil" -> "vinil"; "black", "black metal" -> "black"; else -> "" }; Prefs.version.intValue++; "" }
-                else -> null
-            }
+        if (m == null) return "Esse eu não entendi. Baixe a IA local aqui em cima pra conversar do seu jeito. $HELP"
+        // a mensagem do usuário já está em msgs
+        var out = withContext(Dispatchers.Default) { gen(c, m, prompt(m, emptyList())) }
+        // pesquisa na internet quando ela pedir (até 2 vezes)
+        val extra = ArrayList<Pair<String, String>>()
+        repeat(2) {
+            val q = Regex("(?im)^\\s*BUSCAR\\s*:\\s*(.+)$").find(out)?.groupValues?.get(1)?.trim() ?: return@repeat
+            if (!Sync.online()) { out = "Tô sem internet agora, não consigo pesquisar \"$q\"."; return@repeat }
+            withContext(Dispatchers.Main) { msgs.add(Msg(false, "🔎 pesquisando: $q")) }
+            val res = withContext(Dispatchers.IO) { webSearch(q) }
+            extra += "assistant" to "BUSCAR: $q"
+            extra += "user" to "Resultados da pesquisa \"$q\":\n$res\nResponda minha pergunta com base nisso, em português."
+            out = withContext(Dispatchers.Default) { gen(c, m, prompt(m, extra)) }
         }
-        return listOfNotNull(resp.ifBlank { null }, done?.takeIf { it.isNotBlank() && acao == "tocar" }).joinToString("\n").ifBlank { done ?: "Feito." }
+        out = out.replace(Regex("(?im)^\\s*BUSCAR\\s*:.*$"), "").trim()
+        // ação pedida pela IA
+        val a = Regex("(?im)^\\s*A[ÇC][ÃA]O\\s*:\\s*(\\S+)\\s*(.*)$").find(out)
+        var reply = out.replace(Regex("(?im)^\\s*A[ÇC][ÃA]O\\s*:.*$"), "").trim()
+        // a IA pequena inventa ações: só executa se a mensagem pediu algo do app
+        val pediu = Regex("(toca|tocar|toque|bota|coloca|poe|quero ouvir|ouvir|escutar|musica|som|vibe|playlist|pausa|para|proxima|pula|volta|anterior|velocidade|slowed|rapido|lento|devagar|timer|desliga|dormir|aleatorio|embaralha|repete|efeito|k7|vinil|black)").containsMatchIn(t)
+        if (a != null && pediu) {
+            val acao = norm(a.groupValues[1]); val valor = a.groupValues[2].trim().trim('<', '>', '"')
+            val done = withContext(Dispatchers.Main) {
+                when (acao) {
+                    "tocar" -> if (valor.isNotBlank()) play(ui, valor) else null
+                    "pausar" -> rules(ui, "pausa"); "continuar" -> rules(ui, "continua")
+                    "proxima" -> rules(ui, "proxima"); "anterior" -> rules(ui, "anterior")
+                    "velocidade" -> valor.replace(',', '.').toFloatOrNull()?.let { speed(it.coerceIn(0.5f, 1.5f), "Velocidade em ${"%.2f".format(it.coerceIn(0.5f, 1.5f))}x.") }
+                    "timer" -> valor.filter { it.isDigit() }.toIntOrNull()?.let { Sleep.start(it.coerceIn(1, 600)); "Desligo em $it minutos." }
+                    "aleatorio" -> rules(ui, "aleatorio"); "repetir" -> rules(ui, "repete")
+                    "efeito" -> { Retro.mode = when (norm(valor)) { "k7" -> "k7"; "vinil" -> "vinil"; "black", "black metal" -> "black"; else -> "" }; Prefs.version.intValue++; "Efeito: ${Retro.NAMES[Retro.mode]}" }
+                    else -> null
+                }
+            }
+            if (done != null) reply = listOf(reply, done).filter { it.isNotBlank() }.joinToString("\n")
+        }
+        return reply.ifBlank { "…" }
     }
 }
 
@@ -229,7 +295,7 @@ fun AssistScreen(ui: PlayerUi, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var text by remember { mutableStateOf("") }
-    var has by remember { mutableStateOf(Assist.hasModel(ctx)) }
+    var ver by remember { mutableIntStateOf(0) }
     val voice = rememberVoice { Assist.send(ctx, ui, it, scope) }
     // saiu da tela: tira a IA da memória (ela ocupa bastante RAM)
     DisposableEffect(Unit) { onDispose { Assist.release() } }
@@ -242,20 +308,29 @@ fun AssistScreen(ui: PlayerUi, onBack: () -> Unit) {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(14.dp)) {
                     Text("Fala ou escreve o que quer. Ex.: \"toca Matuê em slowed\", \"desliga em 20 minutos\", \"próxima\".", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
-                    if (has) Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Text("  IA local instalada (roda no celular, sem internet)", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { Assist.deleteModel(ctx); has = false }) { Text("Apagar") }
-                    } else if (Assist.dl >= 0f) {
-                        Text("Baixando a IA… ${(Assist.dl * 100).toInt()}%", fontSize = 13.sp)
-                        LinearProgressIndicator({ Assist.dl }, Modifier.fillMaxWidth().padding(top = 6.dp))
-                    } else {
-                        Text("IA local (opcional): entende pedidos do seu jeito, sem internet e sem chave. Baixa uma vez (~520 MB, melhor no Wi-Fi).", fontSize = 13.sp)
-                        OutlinedButton(onClick = { val app = ctx.applicationContext; Assist.startDownload(ctx) { r ->
-                            has = Assist.hasModel(app)
-                            android.widget.Toast.makeText(app, if (r.isSuccess) "IA instalada" else "Não deu: ${r.exceptionOrNull()?.message}", android.widget.Toast.LENGTH_LONG).show()
-                        } }, Modifier.padding(top = 6.dp)) { Icon(Icons.Rounded.Download, null); Text(" Baixar IA local") }
+                    ver // atualiza quando instala/apaga
+                    val act = Assist.active(ctx)
+                    Text(if (act != null) "Usando: ${act.name}. Conversa sobre qualquer coisa, pesquisa na internet e controla o app." else "Baixe uma IA local (roda no celular, sem chave). Melhor no Wi-Fi.", fontSize = 13.sp)
+                    Assist.MODELS.forEach { m ->
+                        val inst = Assist.installed(ctx, m)
+                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (inst) Icons.Rounded.CheckCircle else Icons.Rounded.Memory, null, tint = if (inst) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                Text(m.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                Text(m.desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            when {
+                                Assist.dl >= 0f && Assist.dlId == m.id -> Text("${(Assist.dl * 100).toInt()}%", fontSize = 13.sp)
+                                inst -> TextButton(onClick = { Assist.deleteModel(ctx, m); ver++ }) { Text("Apagar") }
+                                else -> TextButton(enabled = Assist.dl < 0f, onClick = { val app = ctx.applicationContext; Assist.startDownload(ctx, m) { r ->
+                                    ver++
+                                    android.widget.Toast.makeText(app, if (r.isSuccess) "IA instalada" else "Não deu: ${r.exceptionOrNull()?.message}", android.widget.Toast.LENGTH_LONG).show()
+                                } }) { Text("Baixar") }
+                            }
+                        }
+                        if (Assist.dl >= 0f && Assist.dlId == m.id) LinearProgressIndicator({ Assist.dl }, Modifier.fillMaxWidth().padding(top = 4.dp))
                     }
+                    if (Assist.msgs.isNotEmpty()) TextButton(onClick = { Assist.msgs.clear() }, Modifier.align(Alignment.End)) { Text("Nova conversa") }
                 }
             }
             items(Assist.msgs) { m ->
