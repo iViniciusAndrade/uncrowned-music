@@ -3,7 +3,7 @@
 App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3). Também existe uma versão de PC (Electron). Mudanças pedidas "só no mobile" não mexem no PC. Celular de teste: Poco X7 Pro. Tudo em português do Brasil, textos de UI descontraídos.
 
 ## Build e entrega
-- O APK sai pelo GitHub Actions (`.github/workflows/build.yml`) a cada push na `main`. Cada build vira uma release `build-N` com o `.apk` (até agora o último foi o build-95).
+- O APK sai pelo GitHub Actions (`.github/workflows/build.yml`) a cada push na `main`. Cada build vira uma release `build-N` com o `.apk` (até agora o último entregue foi o build-99, em 23/10/2026).
 - Pra baixar o asset use a API REST (`gh api ... -H "Accept: application/octet-stream"`). O GraphQL do `gh` não funciona nesse ambiente.
 - Assinado com a chave debug. Existe código pra chave própria (`KEYSTORE_FILE`/`KEYSTORE_PASS`), mas o dono decidiu não usar por enquanto. O repositório é público, então nunca coloque chave ou segredo no código.
 - O build gera só `arm64-v8a` (a IA local traz biblioteca nativa). R8 ligado; as regras ficam em `app/proguard-rules.pro`.
@@ -21,6 +21,11 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - `Assist.kt`: tela Assistente (Buscar → Assistente), microfone (`rememberVoice`) e comandos por regra. A IA local roda via MediaPipe `tasks-genai` com modelos opcionais de baixar/apagar: Qwen2.5 0.5B, Qwen2.5 1.5B e Phi-4 mini. O assistente faz pesquisa na web (DuckDuckGo HTML + Wikipédia), gera imagem via Pollinations (chave do usuário, salva só no celular) e baixa arquivo de link direto (bloqueia sites de streaming). Os pedidos rodam num escopo do app, então continuam fora da tela.
 - `Browser.kt`: navegador privado (opção secreta, Ajustes → Secreto). `BrowserActivity` roda no processo `:nav` com `WebView.setDataDirectorySuffix("nav")`; a pasta é apagada ao abrir e ao fechar e o processo é encerrado. DNS via DoH da Cloudflare (1.1.1.1/1.0.0.1, JSON) num proxy local (`DohProxy`) ligado pelo `ProxyController` do androidx.webkit. Sem cache e sem permissões. Abas, página inicial fixa ou conjunto de páginas (prefs `nav_home`), sites no escuro (algorithmic darkening) e downloads (`NavDl`, pelo proxy, em Download/Uncrowned). Bloqueador bruto em `NavBlock.kt`: lista embutida + StevenBlack (semanal, `filesDir/navblock_hosts.txt`), corta no `shouldInterceptRequest` e no proxy, por caminho, CSS de esconder anúncio, anti pop-up e scripts de anúncio do YouTube.
 - `Nag.kt`: notificações de cobrança (WorkManager). `Cuts.kt`: recortes. `Listen.kt`/`StatsUi.kt`: estatísticas.
+
+## Histórico recente
+- build-97: navegador privado nas opções secretas.
+- build-98: revisão de bugs (fila do SoundCloud, caches entre threads, vazamentos, trava de tela do player web).
+- build-99: navegador com abas, página inicial/conjunto, sites no escuro, downloads e bloqueador bruto; descrição do navegador removida de Ajustes.
 
 ## Pendências pedidas
 - Navegador simples dentro da aba Descobrir, com página inicial personalizável (não precisa ser privado nem escondido).
