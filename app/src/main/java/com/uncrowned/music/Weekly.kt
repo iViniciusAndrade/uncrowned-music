@@ -111,7 +111,7 @@ object Weekly {
     }.getOrNull()
     private fun store(w: Int, r: Result) = Prefs.sp.edit().putString("weekly3", JSONObject().put("w", w).put("at", System.currentTimeMillis())
         .put("i", JSONArray(r.items.map { JSONObject().put("v", it.v.json()).put("why", it.why) }))
-        .put("a", JSONArray(r.artists.map { JSONObject().put("n", it.name).put("p", it.pic).put("b", it.because) }))).apply()
+        .put("a", JSONArray(r.artists.map { JSONObject().put("n", it.name).put("p", it.pic).put("b", it.because) })).toString()).apply()
     fun cached(): Result? = load()?.second
 
     suspend fun get(force: Boolean = false): Result = withContext(Dispatchers.IO) {
