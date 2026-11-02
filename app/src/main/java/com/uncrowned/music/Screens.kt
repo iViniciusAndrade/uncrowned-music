@@ -130,6 +130,7 @@ fun App(ui: PlayerUi, perms: List<String>) {
             containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground,
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
+                    UpdateBanner()
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
                     // sem permissão de notificação o Android não mostra a música tocando (barra, tela de bloqueio, central de controle)
                     var notifOk by remember { mutableStateOf(androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) }
@@ -540,8 +541,11 @@ fun PlaylistsTab(ui: PlayerUi, onOpen: (String) -> Unit) {
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 modifier = Modifier.clickable { Nav.page = "pend" }, colors = ListItemDefaults.colors(containerColor = Color.Transparent)) }
             items(pls.keys.toList()) { p ->
-                val first = pls[p].orEmpty().firstNotNullOfOrNull { Library.byId(it) }
-                PRow(p, "${pls[p].orEmpty().size} músicas", null, first?.art, p)
+                val arts = pls[p].orEmpty().mapNotNull { Library.byId(it)?.art }.distinct().take(4)
+                ListItem(headlineContent = { Text(p, fontSize = 17.sp) }, supportingContent = { Text("${pls[p].orEmpty().size} músicas") },
+                    leadingContent = { PlThumb("lp:$p", arts) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    modifier = Modifier.clickable { onOpen(p) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
             }
         }
     }
@@ -567,12 +571,26 @@ fun PlaylistDetail(ui: PlayerUi, name: String, onBack: () -> Unit) {
     Prefs.version.intValue
     val ids = if (name == FAVS) Prefs.favs().toList() else Prefs.playlists()[name].orEmpty()
     val songs = ids.mapNotNull { Library.byId(it) }
+    if (name == FAVS) { Column { Header("Favoritas", onBack); SongListBody(ui, songs) }; return }
+    PlLook.version
+    var cur by remember { mutableStateOf(name) }
+    var edit by remember { mutableStateOf(false) }
+    val key = "lp:$cur"
+    val list = (Prefs.playlists()[cur].orEmpty()).mapNotNull { Library.byId(it) }
+    val arts = list.map { it.art }.distinct().take(4)
     Column {
-        Header(if (name == FAVS) "Favoritas" else name, onBack) {
-            if (name != FAVS) IconButton(onClick = { Prefs.deletePlaylist(name); onBack() }) { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.primary) }
+        Header("", onBack) {
+            IconButton(onClick = { edit = true }) { Icon(Icons.Rounded.Brush, "Personalizar", tint = MaterialTheme.colorScheme.primary) }
+            IconButton(onClick = { Prefs.deletePlaylist(cur); onBack() }) { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.primary) }
         }
-        SongListBody(ui, songs, playlist = name.takeIf { it != FAVS })
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+            item { PlHero(PlLook.get(key), cur, "${list.size} músicas offline", arts) { edit = true } }
+            if (list.isNotEmpty()) item { PlayShuffleRow(ui, list) }
+            if (list.isEmpty()) item { Empty("Nada por aqui ainda. No menu … de uma música, toque em Adicionar à playlist.") }
+            itemsIndexed(list, key = { _, s -> s.id }) { i, s -> SongRow(ui, s, cur) { ui.play(list, i) } }
+        }
     }
+    if (edit) PlEditSheet(key, cur, arts, "", onRename = { to -> Prefs.renamePlaylist(cur, to).also { if (it) cur = to } }) { edit = false }
 }
 
 /* ======================= MINI PLAYER ======================= */
@@ -1005,7 +1023,7 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             ChoiceRow("Pulo voltar/avançar", listOf("5" to "5 s", "10" to "10 s", "15" to "15 s", "30" to "30 s"), Prefs.seekStep.toString()) { Prefs.seekStep = it.toInt() }
         }
 
-        Group("Online", footer = "No celular as músicas tocam pelo SoundCloud. Artistas, álbuns e paradas vêm do YouTube Music, mas cada música toca a versão do SoundCloud.") {
+        Group("Online", footer = "O YouTube é o motor principal: busca, paradas, artistas e álbuns vêm dele e as músicas tocam no player do YouTube. O SoundCloud entra quando o YouTube não tem.") {
             var k by remember { mutableStateOf(YtStore.apiKey) }
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(k, { k = it }, Modifier.weight(1f), label = { Text("Chave do YouTube (opcional)") }, singleLine = true, shape = RoundedCornerShape(12.dp))
@@ -1019,6 +1037,9 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
             }
             Div()
             SwitchRow("Tocar o próximo sozinho", null, YtStore.autoNext) { YtStore.autoNext = it }
+            Div()
+            var scf by remember { mutableStateOf(YtStore.scFirst) }
+            SwitchRow("Tocar pelo SoundCloud quando der", "Procura a música no SoundCloud e toca no player do app (efeitos mais fortes). Desligado = toca no YouTube", scf) { scf = it; YtStore.scFirst = it }
 
             var adb by remember { mutableStateOf(AdBlock.on) }
             SwitchRow("Bloquear anúncios", "Corta propaganda do YouTube e pula o que passar", adb) { adb = it; AdBlock.on = it; YtPlayer.web?.evaluateJavascript("window.ADB=$it", null) }
@@ -1032,6 +1053,8 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
                 SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
             }
         }
+
+        UpdateSettings()
 
         if (Secret.on) Group("Secreto") {
             NavRow("Navegador privado", Icons.Rounded.TravelExplore) { BrowserActivity.open(ctxS) }

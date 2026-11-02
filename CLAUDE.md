@@ -3,16 +3,20 @@
 App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3). Também existe uma versão de PC (Electron). Mudanças pedidas "só no mobile" não mexem no PC. Celular de teste: Poco X7 Pro. Tudo em português do Brasil, textos de UI descontraídos.
 
 ## Build e entrega
-- O APK sai pelo GitHub Actions (`.github/workflows/build.yml`) a cada push na `main`. Cada build vira uma release `build-N` com o `.apk` (até agora o último entregue foi o build-99, em 23/10/2026).
+- O APK sai pelo GitHub Actions (`.github/workflows/build.yml`) a cada push na `main`. Cada build vira uma release `build-N` com o `.apk`. O EXE do PC sai pelo `desktop.yml` (push em `desktop/**`) como release `pc-N`.
+- `versionCode` = `GITHUB_RUN_NUMBER` (o build N). No PC o número vai em `desktop/build.json`. A mensagem do commit vira o texto da release, que aparece no aviso de atualização dos apps: escreva commits com linhas curtas em português dizendo o que mudou pro usuário.
+- Atualização automática: `Updater.kt` (Android, olha `releases` do GitHub, baixa o APK e abre o instalador via FileProvider) e `upd-check`/`upd-install` no `desktop/main.js` (baixa o Setup/Portable e troca por um .cmd).
 - Pra baixar o asset use a API REST (`gh api ... -H "Accept: application/octet-stream"`). O GraphQL do `gh` não funciona nesse ambiente.
-- Assinado com a chave debug. Existe código pra chave própria (`KEYSTORE_FILE`/`KEYSTORE_PASS`), mas o dono decidiu não usar por enquanto. O repositório é público, então nunca coloque chave ou segredo no código.
+- Assinatura: chave própria fixa nos segredos do repositório (`KEYSTORE_B64` + `KEYSTORE_PASS`, criada em 02/11/2026; o dono guarda o .jks). Sem ela cada build sai com chave debug aleatória e o Android não instala por cima. O repositório é público: nunca coloque chave ou segredo no código.
 - O build gera só `arm64-v8a` (a IA local traz biblioteca nativa). R8 ligado; as regras ficam em `app/proguard-rules.pro`.
 - Os commits terminam com as linhas de atribuição do Claude.
 
 ## Arquitetura (app/src/main/java/com/uncrowned/music)
 - `MainActivity.kt`: `PlayerUi` (MediaController), tema, rede caiu → `swapLocal()` toca a cópia local, `Crash.install`.
 - `PlaybackService.kt`: ExoPlayer + `RetroProcessor`, watchdog e tique das estatísticas (`Listen`).
-- `ScPlay.kt`: dono da fila online. Toca stream aberto do SoundCloud no ExoPlayer, faixa protegida no widget do SC (WebView) e o que não está no SC no embed do YouTube. Usa cópia local quando existe e pula rápido quando está offline.
+- `ScPlay.kt`: dono da fila online. Desde o build 101 o YouTube é o motor principal: música do YouTube toca no player do YouTube (`R.Web`). Só com `YtStore.scFirst` ligado (Ajustes → Online) ela é procurada no SoundCloud e toca no ExoPlayer. Busca (`Online.kt`) e paradas mostram YouTube primeiro.
+- `Weekly.kt`: Descobertas da Semana v3 (perfil de gosto → artistas parecidos pelo Deezer + Mix do YouTube + lado B, com motivo por música). O PC tem a mesma lógica em `recommend()` no `main.js` + `tasteProfile()` no `app.js`.
+- `PlLook.kt`: personalização das playlists (foto recortada em `filesDir/plcovers`, cor, enfeite, estampa, fonte, formato, descrição). Chave `op:nome` (online) / `lp:nome` (offline). No PC: `D.plLook` + fotos em `userData/plcovers` servidas em `/plc/`.
 - `YouTube.kt`: `YtPlayer` (WebView do embed/página, anti-pausa, velocidade, recortes) e `YtPlayerBar`. Origem `https://uncrowned.app` (o base youtube.com dá erro 152).
 - `WebPlayService.kt`: serviço em primeiro plano + notificação do player web (sempre chama `startForeground`, senão o Android fecha o app).
 - `AdBlock.kt`, `GlobalFx.kt` (efeitos no player web), `Retro.kt` (K7, Vinil e Black Metal 1ª onda: DSP em Kotlin + Web Audio).
@@ -26,6 +30,7 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - build-97: navegador privado nas opções secretas.
 - build-98: revisão de bugs (fila do SoundCloud, caches entre threads, vazamentos, trava de tela do player web).
 - build-99: navegador com abas, página inicial/conjunto, sites no escuro, downloads e bloqueador bruto; descrição do navegador removida de Ajustes.
+- build-101 / PC: YouTube motor principal no celular, playlists personalizáveis (PC e celular), Descobertas da Semana v3, atualização automática (PC e celular), PC: player do YouTube toca com 1 clique e não trava mais depois de dias aberto (página do YouTube renovada a cada 30 trocas/3 h/quando pesa ou trava, vigia de janela travada, gravação do store assíncrona).
 
 ## Pendências pedidas
 - Navegador simples dentro da aba Descobrir, com página inicial personalizável (não precisa ser privado nem escondido).

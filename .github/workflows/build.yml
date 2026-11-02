@@ -26,6 +26,12 @@ jobs:
         env:
           KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
       - run: cp app/build/outputs/apk/release/app-release.apk UncrownedMusic.apk
+      - name: O que mudou (aparece no aviso de atualização do app)
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          printf '%s\n' "$MSG" | grep -viE '^(co-authored-by|claude-session):' > release-notes.md || true
+          [ -s release-notes.md ] || echo "Melhorias e correções" > release-notes.md
       - uses: actions/upload-artifact@v4
         with:
           name: UncrownedMusic-apk
@@ -35,6 +41,6 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: Uncrowned Music (build ${{ github.run_number }})
-          body: "Baixe o UncrownedMusic.apk abaixo e instale no celular."
+          body_path: release-notes.md
           make_latest: true
           files: UncrownedMusic.apk

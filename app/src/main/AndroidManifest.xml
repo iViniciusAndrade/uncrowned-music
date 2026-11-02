@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- atualização automática: abre o instalador do Android com o APK novo -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -149,6 +151,9 @@
         <activity android:name=".BrowserActivity" android:exported="false" android:process=":nav"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
             android:windowSoftInputMode="adjustResize" />
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.files" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
         <service android:name=".WebPlayService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <service android:name=".PlaybackService" android:exported="true"
             android:foregroundServiceType="mediaPlayback">

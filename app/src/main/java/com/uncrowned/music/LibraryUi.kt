@@ -148,14 +148,14 @@ fun LibraryTab(ui: PlayerUi, onPlaylist: (String) -> Unit) {
         if (pend > 0 && Secret.on) item { LRow(Icons.Rounded.CloudSync, "Pra sincronizar", "$pend pendentes • baixam sozinhas no Wi-Fi") { Nav.page = "pend" } }
         items(oplists, key = { "op" + it.name }) { p ->
             ListItem(headlineContent = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text("${p.items.size} músicas${if (p.from.isNotBlank()) " • ${p.from}" else ""}") },
-                leadingContent = { Art(p.cover.ifBlank { null }, Modifier.size(52.dp)) },
+                leadingContent = { PlThumb("op:${p.name}", p.items.map { it.thumb.ifBlank { null } }.distinct().take(4), p.cover) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 modifier = Modifier.clickable { Nav.page = "op:" + p.name }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
         }
         items(local.keys.toList(), key = { "lp$it" }) { p ->
-            val first = local[p].orEmpty().firstNotNullOfOrNull { Library.byId(it) }
-            ListItem(headlineContent = { Text(p) }, supportingContent = { Text("${local[p].orEmpty().size} músicas offline") },
-                leadingContent = { Art(first?.art, Modifier.size(52.dp)) },
+            val arts = local[p].orEmpty().mapNotNull { Library.byId(it)?.art }.distinct().take(4)
+            ListItem(headlineContent = { Text(p) }, supportingContent = { Text(PlLook.get("lp:$p").desc.ifBlank { "${local[p].orEmpty().size} músicas offline" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingContent = { PlThumb("lp:$p", arts) },
                 trailingContent = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                 modifier = Modifier.clickable { onPlaylist(p) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent))
         }

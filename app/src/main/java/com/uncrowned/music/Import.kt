@@ -56,7 +56,11 @@ object OPlaylists {
     }
     fun add(name: String, v: YtVideo) { val p = get(name) ?: return; if (p.items.none { it.id == v.id && it.src == v.src }) save(name, p.items + v, p.cover, p.from, true) }
     fun remove(name: String, v: YtVideo) { val p = get(name) ?: return; save(name, p.items.filter { !(it.id == v.id && it.src == v.src) }, p.cover, p.from, true) }
-    fun delete(name: String) { val j = all(); j.remove(name); Prefs.sp.edit().putString("oplists", j.toString()).apply(); version++ }
+    fun delete(name: String) { val j = all(); j.remove(name); Prefs.sp.edit().putString("oplists", j.toString()).apply(); version++; PlLook.delete("op:$name") }
+    fun rename(from: String, to: String): Boolean {
+        val j = all(); if (to.isBlank() || j.has(to) || !j.has(from)) return false
+        j.put(to, j.get(from)); j.remove(from); Prefs.sp.edit().putString("oplists", j.toString()).apply(); version++; PlLook.move("op:$from", "op:$to"); return true
+    }
 }
 
 /* Importar do Spotify e do YouTube Music: link de playlist/álbum/Mix ou o arquivo de dados (Spotify / Google Takeout) */
@@ -271,14 +275,19 @@ fun OnlinePlaylistScreen(ui: PlayerUi, name: String, onBack: () -> Unit) {
     val p = OPlaylists.get(name)
     if (p == null) { LaunchedEffect(name) { onBack() }; return }
     var ask by remember { mutableStateOf(false) }
+    var edit by remember { mutableStateOf(false) }
+    PlLook.version
+    val key = "op:${p.name}"
+    val arts = p.items.map { it.thumb.ifBlank { null } }.distinct().take(4)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { Header(p.name, onBack = onBack) { IconButton(onClick = { ask = true }) { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.primary) } } }
+        item { Header("", onBack = onBack) {
+            IconButton(onClick = { edit = true }) { Icon(Icons.Rounded.Brush, "Personalizar", tint = MaterialTheme.colorScheme.primary) }
+            IconButton(onClick = { ask = true }) { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.primary) } } }
+        item { PlHero(PlLook.get(key), p.name, "${p.items.size} músicas${if (p.from.isNotBlank()) " • de ${p.from}" else ""}", arts, p.cover) { edit = true } }
         item {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Art(p.cover.ifBlank { null }, Modifier.size(120.dp), RoundedCornerShape(14.dp))
-                Column(Modifier.padding(start = 16.dp)) {
-                    Text("${p.items.size} músicas${if (p.from.isNotBlank()) " • de ${p.from}" else ""}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                    Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { ui.controller?.pause(); YtPlayer.play(p.items, 0) }, enabled = p.items.isNotEmpty()) { Icon(Icons.Rounded.PlayArrow, null) }
                         OutlinedButton(onClick = { ui.controller?.pause(); YtPlayer.play(p.items.shuffled(), 0) }, enabled = p.items.isNotEmpty()) { Icon(Icons.Rounded.Shuffle, null) }
                         OutlinedButton(onClick = { p.items.forEach { if (Sync.syncedUri(it) == null) Sync.addPending(it) }; Sync.runNow(ctx)
@@ -300,6 +309,7 @@ fun OnlinePlaylistScreen(ui: PlayerUi, name: String, onBack: () -> Unit) {
             }
         }
     }
+    if (edit) PlEditSheet(key, p.name, arts, p.cover, onRename = { to -> OPlaylists.rename(p.name, to).also { if (it) { edit = false; Nav.page = "op:$to" } } }) { edit = false }
     if (ask) AlertDialog(onDismissRequest = { ask = false }, title = { Text("Apagar \"${p.name}\"?") },
         confirmButton = { TextButton(onClick = { OPlaylists.delete(p.name); ask = false; onBack() }) { Text("Apagar") } }, dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancelar") } })
 }

@@ -53,7 +53,7 @@ const DEF = {
   skin: 'edgy', theme: 'dark', accent: '#ff1f3d', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   battery: 'auto', hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
-  adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
+  adblock: true, updAuto: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
 const S = () => D.settings;
@@ -237,12 +237,14 @@ setInterval(() => {
     if (stuck >= 4) { stuck = 0; const t = audio.currentTime; audio.load(); audio.currentTime = t; audio.play().catch(() => {}); applyRate(); }
   } else stuck = 0;
   if (st.sleepAt && Date.now() >= st.sleepAt) { st.sleepAt = 0; pause(); toast('Timer: música pausada'); }
+  // YouTube pausado por você há mais de 20 min: fecha a página dele pra liberar memória (volta do mesmo ponto no play)
+  if (st.kind === 'yt' && yt.wv && !st.playing && yt.userPaused && Date.now() - (yt.pausedAt || Date.now()) > 20 * 60e3) ytDrop();
   countListen();
 }, 1000);
 
 /* ---------------- players oficiais: YouTube / SoundCloud / Vimeo ---------------- */
 const loadScript = src => new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
-const yt = { wv: null }, sc = { w: null }, vm = { player: null };
+const yt = { wv: null, tok: 0 }, sc = { w: null }, vm = { player: null };
 let pollT = null;
 let pollFn = null;
 function startPoll(fn) { clearInterval(pollT); pollFn = fn; pollT = setInterval(fn, eco ? 1100 : 400); }
@@ -291,31 +293,66 @@ video.html5-main-video{width:100vw!important;height:100vh!important;left:0!impor
 const ytExec = code => { try { return yt.wv && yt.ready ? yt.wv.executeJavaScript(code).catch(() => null) : Promise.resolve(null); } catch { return Promise.resolve(null); } };
 const V = `(document.querySelector('video.html5-main-video')||document.querySelector('video'))`;
 let ytEnded = false, ytWarned = '';
-function ytWebview() {
+/* O player do YouTube é uma página inteira do YouTube rodando dentro do app. Depois de horas/dias trocando de
+   música ela vai acumulando memória até travar tudo, então ela é "renovada" de tempos em tempos:
+   a cada 30 trocas, a cada 3 h, quando o PC avisa que ela pesou demais, ou quando ela parar de responder. */
+yt.born = 0; yt.switches = 0; yt.heavy = false; yt.busy = 0; yt.userPaused = false;
+function ytDrop() {
   const inner = $('#embedInner');
-  if (inner.dataset.kind !== 'yt') {
-    inner.innerHTML = '<webview id="ytw" partition="persist:youtube" webpreferences="autoplayPolicy=no-user-gesture-required,backgroundThrottling=no" src="about:blank"></webview>';
+  if (inner.dataset.kind === 'yt') { inner.innerHTML = ''; inner.dataset.kind = ''; }
+  yt.wv = null; yt.ready = false; yt.busy = 0; yt.heavy = false;
+  setTimeout(() => U.trim(), 1500);
+}
+function ytNeedsFresh() { return yt.wv && (yt.heavy || yt.switches >= 30 || Date.now() - yt.born > 3 * 3600e3); }
+// cria a página já apontando pro vídeo certo (antes abria em branco e trocava depois, e às vezes a troca se perdia: era o "clicar duas vezes")
+function ytWebview(url) {
+  const inner = $('#embedInner');
+  if (inner.dataset.kind !== 'yt' || !yt.wv) {
+    inner.innerHTML = `<webview id="ytw" partition="persist:youtube" webpreferences="autoplayPolicy=no-user-gesture-required,backgroundThrottling=no" src="${esc(url)}"></webview>`;
     inner.dataset.kind = 'yt'; sc.w = null; vm.player = null;
-    yt.wv = $('#ytw');
-    yt.ready = false;
-    yt.wv.addEventListener('dom-ready', () => { yt.ready = true; yt.wv.insertCSS(YT_CSS); yt.wv.setAudioMuted(false); ytExec("window.dispatchEvent(new Event('resize'))"); });
+    yt.wv = $('#ytw'); yt.ready = false; yt.born = Date.now(); yt.switches = 0; yt.heavy = false; yt.busy = 0;
+    yt.wv.addEventListener('dom-ready', () => { yt.ready = true; try { yt.wv.insertCSS(YT_CSS); yt.wv.setAudioMuted(false); } catch {} ytExec("window.dispatchEvent(new Event('resize'))"); });
+    yt.wv.addEventListener('render-process-gone', () => { if (st.kind === 'yt' && cur() && cur().src === 'yt') { const t = cur(), at = st.time; ytDrop(); playYT(t, at); } });
+    $('#embed').classList.remove('hidden'); layoutEmbed();
+    return true;
   }
   $('#embed').classList.remove('hidden');
   layoutEmbed();
+  return false;
 }
-async function playYT(t) {
-  ytWebview();
-  ytEnded = false; ytWarned = '';
-  const url = `https://www.youtube.com/watch?v=${t.id}`;
-  // já tem uma página do YouTube aberta: só troca o vídeo no player, sem recarregar tudo (bem mais rápido)
-  const fast = yt.ready && await ytExec(`(()=>{const p=document.querySelector('#movie_player');if(p&&p.loadVideoById&&location.pathname==='/watch'){p.loadVideoById('${t.id}');try{history.replaceState(null,'','/watch?v=${t.id}')}catch(e){}return true}return false})()`);
+U.onYtHealth && U.onYtHealth(k => {
+  if (k === 'heavy') { yt.heavy = true; if (!st.playing && st.kind === 'yt') ytDrop(); }
+  // a página do YouTube travou: recria e continua a mesma música do mesmo ponto
+  if (k === 'hung' && yt.wv && st.kind === 'yt' && cur() && cur().src === 'yt') { const t = cur(), at = st.time, was = st.playing; ytDrop(); if (was) { toast('O player do YouTube travou. Reabrindo…'); playYT(t, at); } }
+});
+async function playYT(t, startAt, keepTries) {
+  const token = ++yt.tok;
+  if (ytNeedsFresh()) ytDrop();
+  const sec = startAt ? Math.floor(startAt / 1000) : 0;
+  const url = `https://www.youtube.com/watch?v=${t.id}${sec > 2 ? '&t=' + sec + 's' : ''}`;
+  const created = ytWebview(url);
+  ytEnded = false; ytWarned = ''; yt.userPaused = false; yt.progress = false; if (!keepTries) yt.retries = 0;
+  let fast = false;
+  if (!created) {
+    // já tem uma página do YouTube aberta: só troca o vídeo no player, sem recarregar tudo (bem mais rápido)
+    fast = yt.ready && await ytExec(`(()=>{const p=document.querySelector('#movie_player');if(p&&p.loadVideoById&&location.pathname==='/watch'){p.loadVideoById('${t.id}'${sec > 2 ? ',' + sec : ''});try{history.replaceState(null,'','/watch?v=${t.id}')}catch(e){}return true}return false})()`);
+    if (token !== yt.tok) return;
+    if (!fast) { try { yt.wv.loadURL(url).catch(() => {}); } catch { try { yt.wv.src = url; } catch {} } }
+    yt.switches++;
+  }
   yt.switchAt = Date.now(); yt.fast = !!fast;
-  if (!fast) try { if (yt.ready) yt.wv.loadURL(url).catch(() => {}); else yt.wv.src = url; } catch { yt.wv.src = url; }
+  let pollN = 0;
   startPoll(async () => {
-    if (st.kind !== 'yt') return;
+    if (st.kind !== 'yt' || token !== yt.tok) return;
+    // a página não respondeu a última pergunta: não empilha outra (era isso que ia enchendo a memória até travar)
+    if (yt.busy) { if (Date.now() - yt.busy > 15000 && st.playing) { yt.busy = 0; const c = cur(); if (c && c.src === 'yt') { const at = st.time; ytDrop(); playYT(c, at); } } return; }
+    // pausado há um tempo: pergunta bem menos vezes
+    pollN++;
+    if (!st.playing && yt.userPaused && Date.now() - yt.switchAt > 10000 && pollN % 5) return;
     const s = S();
     if ((s.eqOn || s.retro) && ++eqTick % 5 === 0) embedEq();
     if (eco && ++ecoTick % 8 === 0) ytQuality();
+    yt.busy = Date.now();
     const r = await ytExec(`(()=>{const v=${V};
       const err=document.querySelector('.ytp-error, yt-playability-error-supported-renderers, #player-error-message-container');
       const errTxt=err&&err.offsetParent!==null?err.innerText.slice(0,160):'';
@@ -330,7 +367,20 @@ async function playYT(t) {
       document.querySelectorAll('ytd-enforcement-message-view-model,tp-yt-paper-dialog:has(#dismiss-button)').forEach(d=>{const b=d.querySelector('#dismiss-button button,button');if(b)b.click();});
       if(!ad){ if(Math.abs(v.playbackRate-${s.speed})>0.01) v.playbackRate=${s.speed}; v.preservesPitch=${!s.pitchWithSpeed}; }
       if(Math.abs(v.volume-${S().volume})>0.02) v.volume=${S().volume};
+      if(!ad && v.paused && !v.ended && ${!yt.userPaused} && (Date.now()-${yt.switchAt})<25000){ try{v.play()}catch(e){} try{document.querySelector('#movie_player').playVideo()}catch(e){} }
       return {t:v.currentTime,d:v.duration||0,p:v.paused,e:v.ended,ad,skipAt,err:errTxt,id:(()=>{try{return document.querySelector('#movie_player').getVideoData().video_id}catch(e){return new URLSearchParams(location.search).get('v')}})()};})()`);
+    yt.busy = 0;
+    if (token !== yt.tok) return;
+    // garantia de tocar com 1 clique: se em ~9 s a música não andou, reabre a página do vídeo; se nem assim, pula
+    const since = Date.now() - yt.switchAt;
+    if (r && !r.ad && r.t > 0.3 && r.id === t.id) yt.progress = true;
+    if (!yt.progress && !yt.userPaused && since > 9000 && yt.retries < 2 && (!r || (!r.err && !r.ad))) {
+      yt.retries++; yt.switchAt = Date.now(); yt.fast = false;
+      if (yt.retries === 2 && yt.wv) { ytDrop(); return playYT(t, 0, true); }
+      try { yt.wv.loadURL(`https://www.youtube.com/watch?v=${t.id}`).catch(() => {}); } catch {}
+      return;
+    }
+    if (!yt.progress && !yt.userPaused && yt.retries >= 2 && since > 12000) { toast('Esse vídeo não quis tocar. Indo pra próxima…'); yt.progress = true; return next(); }
     if (!r) return;
     // clique de verdade no "Pular" (o YouTube ignora clique simulado por script em alguns anúncios)
     if (r.skipAt && Date.now() - (yt.skipT || 0) > 1200) {
@@ -405,8 +455,10 @@ radioEl.addEventListener('pause', () => { if (st.kind === 'radio') { setPlaying(
 radioEl.addEventListener('playing', () => { if (st.kind === 'radio') { $('#tDur').textContent = 'AO VIVO'; } });
 radioEl.addEventListener('error', () => { if (st.kind === 'radio' && radioEl.getAttribute('src')) { toast('Essa rádio está fora do ar agora. Indo pra próxima…'); setTimeout(next, 1200); } });
 function stopRadio() { if (radioEl.getAttribute('src')) { radioEl.pause(); radioEl.removeAttribute('src'); radioEl.load(); } }
+let resumeAt = 0;
 async function playAt(i) {
   if (i < 0 || i >= st.queue.length) return;
+  const ra = resumeAt; resumeAt = 0;
   st.idx = i; const t = cur();
   if (t.src === 'radio') {
     if (recState && recState.id !== t.id) { recStop(true); toast('Gravação anterior salva. Trocou de rádio.'); }
@@ -438,7 +490,7 @@ async function playAt(i) {
   stopEmbeds(embed ? t.src : null);
   if (embed) {
     audio.pause(); st.kind = t.src;
-    try { if (t.src === 'yt') await playYT(t); else if (t.src === 'sc') await playSC(t); else await playVM(t); }
+    try { if (t.src === 'yt') await playYT(t, ra); else if (t.src === 'sc') await playSC(t); else await playVM(t); }
     catch { toast('Sem conexão com o player online'); }
   } else {
     clearInterval(pollT); st.kind = 'audio';
@@ -446,6 +498,7 @@ async function playAt(i) {
     initGraph(); if (ctx.state === 'suspended') ctx.resume();
     audio.src = t.src === 'local' ? `/media?p=${encodeURIComponent(t.path)}` : offFile ? `/media?p=${encodeURIComponent(offFile)}` : `/proxy?u=${encodeURIComponent(scUrl || t.stream)}`;
     applyRate();
+    if (ra) audio.addEventListener('loadedmetadata', () => { try { audio.currentTime = ra / 1000; } catch {} }, { once: true });
     audio.play().catch(() => {});
   }
   onTrackChange(t);
@@ -457,7 +510,8 @@ function toggle() {
   if (!st.kind) return playAt(st.idx);
   if (st.kind === 'radio') { if (radioEl.paused) { radioEl.src = cur().stream; radioEl.play().catch(() => {}); } else { stopRadio(); setPlaying(false); renderNav(); } return; }
   if (st.kind === 'audio') audio.paused ? audio.play() : audio.pause();
-  else if (st.kind === 'yt' && yt.wv) ytExec(`(v=>{if(v){v.paused?v.play():v.pause()}})(${V})`).then(() => setPlaying(!st.playing));
+  else if (st.kind === 'yt' && !yt.wv && cur().src === 'yt') playYT(cur(), st.time);
+  else if (st.kind === 'yt' && yt.wv) { yt.userPaused = st.playing; ytExec(`(v=>{if(v){v.paused?v.play():v.pause()}})(${V})`).then(() => setPlaying(!st.playing)); }
   else if (st.kind === 'sc' && sc.w) sc.w.toggle();
   else if (st.kind === 'vm' && vm.player) st.playing ? vm.player.pause() : vm.player.play();
 }
@@ -530,6 +584,7 @@ function setVolume(v) {
   $('#vol').value = v; $('#bVol').innerHTML = ico(v === 0 ? 'mute' : 'vol');
 }
 function setPlaying(p) {
+  if (!p && st.playing) yt.pausedAt = Date.now();
   st.playing = p;
   $('#bPlay').innerHTML = ico(p ? 'pause' : 'play');
   $('#np').classList.toggle('paused', !p);
@@ -814,7 +869,12 @@ function renderNav() {
 function renderPlNav() {
   const items = [['favs', 'Favoritas', 'heart'], ['history', 'Ouvidas recentemente', 'history'], ['import', 'Importar playlists', 'plus'], ...(Object.keys(D.offline || {}).length ? [['offlineApp', `Guardadas no app (${Object.keys(D.offline).length})`, 'dl']] : []), ...((D.syncPending || []).length ? [['syncPending', `Pra sincronizar (${D.syncPending.length})`, 'dl']] : []), ...Object.keys(D.playlists).map(p => ['pl:' + p, p, 'plist'])];
   const pc = D.plCovers || {};
-  $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${k.startsWith('pl:') && pc[k.slice(3)] ? `<img class="plCov" src="${esc(pc[k.slice(3)])}" onerror="this.remove()">` : ico(i)}<span>${esc(l)}</span></a>`).join('');
+  const navIco = (k, i) => {
+    if (!k.startsWith('pl:')) return ico(i);
+    const n = k.slice(3), L = plLook(n), img = L.img || (L.auto !== 'mosaic' ? pc[n] : '') || ((D.playlists[n] || []).map(artOf).find(Boolean));
+    return `<span class="plNavIco" style="--plc:${esc(L.color || 'var(--accent)')}">${img ? `<img src="${esc(img)}" onerror="this.remove()">` : ico(i)}${L.emoji ? `<em>${L.emoji}</em>` : ''}</span>`;
+  };
+  $('#plnav').innerHTML = items.map(([k, l, i]) => `<a data-v="${esc(k)}" class="${(view.name === 'playlist' ? 'pl:' + view.pl : view.name) === k ? 'on' : ''}">${navIco(k, i)}<span>${esc(l)}</span></a>`).join('');
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('nav a'); if (!a) return;
@@ -895,12 +955,96 @@ views.history = () => {
   });
   if ($('#histClr')) $('#histClr').onclick = () => { D.history = []; save(); render(); };
 };
+/* ---------------- playlists personalizadas: foto, cor, enfeite, estampa, fonte, formato e descrição ---------------- */
+const PL_COLORS = ['#ff1f3d', '#ff5fa8', '#c77dff', '#7b5cff', '#2b6bff', '#25c4f4', '#2ec4b6', '#39d353', '#c6f432', '#ffd23f', '#ff9f1c', '#ff6b35', '#a8763e', '#8e8e93', '#f2f2f2', '#111111'];
+const PL_EMOJIS = ['✨', '💖', '🖤', '💀', '🔥', '🌙', '⭐', '🌸', '🦋', '🍒', '🎀', '👑', '⚡', '🌈', '💿', '🎧', '🎸', '🥀', '🌹', '🍓', '🐱', '🐮', '👻', '🕷️', '🗡️', '⛓️', '🩸', '🌊', '🌴', '☁️', '🍀', '🍄', '💎', '🪐', '🌻', '🍑', '🧸', '😈', '🤍', '💜'];
+const PL_PATTERNS = [['', 'Nenhuma'], ['sparkle', 'Brilhinhos'], ['hearts', 'Corações'], ['stars', 'Estrelas'], ['flowers', 'Florzinhas'], ['skulls', 'Caveirinhas'], ['dots', 'Bolinhas'], ['stripes', 'Listras'], ['checker', 'Xadrez'], ['waves', 'Ondas'], ['glitter', 'Glitter'], ['grain', 'Granulado']];
+const PL_FONTS = [['', 'Padrão'], ['black', 'Grossona'], ['serif', 'Elegante'], ['hand', 'Escrita à mão'], ['mono', 'Máquina'], ['retro', 'Retrô'], ['gothic', 'Gótica']];
+const PL_SHAPES = [['rounded', 'Arredondada'], ['square', 'Quadrada'], ['circle', 'Círculo'], ['vinyl', 'Vinil'], ['polaroid', 'Polaroid'], ['tilt', 'Torta']];
+const plLook = name => (D.plLook = D.plLook || {}, D.plLook[name] || {});
+function setPlLook(name, patch) { D.plLook = D.plLook || {}; D.plLook[name] = { ...plLook(name), ...patch }; save(); }
+// capa: foto escolhida > capa que veio na importação > mosaico com as capas das 4 primeiras músicas
+function plCoverHTML(name, cls = '') {
+  const L = plLook(name), list = D.playlists[name] || [];
+  const img = L.img || (L.auto !== 'mosaic' ? (D.plCovers || {})[name] : '') || '';
+  if (img) return `<div class="plCov ${cls}"><img src="${esc(img)}" onerror="this.src='logo.png'"></div>`;
+  const arts = [...new Set(list.map(artOf).filter(Boolean))].slice(0, 4);
+  if (arts.length >= 4) return `<div class="plCov mosaic ${cls}">${arts.map(a => `<img src="${esc(a)}" onerror="this.style.visibility='hidden'">`).join('')}</div>`;
+  if (arts.length) return `<div class="plCov ${cls}"><img src="${esc(arts[0])}" onerror="this.src='logo.png'"></div>`;
+  return `<div class="plCov empty ${cls}">${L.emoji ? `<span class="bigEmo">${L.emoji}</span>` : ico('plist')}</div>`;
+}
+const plDur = l => { const ms = l.reduce((a, t) => a + (t.duration || 0), 0); if (!ms) return ''; const m = Math.round(ms / 60000); return m >= 60 ? ` · ${Math.floor(m / 60)} h ${m % 60} min` : ` · ${m} min`; };
 views.playlist = () => {
-  const l = D.playlists[view.pl] || [];
-  const cov = (D.plCovers || {})[view.pl];
-  $('#view').innerHTML = `${cov ? `<div class="alHero"><img src="${esc(cov)}" onerror="this.src='logo.png'"><div><span>Playlist</span><h1>${esc(view.pl)}</h1><small>${l.length} músicas</small></div></div>` : `<h1>${esc(view.pl)}</h1>`}<div class="btns">${l.length ? `<button class="btn" data-play="pl">${ico('play')} Tocar</button><button class="btn" data-shuf="pl">${ico('shuffle')} Aleatório</button><button class="btn" data-syncall="pl">${ico('dl')} Sincronizar tudo</button>` : ''}<button class="btn" id="delPl" style="color:#ff453a">Apagar playlist</button></div>${rows(l, 'pl', { empty: 'Use o botão ••• numa música pra adicionar aqui.' })}`;
-  $('#delPl').onclick = () => { delete D.playlists[view.pl]; save(); go({ name: 'songs' }); };
+  const name = view.pl, l = D.playlists[name] || [], L = plLook(name);
+  const color = L.color || 'var(--accent)';
+  $('#view').innerHTML = `<div class="plHero pat-${L.pattern || 'none'} font-${L.font || 'none'} shape-${L.shape || 'rounded'}" style="--plc:${esc(color)}">
+      <div class="plHeroBg"></div><div class="plHeroPat"></div>
+      <div class="plCovWrap">${plCoverHTML(name, 'big')}${L.emoji ? `<span class="plEmo">${L.emoji}</span>` : ''}</div>
+      <div class="plInfo"><span class="plKind">Playlist</span><h1>${esc(name)}</h1>${L.desc ? `<p class="plDesc">${esc(L.desc)}</p>` : ''}
+        <small>${l.length} ${l.length === 1 ? 'música' : 'músicas'}${plDur(l)}</small></div>
+      <button class="plEdit" id="plEdit" title="Personalizar">✨ Personalizar</button>
+    </div>
+    <div class="btns plBtns">${l.length ? `<button class="btn fill" data-play="pl">${ico('play')} Tocar</button><button class="btn" data-shuf="pl">${ico('shuffle')} Aleatório</button><button class="btn" data-syncall="pl">${ico('dl')} Sincronizar tudo</button>` : ''}<button class="btn" id="renPl">Renomear</button><button class="btn" id="delPl" style="color:#ff453a">Apagar playlist</button></div>
+    ${rows(l, 'pl', { empty: 'Use o botão ••• numa música pra adicionar aqui.' })}`;
+  $('#plEdit').onclick = () => plCustomize(name);
+  $('#renPl').onclick = () => prompt2('Novo nome da playlist', n => { if (n && n !== name) renamePl(name, n); });
+  $('#delPl').onclick = () => { const L2 = plLook(name); if (L2.img) U.delPlCover(L2.img); delete D.playlists[name]; if (D.plLook) delete D.plLook[name]; if (D.plCovers) delete D.plCovers[name]; save(); go({ name: 'songs' }); };
 };
+function renamePl(from, to) {
+  if (D.playlists[to]) return toast('Já tem uma playlist com esse nome');
+  const move = o => { if (o && from in o) { o[to] = o[from]; delete o[from]; } };
+  // mantém a ordem da barra lateral
+  D.playlists = Object.fromEntries(Object.entries(D.playlists).map(([k, v]) => [k === from ? to : k, v]));
+  move(D.plCovers); move(D.plLook); save(); view = { name: 'playlist', pl: to }; renderPlNav(); render(); toast('Playlist renomeada');
+}
+// recorta a foto no meio (quadrada) e guarda numa boa resolução
+async function pickPlImage() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  const file = await new Promise(r => { inp.onchange = () => r(inp.files[0]); inp.click(); });
+  if (!file) return null;
+  const bmp = await createImageBitmap(file).catch(() => null); if (!bmp) { toast('Não consegui abrir essa imagem'); return null; }
+  const side = Math.min(bmp.width, bmp.height), out = Math.min(900, side);
+  const c = document.createElement('canvas'); c.width = c.height = out;
+  c.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, out, out);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  return U.savePlCover(new Uint8Array(await blob.arrayBuffer()));
+}
+function plCustomize(name) {
+  const paint = () => {
+    const L = plLook(name);
+    modal(`<div class="plCus"><h3 style="margin:0 0 4px">Personalizar playlist</h3><div class="sub" style="margin:0 0 12px">Tudo muda na hora. Fecha quando terminar.</div>
+      <div class="plPrev plHero pat-${L.pattern || 'none'} font-${L.font || 'none'} shape-${L.shape || 'rounded'}" style="--plc:${esc(L.color || 'var(--accent)')}">
+        <div class="plHeroBg"></div><div class="plHeroPat"></div>
+        <div class="plCovWrap">${plCoverHTML(name, 'mid')}${L.emoji ? `<span class="plEmo">${L.emoji}</span>` : ''}</div>
+        <div class="plInfo"><span class="plKind">Playlist</span><h1>${esc(name)}</h1>${L.desc ? `<p class="plDesc">${esc(L.desc)}</p>` : ''}</div></div>
+      <div class="gtitle">Foto da capa</div><div class="btns" style="margin:0">
+        <button class="btn fill" id="pcPick">Escolher foto…</button><button class="btn" id="pcMosaic">Mosaico das capas</button>${L.img || (D.plCovers || {})[name] ? '<button class="btn" id="pcNone">Tirar foto</button>' : ''}</div>
+      <div class="gtitle">Cor</div><div class="dots plDots">${PL_COLORS.map(c => `<div class="dot ${L.color === c ? 'on' : ''}" data-pc="${c}" style="background:${c}"></div>`).join('')}
+        <input type="color" id="pcCustom" value="${/^#/.test(L.color || '') ? L.color : '#ff1f3d'}" title="Outra cor"><button class="lnk" data-pc="">Cor do tema</button></div>
+      <div class="gtitle">Enfeite</div><div class="emoGrid">${PL_EMOJIS.map(e => `<button class="${L.emoji === e ? 'on' : ''}" data-pe="${e}">${e}</button>`).join('')}<button data-pe="" class="${!L.emoji ? 'on' : ''}" title="Sem enfeite">∅</button></div>
+        <input class="txt" id="peTxt" placeholder="ou digite/cole qualquer emoji" maxlength="8" style="margin-top:8px;width:220px" value="${esc(L.emoji && !PL_EMOJIS.includes(L.emoji) ? L.emoji : '')}">
+      <div class="gtitle">Estampa do fundo</div><div class="chips">${PL_PATTERNS.map(([k, n]) => `<button class="chip ${(L.pattern || '') === k ? 'on' : ''}" data-pp="${k}">${n}</button>`).join('')}</div>
+      <div class="gtitle">Fonte do nome</div><div class="chips">${PL_FONTS.map(([k, n]) => `<button class="chip fontChip font-${k || 'none'} ${(L.font || '') === k ? 'on' : ''}" data-pf="${k}">${n}</button>`).join('')}</div>
+      <div class="gtitle">Formato da capa</div><div class="chips">${PL_SHAPES.map(([k, n]) => `<button class="chip ${(L.shape || 'rounded') === k ? 'on' : ''}" data-ps="${k}">${n}</button>`).join('')}</div>
+      <div class="gtitle">Descrição</div><textarea class="txt" id="pdTxt" rows="2" maxlength="240" placeholder="Uma frase sobre essa playlist" style="width:100%;resize:vertical">${esc(L.desc || '')}</textarea>
+      <div class="btns" style="margin:16px 0 0;justify-content:flex-end"><button class="btn" id="pcReset">Voltar ao padrão</button><button class="btn fill" id="pcDone">Pronto</button></div></div>`);
+    const set = patch => { setPlLook(name, patch); if (view.name === 'playlist' && view.pl === name) render(); renderPlNav(); paint(); };
+    $('#pcPick').onclick = async () => { const url = await pickPlImage(); if (url) { const old = plLook(name).img; if (old) U.delPlCover(old); set({ img: url, auto: '' }); } };
+    $('#pcMosaic').onclick = () => { const old = plLook(name).img; if (old) U.delPlCover(old); set({ img: '', auto: 'mosaic' }); };
+    if ($('#pcNone')) $('#pcNone').onclick = () => { const old = plLook(name).img; if (old) U.delPlCover(old); if (D.plCovers) delete D.plCovers[name]; set({ img: '', auto: '' }); };
+    $('#modalBox').querySelectorAll('[data-pc]').forEach(d => d.onclick = () => set({ color: d.dataset.pc }));
+    $('#pcCustom').onchange = e => set({ color: e.target.value });
+    $('#modalBox').querySelectorAll('[data-pe]').forEach(d => d.onclick = () => set({ emoji: d.dataset.pe }));
+    $('#peTxt').onchange = e => set({ emoji: e.target.value.trim() });
+    $('#modalBox').querySelectorAll('[data-pp]').forEach(d => d.onclick = () => set({ pattern: d.dataset.pp }));
+    $('#modalBox').querySelectorAll('[data-pf]').forEach(d => d.onclick = () => set({ font: d.dataset.pf }));
+    $('#modalBox').querySelectorAll('[data-ps]').forEach(d => d.onclick = () => set({ shape: d.dataset.ps }));
+    $('#pdTxt').onchange = e => set({ desc: e.target.value.trim() });
+    $('#pcReset').onclick = () => { const old = plLook(name).img; if (old) U.delPlCover(old); D.plLook[name] = {}; save(); if (view.name === 'playlist') render(); renderPlNav(); paint(); };
+    $('#pcDone').onclick = closeModal;
+  };
+  paint();
+}
 
 /* busca única: no PC + online (SoundCloud → YouTube → Vimeo) + pra baixar */
 let searchQ = '', searchRes = null, searchT, sFilter = 'all';
@@ -1038,22 +1182,43 @@ async function weeklyOld(w) {
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const per = {}; return pool.filter(t => (per[t.artist] = (per[t.artist] || 0) + 1) <= 2).slice(0, 30);
 }
-/* Descobertas da Semana v2: parte dos artistas que você mais ouve/curte/pula e procura artistas
-   parecidos que você ainda não conhece, mais o Mix do YouTube das suas mais tocadas */
+/* Descobertas da Semana v3: monta um perfil do seu gosto (o que você mais toca, favorita, guarda em playlist,
+   ouviu nos últimos 2 meses e o que você pula) e manda pro motor achar artistas novos parecidos,
+   achados nos Mixes do YouTube e o lado B de quem você já curte. Renova toda segunda. */
+const cleanArt = a => String(a || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').replace(/\s*\(?(official|oficial)\)?\s*$/i, '').split(/\s*(?:,|&| feat\.?| ft\.?| x |\/)\s*/i)[0].trim();
+const nrmT = x => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+function tasteProfile() {
+  const W = {}, add = (a, v) => { a = cleanArt(a); if (!a || /desconhecido|unknown|youtube/i.test(a)) return; W[a] = (W[a] || 0) + v; };
+  const now = Date.now();
+  // mais tocadas (as recentes valem mais)
+  Object.values(D.plays || {}).forEach(p => { const age = (now - (p.last || now)) / 864e5; add(p.t.artist, Math.min(p.n, 40) * Math.pow(0.5, age / 45)); });
+  Object.values(D.favs || {}).forEach(t => add(t.artist, 4));
+  Object.values(D.playlists || {}).forEach(l => l.forEach(t => add(t.artist, 1.2)));
+  // tempo ouvido nos últimos 60 dias
+  const L = D.listen && D.listen.days || {}; const cut = dayKey(new Date(now - 60 * 864e5));
+  Object.entries(L).forEach(([d, x]) => { if (d >= cut) Object.entries(x.a || {}).forEach(([a, sec]) => add(a, sec / 600)); });
+  Object.entries(D.taste.a || {}).forEach(([a, v]) => add(a, v * 0.6));
+  const list = Object.entries(W).sort((a, b) => b[1] - a[1]);
+  const dislikes = Object.entries(D.taste.a || {}).filter(e => e[1] <= -2).map(e => cleanArt(e[0]));
+  return { seeds: list.filter(e => e[1] > 0.8).slice(0, 12), known: list.filter(e => e[1] >= 1.5).map(e => e[0]), dislikes };
+}
 async function weekly(force) {
   const w = weekKey();
-  if (!force && D.weekly && D.weekly.w === w && D.weekly.v === 2) return D.weekly.t;
-  const seeds = topOf(D.taste.a, 8);
-  const known = Object.entries(D.taste.a).filter(e => e[1] >= 2).map(e => e[0]);
+  const W = D.weekly;
+  if (!force && W && W.w === w && W.v === 3 && (W.t.length >= 12 || Date.now() - (W.at || 0) < 3600e3)) return W.t;
+  const prof = tasteProfile();
   const plays = Object.values(D.plays || {}).sort((a, b) => b.n - a.n);
-  const mixSeeds = plays.filter(p => p.t.src === 'yt').slice(0, 6).map(p => p.t.id);
-  // sem muita coisa do YouTube ainda: usa as mais tocadas de qualquer lugar como ponto de partida (o app acha no YouTube)
   const salt = force ? Math.floor(Math.random() * 1e4) : 0;
+  let s0 = w + salt; const rnd = () => (s0 = (s0 * 9301 + 49297) % 233280) / 233280;
+  // pontos de partida do Mix: sorteia entre as 15 mais tocadas do YouTube (cada semana um conjunto diferente)
+  const mixSeeds = plays.filter(p => p.t.src === 'yt').slice(0, 15).sort(() => rnd() - 0.5).slice(0, 5).map(p => p.t.id);
+  const heardT = [...plays.map(p => p.t), ...Object.values(D.favs || {}), ...(D.history || [])].map(t => nrmT(cleanArt(t.artist)) + '|' + nrmT(t.title));
   let r = { tracks: [], artists: [] };
-  if (seeds.length) r = await U.recommend({ seeds, known, heard: D.heard.slice(-2000), mixSeeds, week: w + salt });
+  if (prof.seeds.length) r = await U.recommend({ seeds: prof.seeds, known: prof.known, dislikes: prof.dislikes, heard: [...D.heard.slice(-3000), ...plays.map(p => keyOf(p.t))], heardT, mixSeeds, deep: prof.seeds.slice(0, 5).map(e => e[0]), week: w + salt });
   let t = r.tracks || [];
-  if (t.length < 10) t = [...t, ...(await weeklyOld(w + salt))].slice(0, 30);
-  D.weekly = { w, v: 2, t, artists: r.artists || [] }; save();
+  // quase sem histórico ainda: completa com o que está em alta nos gêneros que você escolheu
+  if (t.length < 10) t = [...t, ...(await weeklyOld(w + salt)).map(x => ({ ...x, why: 'Em alta no estilo que você curte' }))].slice(0, 30);
+  D.weekly = { w, v: 3, at: Date.now(), t, artists: r.artists || [] }; save();
   return t;
 }
 let chartsGl = 'BR', chartsData = {}, listsData = {}, chartsOpen = {}, auTrend = null, scData = {};
@@ -1077,9 +1242,9 @@ views.discover = async () => {
     <div id="wkArt"></div>
     <h2 class="chH">Mais tocadas da semana <span class="chips inline">${[['BR', 'Brasil'], ['ZZ', 'Mundo']].map(([k, n]) => `<button class="chip ${chartsGl === k ? 'on' : ''}" data-gl="${k}">${n}</button>`).join('')}</span></h2>
     <div class="chartCols">
-      <div class="chartBox au" id="chAu"><span class="spinner"></span></div>
       <div class="chartBox yt" id="chYt"><span class="spinner"></span></div>
       <div class="chartBox sc" id="chSc"><span class="spinner"></span></div>
+      <div class="chartBox au" id="chAu"><span class="spinner"></span></div>
     </div>
     <div id="chVideos"></div>
     <div id="chLists"></div>
@@ -1094,7 +1259,7 @@ views.discover = async () => {
     const arts = [...new Set(l.map(t => t.artist).filter(Boolean))].slice(0, 3);
     $('#wkArts').textContent = arts.length ? `Com ${arts.join(', ')} e mais` : '';
     $('#wkCol').innerHTML = l.slice(0, 5).map((t, i) => `<img style="--i:${i};--d:${Math.abs(i - 2)}" src="${esc(t.art || 'logo.png')}" onerror="this.src='logo.png'">`).join('');
-    $('#wkRow').innerHTML = l.map((t, i) => `<div class="tile" data-wi="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div></div>`).join('');
+    $('#wkRow').innerHTML = l.map((t, i) => `<div class="tile" data-wi="${i}"><img loading="lazy" src="${esc(t.art)}" onerror="this.src='logo.png'"><div class="tt">${esc(t.title)}</div><div class="ta">${esc(t.artist)}</div>${t.why ? `<div class="why">${esc(t.why)}</div>` : ''}</div>`).join('');
     $('#wkRow').querySelectorAll('[data-wi]').forEach(d => d.onclick = () => play(l, +d.dataset.wi));
     const ar = (D.weekly && D.weekly.artists) || [];
     $('#wkArt').innerHTML = ar.length ? `<h2>Artistas pra você conhecer</h2><div class="hscroll">${ar.map((a, i) => `<div class="tile round" data-ar="${i}"><img loading="lazy" src="${esc(a.pic || 'logo.png')}" onerror="this.src='logo.png'"><div class="tt">${esc(a.name)}</div><div class="ta">${a.because && a.because.length ? 'Porque você ouve ' + esc(a.because[0]) : ''}</div></div>`).join('')}</div>` : '';
@@ -1207,8 +1372,13 @@ views.settings = () => {
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
+  <div class="gtitle">Atualizações</div><div class="group">
+    ${opt('Versão instalada', `<span id="updState"><span class="spinner"></span></span>`, 'O app procura versão nova sozinho a cada 6 horas e avisa. Atualizar baixa e instala sem você fazer nada.')}
+    ${opt('Avisar quando tiver atualização', sw('updAuto'))}
+  </div>
   <div class="gfoot">A busca procura nas suas músicas offline, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
-  <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC 1.0</div>`;
+  <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC · build <span id="buildNo">…</span></div>`;
+  paintUpdState();
   const v = $('#view');
   v.querySelectorAll('[data-skin]').forEach(d => d.onclick = () => applySkin(d.dataset.skin));
   v.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => { const k = b.parentElement.dataset.k; S()[k] = b.dataset.v; changed(k); });
@@ -1300,8 +1470,13 @@ function countListen() {
     day.k[k] = (day.k[k] || 0) + 1;
     if (!L.tr[k]) L.tr[k] = { src: t.src, id: t.id, title: t.title, artist: t.artist, art: t.art, duration: t.duration, path: t.path, stream: t.stream, url: t.url, genre: t.genre, album: t.album, first: Date.now() };
   }
-  const days = Object.keys(L.days); if (days.length > 420) days.sort().slice(0, days.length - 420).forEach(x => delete L.days[x]);
-  if (++listenSaveN % 30 === 0) save();
+  const days = Object.keys(L.days); if (days.length > 420) {
+    days.sort().slice(0, days.length - 420).forEach(x => delete L.days[x]);
+    // tira da lista de faixas as que não aparecem mais em nenhum dia guardado (senão ela só cresce)
+    const keep = new Set(); Object.values(L.days).forEach(d => Object.keys(d.k || {}).forEach(k => keep.add(k)));
+    Object.keys(L.tr).forEach(k => { if (!keep.has(k)) delete L.tr[k]; });
+  }
+  if (++listenSaveN % 30 === 0) { if (D.lastQueue) D.lastQueue.t = st.time; save(); }
 }
 const PERIODS_ST = [['week', 'Esta semana'], ['month', 'Este mês'], ['year', 'Este ano'], ['all', 'Sempre']];
 let statsP = 'month';
@@ -2072,6 +2247,9 @@ async function rescan() {
   view = { name: S().startView };
   renderNav(); render();
   if (D.lastQueue && D.lastQueue.q && D.lastQueue.q.length) { st.queue = D.lastQueue.q; st.idx = Math.min(D.lastQueue.i, st.queue.length - 1); updateNowPlaying(); }
+  // a janela tinha travado e foi reaberta sozinha: continua a música do ponto onde estava
+  U.reviveInfo && U.reviveInfo().then(r => { if (r && st.idx >= 0 && cur()) { resumeAt = (D.lastQueue && D.lastQueue.t) || 0; playAt(st.idx); toast('O app tinha travado e foi reaberto. Continuando de onde parou'); } }).catch(() => {});
+  setTimeout(() => updCheck(false), 8000);
   if (S().notifications && Notification.permission === 'default') Notification.requestPermission();
   rescan();
   setTimeout(huntSync, 4000);
@@ -2081,12 +2259,59 @@ async function rescan() {
 document.addEventListener('visibilitychange', () => { if (document.hidden) setTimeout(() => { if (document.hidden) U.trim(); }, 5000); });
 setInterval(() => U.trim(), 10 * 60e3);
 
+/* ---------------- atualização automática ----------------
+   O app olha no GitHub se saiu build novo. Se saiu, mostra um aviso com o que mudou e um botão:
+   baixa, fecha, instala por cima e abre de novo sozinho. */
+let APP_BUILD = 0, UPD = null, updDl = null;
+U.appBuild && U.appBuild().then(b => { APP_BUILD = b; const e = $('#buildNo'); if (e) e.textContent = b || 'de teste'; }).catch(() => {});
+async function updCheck(manual) {
+  if (!U.updCheck) return;
+  if (!manual && S().updAuto === false) return;
+  const r = await U.updCheck().catch(() => null);
+  if (!r) return manual && toast('Não deu pra procurar atualização agora');
+  APP_BUILD = r.mine || APP_BUILD; UPD = r.available || null;
+  paintUpdState(r);
+  if (UPD) updBanner();
+  else if (manual) toast(r.err ? 'Sem conexão com o GitHub agora' : `Você já está na versão mais nova (build ${r.mine || '?'})`);
+}
+setInterval(() => updCheck(false), 6 * 3600e3);
+function paintUpdState(r) {
+  const e = $('#updState'); if (!e) return;
+  const b = $('#buildNo'); if (b) b.textContent = APP_BUILD || 'de teste';
+  if (updDl != null) { e.innerHTML = `Baixando… ${updDl}%`; return; }
+  e.innerHTML = UPD ? `<span style="margin-right:10px">Build ${APP_BUILD} · <b style="color:var(--accent)">build ${UPD.build} disponível</b></span><button class="btn fill" id="updGo">Atualizar agora</button>`
+    : `<span style="margin-right:10px">Build ${APP_BUILD || 'de teste'}${r && r.latest ? ' · é a mais nova' : ''}</span><button class="btn" id="updChk">Procurar agora</button>`;
+  if ($('#updGo')) $('#updGo').onclick = updInstall;
+  if ($('#updChk')) $('#updChk').onclick = () => { $('#updState').innerHTML = '<span class="spinner"></span>'; updCheck(true); };
+}
+function updBanner() {
+  if (!UPD || $('#updBar')) return;
+  const notes = (UPD.notes || '').split('\n').map(l => l.trim()).filter(l => l && !/^(co-authored|claude-session|🤖|https?:)/i.test(l)).slice(0, 8);
+  const d = document.createElement('div'); d.id = 'updBar';
+  d.innerHTML = `<div class="ubIco">${ico('dl')}</div><div class="ubTxt"><b>Atualização disponível · build ${UPD.build}</b>${notes.length ? `<ul>${notes.map(n => `<li>${esc(n.replace(/^[-*•]\s*/, ''))}</li>`).join('')}</ul>` : '<span>Melhorias e correções</span>'}<div class="ubProg"><i id="ubFill"></i></div></div>
+    <div class="ubActs"><button class="btn fill" id="ubGo">Atualizar agora</button><button class="btn" id="ubLater">Depois</button></div>`;
+  document.body.appendChild(d);
+  $('#ubGo').onclick = updInstall; $('#ubLater').onclick = () => d.remove();
+}
+async function updInstall() {
+  if (updDl != null) return;
+  updDl = 0; paintUpdState(); const go = $('#ubGo'); if (go) { go.disabled = true; go.textContent = 'Baixando…'; }
+  const r = await U.updInstall();
+  if (r && r.err) { updDl = null; paintUpdState(); if (go) { go.disabled = false; go.textContent = 'Tentar de novo'; } toast('Não deu pra atualizar: ' + r.err); }
+}
+U.onUpd && U.onUpd(d => {
+  updDl = d.pct; const f = $('#ubFill'); if (f) f.style.width = d.pct + '%';
+  const go = $('#ubGo'); if (go) go.textContent = d.installing ? 'Instalando…' : `Baixando ${d.pct}%`;
+  paintUpdState();
+  if (d.installing) toast('Instalando a atualização. O app fecha e abre de novo sozinho');
+});
+
 /* clicar no ícone/nome do app abre "Criado por" */
 function showAbout() {
   modal(`<div class="about">
     <img class="aboutApp" src="logo.png" alt="">
     <div class="aboutName">Uncrowned Music</div>
-    <div class="aboutVer">para PC · 1.0</div>
+    <div class="aboutVer">para PC · build ${APP_BUILD || '—'}</div>
     <div class="aboutBy">
       <div class="aboutPic"><img src="creator.jpg" alt="" onerror="this.remove()"><span>VA</span></div>
       <div><div class="aboutLbl">Criado por</div><div class="aboutWho">Vinicius Andrade</div><div class="aboutRole">Analista de TI e desenvolvedor</div></div>

@@ -32,6 +32,7 @@
       "main.js",
       "preload.js",
       "yt-preload.js",
+      "build.json",
       "renderer/**",
       "build/icon.png",
       "build/icon.ico"

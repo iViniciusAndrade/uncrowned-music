@@ -157,6 +157,8 @@ object Taste {
     }
     fun genres(): List<Pair<String, Double>> = decayed("tgenre")
     fun artists(): List<Pair<String, Double>> = decayed("tartist")
+    // artistas que você vive pulando (não entram nas Descobertas)
+    fun dislikes(): List<String> { val o = obj("tartist"); return o.keys().asSequence().filter { o.optDouble(it, 0.0) <= -2.0 }.toList() }
     private fun decayed(k: String): List<Pair<String, Double>> {
         val o = obj(k); return o.keys().asSequence().map { it to o.getDouble(it) }.filter { it.second > 0.5 }.sortedByDescending { it.second }.toList()
     }
@@ -172,7 +174,7 @@ object Taste {
     fun onSkip(genre: String, artist: String) { bump("tgenre", genre, -0.5); bump("tartist", artist, -1.0) }
     fun pickGenre(g: String) = bump("tgenre", g, 5.0)
     fun learn(artist: String, w: Double) = bump("tartist", artist, w)
-    fun reset() = Prefs.sp.edit().remove("tgenre").remove("tartist").remove("theard").remove("weekly").apply()
+    fun reset() = Prefs.sp.edit().remove("tgenre").remove("tartist").remove("theard").remove("weekly").remove("weekly3").apply()
 
     private fun weeklyDecay() {
         val w = weekKey(); if (Prefs.sp.getInt("tdecay", w) == w) { Prefs.sp.edit().putInt("tdecay", w).apply(); return }
@@ -185,32 +187,6 @@ object Taste {
     fun weekKey(): Int { val c = Calendar.getInstance(); return c.get(Calendar.YEAR) * 100 + c.get(Calendar.WEEK_OF_YEAR) }
 }
 
-/* ---------- Descobertas da Semana ----------
-   Mesma ideia do Discover Weekly: 30 faixas novas pra você, renovadas toda segunda.
-   Mistura: os seus 3 gêneros favoritos (em alta na semana) + artistas parecidos com os que você mais ouve,
-   tirando o que você já ouviu e limitando 2 faixas por artista. */
-object Weekly {
-    suspend fun get(force: Boolean = false): List<Track> {
-        val w = Taste.weekKey()
-        val cached = runCatching { JSONObject(Prefs.sp.getString("weekly", "{}")) }.getOrNull()
-        if (!force && cached?.optInt("w") == w) cached.optJSONArray("t")?.let { a -> return List(a.length()) { Track.from(a.getJSONObject(it)) } }
-
-        val genres = Taste.genres().take(3).map { it.first }.ifEmpty { listOf("Pop", "Electronic", "Hip-Hop/Rap") }
-        val artists = Taste.artists().take(4).map { it.first }
-        val pool = ArrayList<Track>()
-        genres.forEachIndexed { i, g -> pool += Audius.trending(g, "week").getOrDefault(emptyList()).take(25 - i * 5) }
-        artists.forEach { a -> pool += Audius.search(a).getOrDefault(emptyList()).filter { !it.artist.equals(a, true) }.take(6) }
-        pool += Audius.trending(null, "week").getOrDefault(emptyList()).take(10)
-
-        val rnd = Random(w)
-        val perArtist = HashMap<String, Int>()
-        val out = pool.distinctBy { it.id }.filter { !Taste.hasHeard(it.mediaId) }.shuffled(rnd)
-            .filter { perArtist.merge(it.artist, 1, Int::plus)!! <= 2 }.take(30)
-        Prefs.sp.edit().putString("weekly", JSONObject().put("w", w).put("t", JSONArray(out.map { it.json() })).toString()).apply()
-        return out
-    }
-}
-
 /* ---------- Tela "Descobrir" ---------- */
 @Composable
 fun DiscoverTab(ui: PlayerUi) {
@@ -219,13 +195,15 @@ fun DiscoverTab(ui: PlayerUi) {
     val scope = rememberCoroutineScope()
     var q by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Track>?>(null) }
-    var weekly by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var wk by remember { mutableStateOf(Weekly.cached()) }
+    var wkLoading by remember { mutableStateOf(false) }
+    val weekly = wk?.items.orEmpty()
     var trending by remember { mutableStateOf<List<Track>>(emptyList()) }
     var trendGenre by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var onboarding by remember { mutableStateOf(Taste.genres().isEmpty()) }
 
-    LaunchedEffect(onboarding) { if (!onboarding) weekly = Weekly.get() }
+    LaunchedEffect(onboarding) { if (!onboarding) { wkLoading = true; wk = Weekly.get(); wkLoading = false } }
     LaunchedEffect(trendGenre) { trending = Audius.trending(trendGenre).getOrDefault(emptyList()) }
 
     if (onboarding) { GenrePicker { onboarding = false }; return }
@@ -234,14 +212,30 @@ fun DiscoverTab(ui: PlayerUi) {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         item { Header("Descobrir") { IconButton(onClick = { Nav.page = "themes" }) { Icon(Icons.Rounded.Palette, "Temas", tint = MaterialTheme.colorScheme.primary) } } }
-        item { WeeklyHero(ui, weekly, onNew = { scope.launch { weekly = Weekly.get(force = true) } }, onTaste = { onboarding = true }) }
+        item { WeeklyHero(ui, weekly, wkLoading, onNew = { scope.launch { wkLoading = true; wk = Weekly.get(force = true); wkLoading = false } }, onTaste = { onboarding = true }) }
         item {
+            val vids = weekly.map { it.v }
             LazyRow(contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                itemsIndexed(weekly, key = { _, t -> "w" + t.id }) { i, t ->
-                    Column(Modifier.width(140.dp).clickable { ui.playOnline(weekly, i) }) {
-                        Art(t.art, Modifier.size(140.dp), MaterialTheme.shapes.medium)
-                        Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Text(t.artist, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                itemsIndexed(weekly, key = { i, t -> "w$i" + t.v.id }) { i, t ->
+                    Column(Modifier.width(140.dp).clickable { ui.controller?.pause(); YtPlayer.play(vids, i) }) {
+                        Art(t.v.thumb, Modifier.size(140.dp), MaterialTheme.shapes.medium)
+                        Text(t.v.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(t.v.channel, maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (t.why.isNotBlank()) Text(t.why, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.5.sp, lineHeight = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+        val wa = wk?.artists.orEmpty()
+        if (wa.isNotEmpty()) item {
+            Text("Artistas pra você conhecer", Modifier.padding(start = 16.dp, top = 4.dp, bottom = 6.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                items(wa, key = { "wa" + it.name }) { a ->
+                    Column(Modifier.width(104.dp).clickable { scope.launch { Ytm.search(a.name).artists.firstOrNull()?.let { Nav.artist = it } ?: Toast.makeText(ctx, "Não achei ${a.name} agora", Toast.LENGTH_SHORT).show() } },
+                        horizontalAlignment = Alignment.CenterHorizontally) {
+                        Art(a.pic.ifBlank { null }, Modifier.size(104.dp), CircleShape)
+                        Text(a.name, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        if (a.because.isNotBlank()) Text("Porque você ouve ${a.because}", maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 10.5.sp, lineHeight = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -321,7 +315,7 @@ fun GenrePicker(onDone: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { Taste.reset(); picked = emptySet() }) { Text("Zerar gosto") }
             Spacer(Modifier.weight(1f))
-            Button(enabled = picked.size >= 3, onClick = { picked.forEach(Taste::pickGenre); Prefs.sp.edit().remove("weekly").apply(); onDone() }) { Text("Pronto") }
+            Button(enabled = picked.size >= 3, onClick = { picked.forEach(Taste::pickGenre); Prefs.sp.edit().remove("weekly").remove("weekly3").apply(); onDone() }) { Text("Pronto") }
         }
     }
 }
@@ -329,29 +323,31 @@ fun GenrePicker(onDone: () -> Unit) {
 
 /* ---------- Descobertas da Semana: card com play e capas em leque ---------- */
 @Composable
-fun WeeklyHero(ui: PlayerUi, weekly: List<Track>, onNew: () -> Unit, onTaste: () -> Unit) {
+fun WeeklyHero(ui: PlayerUi, weekly: List<WeeklyItem>, loading: Boolean, onNew: () -> Unit, onTaste: () -> Unit) {
+    val vids = weekly.map { it.v }
+    val playAt: (List<YtVideo>, Int) -> Unit = { l, i -> if (l.isNotEmpty()) { ui.controller?.pause(); YtPlayer.play(l, i) } }
     val accent = MaterialTheme.colorScheme.primary
     Box(Modifier.padding(16.dp).fillMaxWidth().height(230.dp).clip(MaterialTheme.shapes.extraLarge)
         .background(Brush.linearGradient(listOf(accent.copy(alpha = .95f).compositeOver(Color.Black), accent.copy(alpha = .35f).compositeOver(Color.Black), Color(0xFF0A0A0C))))
-        .clickable { if (weekly.isNotEmpty()) ui.playOnline(weekly, 0) }) {
+        .clickable { playAt(vids, 0) }) {
         // capas em leque
         Box(Modifier.align(Alignment.TopEnd).padding(top = 16.dp, end = 10.dp).size(170.dp, 110.dp)) {
             weekly.take(3).forEachIndexed { i, t ->
                 val d = i - 1
-                Art(t.art, Modifier.align(Alignment.Center).offset(x = (d * 42).dp, y = (kotlin.math.abs(d) * 6).dp).graphicsLayer(rotationZ = d * 9f).size(if (d == 0) 96.dp else 82.dp).zIndex(if (d == 0) 2f else 1f).shadow(10.dp, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
+                Art(t.v.thumb, Modifier.align(Alignment.Center).offset(x = (d * 42).dp, y = (kotlin.math.abs(d) * 6).dp).graphicsLayer(rotationZ = d * 9f).size(if (d == 0) 96.dp else 82.dp).zIndex(if (d == 0) 2f else 1f).shadow(10.dp, RoundedCornerShape(10.dp)), RoundedCornerShape(10.dp))
             }
         }
         Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
             Text("FEITA PRA VOCÊ", color = Color.White.copy(alpha = .8f), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
             Text("Descobertas da Semana", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Black, lineHeight = 28.sp)
-            Text("${weekly.size} músicas novas pra você • renova toda semana", color = Color.White.copy(alpha = .85f), fontSize = 12.5.sp)
-            val arts = weekly.map { it.artist }.filter { it.isNotBlank() }.distinct().take(3)
+            Text(if (loading && weekly.isEmpty()) "Montando sua lista pelo seu gosto…" else "${weekly.size} músicas novas pra você • renova toda semana", color = Color.White.copy(alpha = .85f), fontSize = 12.5.sp)
+            val arts = weekly.map { it.v.channel }.filter { it.isNotBlank() }.distinct().take(3)
             if (arts.isNotEmpty()) Text("Com ${arts.joinToString(", ")} e mais", color = Color.White.copy(alpha = .6f), fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(52.dp).shadow(10.dp, CircleShape).clip(CircleShape).background(Color.White).clickable { if (weekly.isNotEmpty()) ui.playOnline(weekly, 0) }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(52.dp).shadow(10.dp, CircleShape).clip(CircleShape).background(Color.White).clickable { playAt(vids, 0) }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.PlayArrow, null, Modifier.size(32.dp), tint = Color.Black)
                 }
-                Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = .14f)).clickable { if (weekly.isNotEmpty()) ui.playOnline(weekly.shuffled(), 0) }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Shuffle, null, tint = Color.White) }
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = .14f)).clickable { playAt(vids.shuffled(), 0) }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Shuffle, null, tint = Color.White) }
                 Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = .14f)).clickable { onNew() }, contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Refresh, null, tint = Color.White) }
                 Text("Ajustar gosto", Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = .1f)).clickable { onTaste() }.padding(horizontal = 12.dp, vertical = 8.dp), color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
             }
@@ -363,7 +359,7 @@ fun WeeklyHero(ui: PlayerUi, weekly: List<Track>, onNew: () -> Unit, onTaste: ()
 @Composable
 fun WeekCharts(ui: PlayerUi, audius: List<Track>) {
     var gl by remember { mutableStateOf("BR") }
-    var src by remember { mutableStateOf("sc") }
+    var src by remember { mutableStateOf("yt") }
     var all by remember { mutableStateOf(false) }
     var yt by remember { mutableStateOf<Ytm.Charts?>(null) }
     var sc by remember { mutableStateOf<List<YtVideo>?>(null) }
@@ -375,7 +371,7 @@ fun WeekCharts(ui: PlayerUi, audius: List<Track>) {
             listOf("BR" to "Brasil", "ZZ" to "Mundo").forEach { (k, n) -> FilterChip(gl == k, { gl = k; all = false }, { Text(n, fontSize = 12.sp) }, Modifier.padding(start = 6.dp)) }
         }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("sc" to "SoundCloud", "yt" to "YouTube", "au" to "Audius").forEach { (k, n) ->
+            listOf("yt" to "YouTube", "sc" to "SoundCloud", "au" to "Audius").forEach { (k, n) ->
                 val on = src == k
                 Text(n, Modifier.clip(RoundedCornerShape(50)).background(if (on) accent[k]!! else MaterialTheme.colorScheme.surfaceContainerHigh).clickable { src = k; all = false }.padding(horizontal = 14.dp, vertical = 8.dp),
                     color = if (on) Color.White else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)

@@ -165,8 +165,9 @@ object YtStore {
     var vimeoToken: String get() = Prefs.sp.getString("vmtoken", "") ?: ""; set(v) = Prefs.sp.edit().putString("vmtoken", v.trim()).apply()
     var source: String get() = Prefs.sp.getString("osrc", "yt") ?: "yt"; set(v) = Prefs.sp.edit().putString("osrc", v).apply()
     var showVideo: Boolean get() = Prefs.sp.getBoolean("ytvideo2", false); set(v) { Prefs.sp.edit().putBoolean("ytvideo2", v).apply(); Prefs.version.intValue++ }
-    // toca pelo SoundCloud: música que vem do YouTube (artista, álbum, paradas, playlists) é procurada no SoundCloud e toca de lá
-    var scFirst: Boolean get() = Prefs.sp.getBoolean("scfirst", true); set(v) = Prefs.sp.edit().putBoolean("scfirst", v).apply()
+    // YouTube é o motor principal: música do YouTube toca no player do YouTube.
+    // Ligando isso, ela é procurada no SoundCloud e toca no player do app (efeitos e velocidade mais fortes)
+    var scFirst: Boolean get() = Prefs.sp.getBoolean("scfirst2", false); set(v) = Prefs.sp.edit().putBoolean("scfirst2", v).apply()
 }
 
 /* ---------- Estado do player do YouTube ---------- */

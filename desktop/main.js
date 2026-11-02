@@ -17,11 +17,21 @@ const VOICE = /(whatsapp|telegram|recordings?|grava[cç][oõ]es|voice|notas de v
 const storeFile = () => path.join(app.getPath('userData'), 'uncrowned.json');
 let store = {};
 function loadStore() { try { store = JSON.parse(fs.readFileSync(storeFile(), 'utf8')); } catch { store = {}; } }
-let saveTimer = null;
+let saveTimer = null, saving = false, saveAgain = false;
+/* grava sem travar a janela: em segundo plano, num arquivo temporário que depois substitui o original
+   (se o PC desligar no meio, o arquivo antigo continua inteiro) */
 function saveStore() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} }, 300);
+  saveTimer = setTimeout(async () => {
+    if (saving) { saveAgain = true; return; }
+    saving = true;
+    try { const f = storeFile(), tmp = f + '.tmp'; await fs.promises.writeFile(tmp, JSON.stringify(store)); await fs.promises.rename(tmp, f); } catch {}
+    saving = false;
+    if (saveAgain) { saveAgain = false; saveStore(); }
+  }, 1500);
 }
+/* caches que antes só cresciam: guardam no máximo n itens (os mais antigos saem) */
+function capMap(m, n) { while (m.size > n) m.delete(m.keys().next().value); }
 
 /* ---------------- HTTP helpers ---------------- */
 // conexões ficam abertas e são reaproveitadas: cada busca não precisa "apertar a mão" do servidor de novo
@@ -55,7 +65,7 @@ async function getText(url, headers, opts = {}) {
 const getJSON = async (url, headers) => JSON.parse(await getText(url, headers));
 
 /* ---------------- servidor local: interface + streaming de arquivos/áudio ---------------- */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav', '.webm': 'audio/webm', '.wma': 'audio/x-ms-wma', '.aiff': 'audio/aiff' };
 
 function serveFile(req, res, file) {
@@ -98,6 +108,8 @@ function startServer() {
       if (u.pathname === '/media') return serveFile(req, res, u.searchParams.get('p') || '');
       if (u.pathname === '/proxy') return proxy(req, res, u.searchParams.get('u') || '');
       if (u.pathname === '/cover') return cover(res, u.searchParams.get('p') || '');
+      // capas personalizadas das playlists (fotos que você escolheu)
+      if (u.pathname.startsWith('/plc/')) { const f = path.basename(decodeURIComponent(u.pathname.slice(5))); return serveFile(req, res, path.join(plcDir(), f)); }
       // logo do app = caveira do tema escolhido
       if (u.pathname === '/logo.png') {
         const qs = u.searchParams.get('s'); const f = path.join(root, 'themes', (SKINS.includes(qs) ? qs : skinNow()) + '.png');
@@ -517,7 +529,30 @@ function createWindow() {
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(`http://127.0.0.1:${PORT}`)) e.preventDefault(); });
   const keep = () => { if (!win.isMaximized() && !win.isMinimized()) { const b = win.getBounds(); store.win = { w: b.width, h: b.height, x: b.x, y: b.y, max: false }; } else store.win = { ...(store.win || {}), max: win.isMaximized() }; saveStore(); };
   win.on('resize', keep); win.on('move', keep);
+  /* vigia: se a janela parar de responder por 25 s (ou o processo dela morrer), recarrega sozinha
+     e continua a música de onde estava, em vez de ficar travada até fechar na mão */
+  let hangT = null;
+  const revive = why => {
+    clearTimeout(hangT); hangT = null;
+    if (!win || win.isDestroyed()) return;
+    store.revive = { at: Date.now(), why }; saveStore();
+    try { win.webContents.forcefullyCrashRenderer(); } catch {}
+    setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.reload(); } catch {} }, 800);
+  };
+  win.webContents.on('unresponsive', () => { clearTimeout(hangT); hangT = setTimeout(() => revive('travou'), 25000); });
+  win.webContents.on('responsive', () => { clearTimeout(hangT); hangT = null; });
+  win.webContents.on('render-process-gone', (_, d) => { if (d && d.reason !== 'clean-exit') { store.revive = { at: Date.now(), why: d.reason }; saveStore(); setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.reload(); } catch {} }, 1000); } });
 }
+/* player do YouTube (webview): avisa a janela quando ele trava ou fica pesado demais, pra ela recriar */
+function ytHealth(kind) { try { if (win && !win.isDestroyed()) win.webContents.send('yt-health', kind); } catch {} }
+setInterval(() => {
+  try {
+    const wv = require('electron').webContents.getAllWebContents().filter(w => !w.isDestroyed() && w.getType() === 'webview').map(w => w.getOSProcessId());
+    const heavy = app.getAppMetrics().some(m => wv.includes(m.pid) && m.memory && m.memory.workingSetSize > 900 * 1024);
+    if (heavy) ytHealth('heavy');
+  } catch {}
+}, 5 * 60e3);
+ipcMain.handle('revive-info', () => { const r = store.revive; store.revive = null; saveStore(); return r && Date.now() - r.at < 120000 ? r : null; });
 
 /* Bloqueador de anúncios (motor do Ghostery, mesmas listas do uBlock Origin / Brave) na sessão do YouTube */
 let blocker = null, blockerOn = false;
@@ -564,6 +599,9 @@ ipcMain.handle('yt-logged', async () => (await ytSession().cookies.get({ domain:
 ipcMain.handle('yt-logout', async () => { await ytSession().clearStorageData(); return true; });
 app.on('web-contents-created', (_, wc) => {
   if (wc.getType() === 'webview') {
+    let t = null;
+    wc.on('unresponsive', () => { clearTimeout(t); t = setTimeout(() => ytHealth('hung'), 12000); });
+    wc.on('responsive', () => clearTimeout(t));
     wc.setUserAgent(UA);
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.setBackgroundThrottling(false);
@@ -605,11 +643,11 @@ async function dzArtist(name) {
   const k = name.toLowerCase(); if (dzArtistCache.has(k)) return dzArtistCache.get(k);
   const j = await dz(`/search/artist?q=${encodeURIComponent(name)}&limit=3`).catch(() => ({}));
   const a = (j.data || []).find(x => x.name.toLowerCase() === k) || (j.data || [])[0] || null;
-  dzArtistCache.set(k, a); return a;
+  dzArtistCache.set(k, a); capMap(dzArtistCache, 800); return a;
 }
 async function dzRelated(name) {
   const a = await dzArtist(name); if (!a) return [];
-  const j = await dz(`/artist/${a.id}/related?limit=15`).catch(() => ({}));
+  const j = await dz(`/artist/${a.id}/related?limit=22`).catch(() => ({}));
   return (j.data || []).map(x => ({ id: x.id, name: x.name, pic: x.picture_medium || x.picture, fans: x.nb_fan || 0 }));
 }
 async function dzTop(id, n = 6) {
@@ -640,39 +678,77 @@ async function ytMix(videoId) {
 }
 async function pool(items, n, fn) { const out = []; let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]).catch(() => null); } })); return out; }
 
-/* Descobertas da Semana: artistas parecidos com os seus (que você ainda não ouve) + mixes do YouTube das suas mais tocadas */
-async function recommend({ seeds = [], known = [], heard = [], mixSeeds = [], week = 0, size = 30 }) {
-  const knownSet = new Set(known.map(norm)), heardSet = new Set(heard);
+/* Descobertas da Semana v3 — montada pelo seu gosto de verdade:
+   - perfil de artistas (o app manda, com peso: o que você mais toca, favorita, põe em playlist; e o que você pula)
+   - ~60% artistas NOVOS parecidos com os seus (Deezer diz quem é parecido; quanto mais dos seus artistas apontam pro mesmo, mais forte)
+   - ~25% achados nos Mixes do YouTube das suas mais tocadas (só de artistas que você ainda não ouve)
+   - ~15% "lado B" de quem você já curte (músicas deles que você nunca ouviu)
+   Nada que você já ouviu entra, no máximo 2 por artista, e cada música vem com o motivo. */
+const cleanArtist = a => String(a || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').replace(/\s*\(?(official|oficial)\)?\s*$/i, '').split(/\s*(?:,|&| feat\.?| ft\.?| x |\/)\s*/i)[0].trim();
+async function toYTM(t) {
+  // primeiro o YouTube Music (versão de áudio oficial), depois a busca normal do YouTube
+  const want = norm(t.title).split(' ').slice(0, 3).join(' ');
+  try {
+    const r = await ytmSearch(`${t.artist} ${t.title}`);
+    const hit = (r.songs || []).find(v => norm(v.title).includes(want) && (!t.artist || norm(v.artist).includes(norm(t.artist).split(' ')[0])));
+    if (hit) return { ...hit, title: t.title, artist: t.artist };
+  } catch {}
+  return toYT(t);
+}
+async function recommend({ seeds = [], known = [], dislikes = [], heard = [], heardT = [], mixSeeds = [], deep = [], week = 0, size = 30 }) {
+  const knownSet = new Set(known.map(norm)), heardSet = new Set(heard), heardTSet = new Set(heardT), bad = new Set(dislikes.map(norm));
   let seed = week || 1; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
-  // 1) artistas candidatos, pontuados por quantos dos seus artistas apontam pra eles
+  const tKey = t => norm(cleanArtist(t.artist)) + '|' + norm(String(t.title || '').replace(/\(.*?\)|\[.*?\]/g, ''));
+  const fresh = t => t && !heardSet.has(`${t.src}:${t.id}`) && !heardTSet.has(tKey(t)) && !bad.has(norm(cleanArtist(t.artist)));
+  // 1) artistas parecidos
   const cand = new Map();
-  const rel = await pool(seeds.slice(0, 8), 4, ([name]) => dzRelated(name));
+  const rel = await pool(seeds.slice(0, 12), 4, ([name]) => dzRelated(name));
   rel.forEach((list, si) => (list || []).forEach((a, r) => {
-    if (knownSet.has(norm(a.name))) return;
-    const c = cand.get(a.id) || { ...a, score: 0, because: [] };
-    c.score += seeds[si][1] * (1 - r / 16); if (c.because.length < 2) c.because.push(seeds[si][0]);
+    const n = norm(a.name); if (knownSet.has(n) || bad.has(n)) return;
+    const c = cand.get(a.id) || { ...a, score: 0, hits: 0, because: [] };
+    c.score += seeds[si][1] * (1 - r / 22); c.hits++;
+    if (c.because.length < 2 && !c.because.includes(seeds[si][0])) c.because.push(seeds[si][0]);
     cand.set(a.id, c);
   }));
-  const artists = [...cand.values()].map(c => ({ ...c, score: c.score * (0.75 + rnd() * 0.5) })).sort((a, b) => b.score - a.score).slice(0, 14);
-  // 2) duas músicas de cada artista novo, achadas no YouTube
-  const tops = await pool(artists, 4, a => dzTop(a.id, 4));
+  // apontado por vários dos seus artistas = muito mais a sua cara; muito famoso ou desconhecido demais pesa um pouco menos
+  const artists = [...cand.values()].map(c => {
+    const f = c.fans || 0, pop = f > 8e6 ? 0.8 : f < 3000 ? 0.75 : 1;
+    return { ...c, score: c.score * (1 + 0.45 * (c.hits - 1)) * pop * (0.8 + rnd() * 0.4) };
+  }).sort((a, b) => b.score - a.score).slice(0, 18);
+  const tops = await pool(artists, 4, a => dzTop(a.id, 6));
   const wanted = [];
-  artists.forEach((a, i) => (tops[i] || []).sort(() => rnd() - 0.5).slice(0, 2).forEach(t => wanted.push({ ...t, because: a.because })));
-  const fromArtists = (await pool(wanted, 5, toYT)).map((t, i) => t && { ...t, art: wanted[i].art || t.art, because: wanted[i].because }).filter(Boolean);
-  // 3) mixes do YouTube a partir das suas mais tocadas
-  const mixes = await pool(mixSeeds.slice(0, 4), 2, ytMix);
-  const fromMix = mixes.flat().filter(t => t && !knownSet.has(norm(t.artist)));
-  // junta, tira repetidas e já ouvidas, no máximo 2 por artista
-  const out = [], per = {};
-  const all = []; const a1 = fromArtists, a2 = fromMix.sort(() => rnd() - 0.5);
-  for (let i = 0; i < Math.max(a1.length, a2.length); i++) { if (a1[i]) all.push(a1[i]); if (i % 2 === 0 && a2[i / 2]) all.push(a2[i / 2]); }
-  for (const t of all) {
-    const k = `${t.src}:${t.id}`, ak = norm(t.artist);
-    if (heardSet.has(k) || out.some(x => x.id === t.id)) continue;
-    if ((per[ak] = (per[ak] || 0) + 1) > 2) continue;
-    out.push(t); if (out.length >= size) break;
+  artists.forEach((a, i) => (tops[i] || []).filter(t => !heardTSet.has(tKey(t))).sort(() => rnd() - 0.5).slice(0, i < 8 ? 2 : 1)
+    .forEach(t => wanted.push({ ...t, why: `Porque você ouve ${a.because[0]}`, kind: 'new' })));
+  // 3) lado B de quem você já curte
+  const deepTops = await pool(deep.slice(0, 5), 3, async name => { const a = await dzArtist(name); return a ? dzTop(a.id, 15) : []; });
+  deep.slice(0, 5).forEach((name, i) => (deepTops[i] || []).slice(3).filter(t => !heardTSet.has(tKey(t))).sort(() => rnd() - 0.5).slice(0, 2)
+    .forEach(t => wanted.push({ ...t, why: `Mais de ${name} que você ainda não ouviu`, kind: 'deep' })));
+  const resolved = (await pool(wanted, 5, toYTM)).map((t, i) => t && { ...t, art: wanted[i].art || t.art, why: wanted[i].why, kind: wanted[i].kind }).filter(fresh);
+  // 2) Mix do YouTube das suas mais tocadas (só artistas novos)
+  const mixes = await pool(mixSeeds.slice(0, 5), 2, async id => ({ id, l: await ytMix(id).catch(() => []) }));
+  const fromMix = mixes.flatMap(m => (m.l || []).slice(1, 25).map(t => ({ ...t, why: 'Achado no Mix do YouTube das suas mais tocadas', kind: 'mix' })))
+    .filter(t => fresh(t) && !knownSet.has(norm(cleanArtist(t.artist)))).sort(() => rnd() - 0.5);
+  // junta na proporção certa, intercalando, sem repetir e no máximo 2 por artista
+  const nw = resolved.filter(t => t.kind === 'new'), dp = resolved.filter(t => t.kind === 'deep');
+  const out = [], per = {}, seen = new Set();
+  const push = t => {
+    if (!t || out.length >= size) return false;
+    const ak = norm(cleanArtist(t.artist)), k = tKey(t);
+    if (seen.has(t.id) || seen.has(k) || (per[ak] || 0) >= 2) return false;
+    seen.add(t.id); seen.add(k); per[ak] = (per[ak] || 0) + 1; out.push(t); return true;
+  };
+  const quota = { new: Math.round(size * 0.6), mix: Math.round(size * 0.25), deep: size };
+  let a = 0, b = 0, c = 0, nNew = 0, nMix = 0;
+  for (let round = 0; out.length < size && round < 200; round++) {
+    let moved = false;
+    for (let k = 0; k < 2; k++) while (a < nw.length && nNew < quota.new) { moved = true; if (push(nw[a++])) { nNew++; break; } }
+    while (b < fromMix.length && nMix < quota.mix) { moved = true; if (push(fromMix[b++])) { nMix++; break; } }
+    if (round % 3 === 2) while (c < dp.length) { moved = true; if (push(dp[c++])) break; }
+    if (!moved) break;
   }
-  return { tracks: out, artists: artists.slice(0, 10).map(a => ({ name: a.name, pic: a.pic, because: a.because })) };
+  // faltou: completa com o que sobrou de qualquer parte
+  [...nw.slice(a), ...fromMix.slice(b), ...dp.slice(c)].forEach(push);
+  return { tracks: out, artists: artists.slice(0, 12).map(a => ({ name: a.name, pic: a.pic, because: a.because })) };
 }
 /* rádio: quando a fila acaba, continua com músicas parecidas com a última */
 async function radio(t) {
@@ -1000,7 +1076,7 @@ async function huntCycle() {
       if (!hit) continue;
       const key = stn.id + '|' + normT(title);
       if (Date.now() - (hunt.seen.get(key) || 0) < 40 * 60e3) continue;
-      hunt.seen.set(key, Date.now());
+      hunt.seen.set(key, Date.now()); if (hunt.seen.size > 2000) for (const [k2, at] of hunt.seen) if (Date.now() - at > 40 * 60e3) hunt.seen.delete(k2);
       try { if (hunt.sender && !hunt.sender.isDestroyed()) hunt.sender.send('hunt-hit', { station: stn, title, artist: hit.a, at: Date.now() }); } catch {}
     }
   };
@@ -1168,6 +1244,17 @@ ipcMain.handle('ytm-search', (_, q) => ytmSearch(q).catch(() => ({ artists: [], 
 ipcMain.handle('ytm-artist', (_, id) => ytmArtist(id).catch(e => ({ id, err: String(e) })));
 ipcMain.handle('ytm-album', (_, id) => ytmAlbum(id).catch(e => ({ id, err: String(e), tracks: [] })));
 
+/* foto de capa das playlists: a tela já manda a imagem recortada; fica guardada na pasta do app */
+const plcDir = () => path.join(app.getPath('userData'), 'plcovers');
+ipcMain.handle('pl-cover-save', (_, data) => {
+  const b = Buffer.from(data); if (b.length < 100 || b.length > 15e6) return null;
+  fs.mkdirSync(plcDir(), { recursive: true });
+  const name = require('crypto').randomBytes(8).toString('hex') + '.jpg';
+  fs.writeFileSync(path.join(plcDir(), name), b);
+  return '/plc/' + name;
+});
+ipcMain.handle('pl-cover-del', (_, url) => { try { if (/^\/plc\/[a-f0-9]+\.jpg$/.test(url || '')) fs.unlinkSync(path.join(plcDir(), path.basename(url))); } catch {} return true; });
+
 /* salva a imagem do card (Imagens/Uncrowned) */
 ipcMain.handle('save-image', (_, data, name) => {
   const dir = path.join(app.getPath('pictures'), 'Uncrowned'); fs.mkdirSync(dir, { recursive: true });
@@ -1302,12 +1389,71 @@ ipcMain.handle('import-resolve', async (e, items, tag) => {
         if (!title) { try { const o = await getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + it.videoId)}&format=json`); title = o.title; artist = artist || (o.author_name || '').replace(/ - Topic$/, ''); } catch {} }
         r = { src: 'yt', id: it.videoId, title: title || it.videoId, artist: artist || '', art: `https://i.ytimg.com/vi/${it.videoId}/hqdefault.jpg`, duration: 0 };
       } else r = await toYT({ title: it.title, artist: it.artist, dur: it.dur || 0 }).catch(() => null);
-      if (r) resolveCache.set(k, r);
+      if (r) { resolveCache.set(k, r); capMap(resolveCache, 3000); }
     }
     send({ done: ++done, total: items.length });
     return r;
   });
   return out.filter(Boolean);
+});
+
+/* ---------------- atualização automática ----------------
+   Cada push no GitHub gera um build novo (release "pc-N"). O app confere de tempos em tempos,
+   avisa que tem versão nova e, com um clique, baixa e instala sozinho (instalado ou portátil). */
+const REPO = 'iViniciusAndrade/uncrowned-music';
+function myBuild() { try { return +JSON.parse(fs.readFileSync(path.join(__dirname, 'build.json'), 'utf8')).build || 0; } catch { return 0; } }
+let updInfo = null, updBusy = false;
+async function updCheck() {
+  const j = await getJSON(`https://api.github.com/repos/${REPO}/releases?per_page=30`, { Accept: 'application/vnd.github+json' });
+  const mine = myBuild();
+  let best = null;
+  for (const r of j || []) {
+    const m = /^pc-(\d+)$/.exec(r.tag_name || ''); if (!m || r.draft) continue;
+    const n = +m[1]; const a = n => (r.assets || []).find(x => x.name === n);
+    const setup = a('UncrownedMusic-Setup.exe'), port = a('UncrownedMusic-Portable.exe');
+    if (!setup && !port) continue;
+    if (!best || n > best.build) best = { build: n, notes: String(r.body || '').slice(0, 4000), date: r.published_at, setup: setup && setup.browser_download_url, portable: port && port.browser_download_url, size: (process.env.PORTABLE_EXECUTABLE_FILE ? port : setup || port || {}).size || 0 };
+  }
+  updInfo = best && mine > 0 && best.build > mine ? best : null;
+  return { mine, latest: best ? best.build : 0, available: updInfo };
+}
+ipcMain.handle('app-build', () => myBuild());
+ipcMain.handle('upd-check', () => updCheck().catch(e => ({ mine: myBuild(), err: String(e.message || e) })));
+ipcMain.handle('upd-install', async e => {
+  if (updBusy) return { err: 'já está baixando' };
+  if (process.platform !== 'win32') return { err: 'só funciona no Windows' };
+  if (!updInfo) { try { await updCheck(); } catch {} }
+  const u = updInfo; if (!u) return { err: 'você já está na versão mais nova' };
+  const portable = process.env.PORTABLE_EXECUTABLE_FILE;
+  const url = portable ? (u.portable || u.setup) : (u.setup || u.portable);
+  const send = d => { try { if (!e.sender.isDestroyed()) e.sender.send('upd', d); } catch {} };
+  updBusy = true;
+  try {
+    const dir = path.join(app.getPath('temp'), 'uncrowned-update'); fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `Uncrowned-build-${u.build}.exe`);
+    const res = await request(url, { headers: { Accept: 'application/octet-stream' } });
+    if (res.statusCode >= 400) { res.resume(); throw new Error('HTTP ' + res.statusCode); }
+    const total = +res.headers['content-length'] || u.size || 0; let got = 0, lastPct = -1;
+    await new Promise((ok, bad) => {
+      const w = fs.createWriteStream(file);
+      res.on('data', c => { got += c.length; const pct = total ? Math.floor(got / total * 100) : 0; if (pct !== lastPct) { lastPct = pct; send({ pct }); } });
+      res.on('error', bad); w.on('error', bad); w.on('finish', ok); res.pipe(w);
+    });
+    const head = Buffer.alloc(2); const fd = fs.openSync(file, 'r'); fs.readSync(fd, head, 0, 2, 0); fs.closeSync(fd);
+    if (head.toString('latin1') !== 'MZ' || fs.statSync(file).size < 5e6) throw new Error('o arquivo baixado veio quebrado');
+    send({ pct: 100, installing: true });
+    // script que espera o app fechar, instala/troca o .exe e abre de novo
+    const pid = process.pid, exe = process.execPath, q = x => `"${x}"`;
+    const lines = ['@echo off', 'chcp 65001 >nul', ':w', `tasklist /FI "PID eq ${pid}" 2>nul | find "${pid}" >nul && (timeout /t 1 /nobreak >nul & goto w)`];
+    if (portable) lines.push(`copy /Y ${q(file)} ${q(portable)} >nul`, `start "" ${q(portable)}`);
+    else lines.push(`${q(file)} /S /D=${path.dirname(exe)}`, `start "" ${q(exe)}`);
+    lines.push(`del ${q(file)} >nul 2>&1`, 'del "%~f0"');
+    const bat = path.join(dir, 'atualizar.cmd'); fs.writeFileSync(bat, lines.join('\r\n'));
+    require('child_process').spawn('cmd.exe', ['/c', bat], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    clearTimeout(saveTimer); try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {}
+    setTimeout(() => app.quit(), 600);
+    return { ok: true };
+  } catch (er) { updBusy = false; return { err: String(er.message || er) }; }
 });
 
 /* temas: troca o ícone da janela/barra de tarefas junto */
@@ -1349,7 +1495,7 @@ async function syncCands(t) {
   const seen = new Set(), v = [];
   for (const x of all) { const id = x.src + x.id; if (seen.has(id)) continue; seen.add(id); v.push({ ...x, from: FROM[x.src] || x.src, score: sameSong(ref, x) }); }
   v.sort((a, b) => b.score - a.score);
-  findCache.set(k, { at: Date.now(), v });
+  findCache.set(k, { at: Date.now(), v }); capMap(findCache, 300);
   return v;
 }
 async function syncFind(t) { return (await syncCands(t)).filter(x => x.score >= 2).slice(0, 4); }
@@ -1438,4 +1584,4 @@ app.whenReady().then(async () => {
   applyWinSkin(skinNow());
   setTimeout(warmUp, 1500);
 });
-app.on('window-all-closed', () => { try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.quit(); });
+app.on('window-all-closed', () => { clearTimeout(saveTimer); try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.quit(); });

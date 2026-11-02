@@ -10,8 +10,10 @@ android {
         applicationId = "com.uncrowned.music"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // número do build do GitHub Actions: o app usa pra saber se tem atualização (e o Android pra instalar por cima)
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "build $build"
         // só celulares 64-bit (ARM): a IA local traz biblioteca nativa e assim o APK não fica gigante
         ndk { abiFilters += "arm64-v8a" }
     }

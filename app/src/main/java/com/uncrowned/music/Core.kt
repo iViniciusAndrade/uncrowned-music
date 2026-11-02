@@ -110,7 +110,11 @@ object Prefs {
         val o = JSONObject(); m.forEach { (k, v) -> o.put(k, JSONArray(v)) }; ps("playlists", o.toString())
     }
     fun createPlaylist(name: String) { val m = playlists().toMutableMap(); if (name !in m) m[name] = emptyList(); savePlaylists(m) }
-    fun deletePlaylist(name: String) { savePlaylists(playlists() - name) }
+    fun deletePlaylist(name: String) { savePlaylists(playlists() - name); PlLook.delete("lp:$name") }
+    fun renamePlaylist(from: String, to: String): Boolean {
+        val m = playlists(); if (to.isBlank() || to in m || from !in m) return false
+        savePlaylists(m.entries.associate { (k, v) -> (if (k == from) to else k) to v }); PlLook.move("lp:$from", "lp:$to"); return true
+    }
     fun addToPlaylist(name: String, id: String) {
         val m = playlists().toMutableMap(); val l = m[name].orEmpty()
         if (id !in l) m[name] = l + id; savePlaylists(m)

@@ -63,8 +63,8 @@ object ScPlay {
         Sync.syncedUri(v)?.takeIf { Sync.uriOk(it) }?.let { u -> return@runCatching R.Native(local(u, v, v)) }
         // sem internet: pula rápido até a próxima que estiver salva no celular
         if (!Sync.online()) return@runCatching R.None("sem internet e não está salva no celular")
-        // "Mostrar vídeo" ligado: toca o vídeo do YouTube mesmo
-        if (v.src == "yt" && YtStore.showVideo && !Eco.on) return@runCatching R.Web(v)
+        // YouTube é o motor principal: toca direto no player do YouTube (a não ser que você tenha escolhido tocar pelo SoundCloud)
+        if (v.src == "yt" && (!YtStore.scFirst || (YtStore.showVideo && !Eco.on))) return@runCatching R.Web(v)
         val cands = ScMatch.candidates(v)
         // não existe no SoundCloud: toca pelo player oficial do YouTube em vez de pular
         if (cands.isEmpty() || cands.all { it.first.policy == "SNIP" }) return@runCatching if (v.src == "yt") R.Web(v) else R.None("não achei no SoundCloud")

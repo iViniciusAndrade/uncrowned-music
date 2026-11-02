@@ -9,20 +9,20 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-/* Busca online única: tudo ao mesmo tempo, na ordem SoundCloud → YouTube → Vimeo.
+/* Busca online única: tudo ao mesmo tempo, na ordem YouTube → SoundCloud → Vimeo (o YouTube acha melhor).
    As faixas que dá pra baixar (Audius / Internet Archive) vêm separadas. */
 object OnlineSearch {
     data class Result(val stream: List<YtVideo>, val downloadable: List<Track>)
 
     suspend fun search(q: String): Result = coroutineScope {
+        val yt = async { YtApi.search(q, YtStore.apiKey).getOrDefault(emptyList()) }
         val sc = async { OtherApi.soundcloud(q).getOrDefault(emptyList()) }
         val vm = async { if (YtStore.vimeoToken.isBlank()) emptyList() else OtherApi.vimeo(q, YtStore.vimeoToken).getOrDefault(emptyList()) }
         val au = async { Audius.search(q).getOrDefault(emptyList()) }
         val ia = async { Archive.search(q).getOrDefault(emptyList()) }
-        // músicas vêm do SoundCloud; YouTube só entra se o SoundCloud não achar quase nada
-        val scL = sc.await()
+        // YouTube primeiro (melhores resultados), depois o SoundCloud e o Vimeo
         Result(
-            (scL.take(50) + vm.await().take(10)).distinctBy { it.src + it.id },
+            (yt.await().take(30) + sc.await().take(20) + vm.await().take(10)).distinctBy { it.src + it.id },
             (au.await().filter { it.downloadable } + ia.await()).take(15)
         )
     }

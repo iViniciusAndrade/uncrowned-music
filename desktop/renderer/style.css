@@ -762,3 +762,89 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 .row .acts .btn.mini{width:auto;min-width:0;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:0 12px;height:30px;font-size:12px}
 .row .acts .btn.mini svg{width:15px;height:15px}
 #simL .acts{min-width:110px;justify-content:flex-end}
+
+/* aviso de atualização */
+#updBar{position:fixed;right:22px;bottom:110px;z-index:900;display:flex;gap:14px;align-items:flex-start;max-width:440px;padding:16px 18px;border-radius:18px;
+  background:color-mix(in srgb,var(--accent) 16%,#141416);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);box-shadow:0 18px 50px rgba(0,0,0,.55);animation:ubIn .35s ease}
+html.light #updBar{background:color-mix(in srgb,var(--accent) 10%,#fff)}
+#updBar .ubIco{width:40px;height:40px;border-radius:12px;background:var(--accent);display:grid;place-items:center;flex:none}
+#updBar .ubIco svg{width:22px;height:22px;fill:#fff}
+#updBar .ubTxt{flex:1;min-width:0;font-size:13px}
+#updBar .ubTxt b{display:block;font-size:14px;margin-bottom:4px}
+#updBar ul{margin:4px 0 0;padding-left:16px;color:var(--dim);max-height:120px;overflow:auto}
+#updBar .ubProg{height:4px;border-radius:4px;background:rgba(127,127,127,.25);margin-top:10px;overflow:hidden}
+#updBar .ubProg i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+#updBar .ubActs{display:flex;flex-direction:column;gap:8px}
+@keyframes ubIn{from{transform:translateY(20px);opacity:0}}
+
+/* ---------- playlists personalizadas ---------- */
+.plHero{position:relative;display:flex;align-items:flex-end;gap:26px;padding:28px;margin:-6px 0 18px;border-radius:calc(var(--r) + 10px);overflow:hidden;isolation:isolate;min-height:250px}
+.plHeroBg{position:absolute;inset:0;z-index:-2;background:linear-gradient(135deg,color-mix(in srgb,var(--plc) 85%,#000) 0%,color-mix(in srgb,var(--plc) 45%,#000) 55%,color-mix(in srgb,var(--plc) 18%,#050505) 100%)}
+html.light .plHeroBg{background:linear-gradient(135deg,color-mix(in srgb,var(--plc) 70%,#fff) 0%,color-mix(in srgb,var(--plc) 30%,#fff) 70%,#fff 100%)}
+.plHeroPat{position:absolute;inset:0;z-index:-1;opacity:.28;pointer-events:none}
+.plHero .plInfo{min-width:0;flex:1;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}
+html.light .plHero .plInfo{color:#111;text-shadow:none}
+.plHero .plKind{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;opacity:.85}
+.plHero h1{font-size:clamp(30px,5vw,68px);line-height:1.02;margin:6px 0 8px;word-break:break-word}
+.plHero .plDesc{margin:0 0 8px;opacity:.9;font-size:14px;max-width:680px;white-space:pre-wrap}
+.plHero small{opacity:.8;font-size:13px}
+.plEdit{position:absolute;top:16px;right:16px;border:0;border-radius:999px;padding:8px 14px;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer;color:#fff;background:rgba(0,0,0,.35);backdrop-filter:blur(10px)}
+.plEdit:hover{background:rgba(0,0,0,.55)}
+.plBtns{margin-top:0}
+.plCovWrap{position:relative;flex:none}
+.plCov{width:200px;height:200px;border-radius:14px;overflow:hidden;background:color-mix(in srgb,var(--plc) 40%,#111);box-shadow:0 22px 50px rgba(0,0,0,.5);display:grid;place-items:center}
+.plCov.mid{width:120px;height:120px}
+.plCov img{width:100%;height:100%;object-fit:cover;display:block}
+.plCov.mosaic{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+.plCov.empty svg{width:42%;height:42%;fill:rgba(255,255,255,.85)}
+.plCov .bigEmo{font-size:80px}
+.plCov.mid .bigEmo{font-size:48px}
+.plEmo{position:absolute;right:-12px;bottom:-12px;font-size:44px;filter:drop-shadow(0 4px 10px rgba(0,0,0,.45));transform:rotate(12deg)}
+.plPrev .plEmo{font-size:30px;right:-8px;bottom:-8px}
+/* formatos da capa */
+.shape-square .plCov{border-radius:3px}
+.shape-circle .plCov{border-radius:50%}
+.shape-vinyl .plCov{border-radius:50%;box-shadow:0 0 0 10px #0b0b0b,0 0 0 11px rgba(255,255,255,.12),0 22px 50px rgba(0,0,0,.6)}
+.shape-vinyl .plCov::after{content:"";position:absolute;width:14%;height:14%;border-radius:50%;background:#0b0b0b;box-shadow:0 0 0 3px rgba(255,255,255,.15)}
+.shape-vinyl .plCov{position:relative}
+.shape-polaroid .plCov{border-radius:4px;padding:10px 10px 34px;background:#fbfaf6;box-sizing:content-box;transform:rotate(-3deg)}
+.shape-polaroid .plCov img{border-radius:2px}
+.shape-tilt .plCov{transform:rotate(-6deg);border-radius:18px}
+/* fontes do nome */
+.font-black h1{font-weight:900;letter-spacing:-.03em;text-transform:uppercase}
+.font-serif h1{font-family:"Playfair Display",Georgia,"Times New Roman",serif!important;font-style:italic;font-weight:700}
+.font-hand h1{font-family:"Segoe Print","Comic Sans MS","Bradley Hand",cursive!important;font-weight:700}
+.font-mono h1{font-family:"Cascadia Mono",Consolas,"Courier New",monospace!important;font-weight:700;letter-spacing:-.02em}
+.font-retro h1{font-family:"Cascadia Mono",Consolas,monospace!important;text-transform:uppercase;letter-spacing:.18em;font-weight:900;text-shadow:3px 3px 0 color-mix(in srgb,var(--plc) 70%,#000)!important}
+.font-gothic h1{font-family:"Old English Text MT","UnifrakturMaguntia","Times New Roman",serif!important;font-weight:400;letter-spacing:.01em}
+.fontChip.font-serif{font-family:Georgia,serif;font-style:italic}.fontChip.font-hand{font-family:"Segoe Print","Comic Sans MS",cursive}.fontChip.font-mono,.fontChip.font-retro{font-family:Consolas,monospace}.fontChip.font-gothic{font-family:"Old English Text MT",serif}.fontChip.font-black{font-weight:900}
+/* estampas */
+.pat-sparkle .plHeroPat{opacity:.55;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Ctext x='8' y='30' font-size='20'%3E✨%3C/text%3E%3Ctext x='55' y='75' font-size='14'%3E✦%3C/text%3E%3Ctext x='60' y='25' font-size='10' fill='white'%3E✧%3C/text%3E%3C/svg%3E")}
+.pat-hearts .plHeroPat{opacity:.4;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Ctext x='6' y='28' font-size='20'%3E💖%3C/text%3E%3Ctext x='46' y='70' font-size='16'%3E🤍%3C/text%3E%3C/svg%3E")}
+.pat-stars .plHeroPat{opacity:.45;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='70' height='70'%3E%3Ctext x='4' y='24' font-size='18' fill='white'%3E★%3C/text%3E%3Ctext x='40' y='60' font-size='11' fill='white'%3E☆%3C/text%3E%3C/svg%3E")}
+.pat-flowers .plHeroPat{opacity:.45;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84'%3E%3Ctext x='6' y='30' font-size='20'%3E🌸%3C/text%3E%3Ctext x='48' y='72' font-size='16'%3E🌼%3C/text%3E%3C/svg%3E")}
+.pat-skulls .plHeroPat{opacity:.35;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Ctext x='6' y='30' font-size='20'%3E💀%3C/text%3E%3Ctext x='50' y='70' font-size='13' fill='white'%3E✝%3C/text%3E%3C/svg%3E")}
+.pat-dots .plHeroPat{background-image:radial-gradient(rgba(255,255,255,.9) 2.5px,transparent 3px);background-size:22px 22px}
+.pat-stripes .plHeroPat{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.7) 0 10px,transparent 10px 26px)}
+.pat-checker .plHeroPat{opacity:.18;background-image:conic-gradient(#fff 25%,transparent 0 50%,#fff 0 75%,transparent 0);background-size:36px 36px}
+.pat-waves .plHeroPat{opacity:.3;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='24'%3E%3Cpath d='M0 12 Q15 0 30 12 T60 12' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E")}
+.pat-glitter .plHeroPat{opacity:.6;background-image:radial-gradient(#fff 1px,transparent 1.5px),radial-gradient(color-mix(in srgb,var(--plc) 60%,#fff) 1px,transparent 1.5px);background-size:17px 17px,29px 29px;background-position:0 0,9px 13px;animation:glit 3s linear infinite}
+@keyframes glit{50%{opacity:.25}}
+.pat-grain .plHeroPat{opacity:.22;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+html.eco .pat-glitter .plHeroPat{animation:none}
+/* janela de personalizar */
+.plCus .plPrev{min-height:150px;padding:18px;gap:18px;margin:0 0 6px}
+.plCus .plPrev h1{font-size:28px}
+.plDots .dot{width:26px;height:26px}
+.plDots{align-items:center}
+.plDots input[type=color]{width:30px;height:28px;border:0;background:none;cursor:pointer}
+.emoGrid{display:flex;flex-wrap:wrap;gap:4px}
+.emoGrid button{width:36px;height:36px;font-size:19px;border-radius:10px;border:1px solid transparent;background:rgba(127,127,127,.12);cursor:pointer}
+.emoGrid button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 22%,transparent)}
+/* ícone da playlist na barra lateral */
+.plNavIco{position:relative;width:22px;height:22px;flex:none;border-radius:6px;display:grid;place-items:center;background:color-mix(in srgb,var(--plc) 30%,transparent);box-shadow:inset 0 0 0 1.5px var(--plc)}
+.plNavIco img{width:100%;height:100%;border-radius:6px;object-fit:cover}
+.plNavIco svg{width:15px;height:15px}
+.plNavIco em{position:absolute;right:-7px;bottom:-6px;font-style:normal;font-size:11px;line-height:1}
+#modalBox:has(.plCus){width:min(620px,94vw);max-height:88vh}
+.tile .why{font-size:11px;color:var(--accent);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.9}
