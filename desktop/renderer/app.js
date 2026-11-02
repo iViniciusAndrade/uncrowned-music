@@ -345,7 +345,7 @@ async function playYT(t, startAt, keepTries) {
   startPoll(async () => {
     if (st.kind !== 'yt' || token !== yt.tok) return;
     // a página não respondeu a última pergunta: não empilha outra (era isso que ia enchendo a memória até travar)
-    if (yt.busy) { if (Date.now() - yt.busy > 15000 && st.playing) { yt.busy = 0; const c = cur(); if (c && c.src === 'yt') { const at = st.time; ytDrop(); playYT(c, at); } } return; }
+    if (yt.busy) { if (Date.now() - yt.busy > 15000 && (st.playing || !yt.progress)) { yt.busy = 0; const c = cur(); if (c && c.src === 'yt') { const at = st.time; ytDrop(); playYT(c, at); } } return; }
     // pausado há um tempo: pergunta bem menos vezes
     pollN++;
     if (!st.playing && yt.userPaused && Date.now() - yt.switchAt > 10000 && pollN % 5) return;
