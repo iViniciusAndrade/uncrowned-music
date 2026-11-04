@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
       - run: xcodegen generate
-      - name: Build (sem assinatura: o Sideloadly/AltStore assina com o seu Apple ID)
+      - name: "Build (sem assinatura, o Sideloadly ou AltStore assina com o Apple ID)"
         run: |
           set -o pipefail
           xcodebuild -project Uncrowned.xcodeproj -scheme Uncrowned -configuration Release -sdk iphoneos \
