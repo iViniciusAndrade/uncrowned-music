@@ -1,0 +1,29 @@
+name: Uncrowned
+options:
+  bundleIdPrefix: com.uncrowned
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Uncrowned:
+    type: application
+    platform: iOS
+    sources:
+      - Uncrowned
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.uncrowned.music
+        PRODUCT_NAME: Uncrowned
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "$(UNC_BUILD)"
+        UNC_BUILD: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "Icon-edgy Icon-fadinha Icon-otaku Icon-oldmoney Icon-alternativo Icon-punk Icon-pulseirinhas Icon-ninja Icon-deserto Icon-ouro Icon-cela Icon-rock Icon-pavor Icon-apagao Icon-julie Icon-nino Icon-divino"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+        ENABLE_BITCODE: NO
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Uncrowned/Info.plist

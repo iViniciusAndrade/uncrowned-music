@@ -11,6 +11,14 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - O build gera só `arm64-v8a` (a IA local traz biblioteca nativa). R8 ligado; as regras ficam em `app/proguard-rules.pro`.
 - Os commits terminam com as linhas de atribuição do Claude.
 
+## iPhone (`ios/`)
+- App nativo em SwiftUI (iOS 16+), projeto gerado pelo XcodeGen (`ios/project.yml`). Compila no GitHub Actions (`.github/workflows/ios.yml`, Mac na nuvem) sem assinatura e sai como release `ios-N` com `UncrownedMusic.ipa`. Instala por sideload (Sideloadly/AltStore com Apple ID grátis, reassinar a cada 7 dias). O iPhone é de outra pessoa (não do dono).
+- Não dá pra compilar Swift aqui: os erros vêm do log do CI (o passo de build imprime as linhas `error:`).
+- `Player.swift`: AVPlayer (SoundCloud, Audius, Archive, rádio com nome da música, arquivos) + YouTube no iframe oficial num WKWebView (`YTWeb`, origem uncrowned.app) que fica sempre montado no `Root`. Tela apagada com YouTube: troca pro SoundCloud nativo do mesmo ponto (`didEnterBackground`, match pré-buscado). Tela de bloqueio via MPNowPlayingInfoCenter/MPRemoteCommandCenter.
+- `Store.swift` (`Lib`): tudo num JSON em Application Support. `Offline.swift`: pasta Documentos (aparece no app Arquivos), importar dos Arquivos, guardar Audius/Archive (secreto: 5 toques no tema atual).
+- Mesma lógica portada: `YouTube.swift` (YT + YTM), `Sources.swift` (SoundCloud, Audius, Archive, Deezer, letras, iTunes, rádios, importar Spotify/YouTube), `Weekly.swift` (Descobertas v3), `PlaylistViews.swift` (playlists personalizáveis), temas com troca de ícone (ícones alternativos no Assets).
+- Ficou de fora no iPhone (limite do iOS ou peso): IA local/assistente, navegador privado, efeitos K7/Vinil/Black Metal e equalizador, recortes, Momentos, exportar slowed.
+
 ## Arquitetura (app/src/main/java/com/uncrowned/music)
 - `MainActivity.kt`: `PlayerUi` (MediaController), tema, rede caiu → `swapLocal()` toca a cópia local, `Crash.install`.
 - `PlaybackService.kt`: ExoPlayer + `RetroProcessor`, watchdog e tique das estatísticas (`Listen`).

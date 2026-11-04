@@ -1,7 +1,7 @@
 name: Gerar APK
 on:
   push:
-    paths-ignore: ["desktop/**", ".github/workflows/desktop.yml"]
+    paths-ignore: ["desktop/**", ".github/workflows/desktop.yml", "ios/**", ".github/workflows/ios.yml"]
   workflow_dispatch:
 permissions:
   contents: write
