@@ -81,8 +81,10 @@ struct SearchView: View {
         }
         async let a = YT.search(query); async let b = SC.search(query); async let c = YT.ytmSearch(query); async let d = Audius.search(query); async let e = Archive.search(query)
         let ra = await a; if Task.isCancelled { return }; yt = ra
-        ytm = await c; sc = await b
-        dl = Array(((await d).filter { !$0.download.isEmpty } + (await e)).prefix(15))
+        let rc = await c; if Task.isCancelled { return }; ytm = rc
+        let rb = await b; if Task.isCancelled { return }; sc = rb
+        let rd = await d, re = await e; if Task.isCancelled { return }
+        dl = Array((rd.filter { !$0.download.isEmpty } + re).prefix(15))
     }
 }
 

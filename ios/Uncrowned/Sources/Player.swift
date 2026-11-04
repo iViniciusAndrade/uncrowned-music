@@ -38,6 +38,7 @@ final class Player: NSObject, ObservableObject {
     private var scCache: [String: Track] = [:]     // vídeo do YouTube -> mesma música no SoundCloud
     private var meta: AVPlayerItemMetadataOutput?
     private var userPaused = false
+    private var webPlayedAt = Date.distantPast      // última vez que o YouTube estava tocando de verdade
 
     override init() {
         super.init()
@@ -197,7 +198,8 @@ final class Player: NSObject, ObservableObject {
 
     // ---------- tela apagou / voltou ----------
     func didEnterBackground() {
-        guard engine == .web, playing, let t = current, Lib.shared.s.bgSwitch else { return }
+        // o YouTube às vezes avisa que pausou antes do app saber que a tela apagou: vale se estava tocando há pouco
+        guard engine == .web, playing || (!userPaused && Date().timeIntervalSince(webPlayedAt) < 4), let t = current, Lib.shared.s.bgSwitch else { return }
         let at = time, g = gen
         var bg: UIBackgroundTaskIdentifier = .invalid
         bg = UIApplication.shared.beginBackgroundTask { UIApplication.shared.endBackgroundTask(bg) }
@@ -219,6 +221,7 @@ final class Player: NSObject, ObservableObject {
     private func webTime(_ t: Double, _ d: Double) {
         guard engine == .web else { return }
         time = t; if d > 0 { dur = d }
+        webPlayedAt = Date()
         everySecond()
     }
     private func webState(_ s: Int) {

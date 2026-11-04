@@ -43,11 +43,12 @@ struct Root: View {
                 // o player do YouTube fica sempre montado; aparece de verdade só quando o vídeo está ligado no player aberto
                 let showVid = full && player.engine == .web && lib.d.settings.showVideo
                 YTHost(web: player.web.view)
-                    .frame(width: showVid ? geo.size.width - 32 : 2, height: showVid ? (geo.size.width - 32) * 9 / 16 : 2)
+                    // escondido ele continua com 240x135: o YouTube não toca em player menor que 200x200
+                    .frame(width: showVid ? geo.size.width - 32 : 240, height: showVid ? (geo.size.width - 32) * 9 / 16 : 200)
                     .clipShape(RoundedRectangle(cornerRadius: showVid ? 14 : 0))
-                    .opacity(showVid ? 1 : 0.02)
+                    .opacity(showVid ? 1 : 0.011)
                     .allowsHitTesting(showVid)
-                    .position(x: showVid ? geo.size.width / 2 : 1, y: showVid ? geo.safeAreaInsets.top + 150 + (geo.size.width - 32) * 9 / 32 : 1)
+                    .position(x: showVid ? geo.size.width / 2 : 120, y: showVid ? geo.safeAreaInsets.top + 150 + (geo.size.width - 32) * 9 / 32 : geo.size.height - 100)
                     .zIndex(6)
                 if let t = player.toast {
                     Text(t).font(.footnote.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 10).background(.ultraThinMaterial, in: Capsule())
