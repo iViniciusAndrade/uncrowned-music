@@ -53,7 +53,7 @@ const DEF = {
   skin: 'edgy', theme: 'dark', accent: '#ff1f3d', radius: 12, fontScale: 1, density: 'normal', tile: 180,
   artShape: 'rounded', npBg: 'blur', blur: 70, artPulse: true, lyricsSize: 28, lyricsAlign: 'left', lyricsSource: 'letras', showLyricsNp: true,
   battery: 'auto', hideVoice: true, minDur: 30, speed: 1, pitchWithSpeed: true, volume: 0.8, autoNext: true, radio: true, showVideo: true, videoSize: 360,
-  adblock: true, updAuto: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
+  adblock: true, caseStyle: 'random', eqOn: false, eq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, gainBoost: 0, vimeoToken: '', startView: 'discover', notifications: true
 };
 let D = { settings: { ...DEF }, folders: [], playlists: {}, favs: {}, history: [], taste: { g: {}, a: {} }, heard: [], plays: {}, weekly: null, lastQueue: null };
 const S = () => D.settings;
@@ -1372,13 +1372,8 @@ views.settings = () => {
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
-  <div class="gtitle">Atualizações</div><div class="group">
-    ${opt('Versão instalada', `<span id="updState"><span class="spinner"></span></span>`, 'O app procura versão nova sozinho a cada 6 horas e avisa. Atualizar baixa e instala sem você fazer nada.')}
-    ${opt('Avisar quando tiver atualização', sw('updAuto'))}
-  </div>
   <div class="gfoot">A busca procura nas suas músicas offline, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
   <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC · build <span id="buildNo">…</span></div>`;
-  paintUpdState();
   const v = $('#view');
   v.querySelectorAll('[data-skin]').forEach(d => d.onclick = () => applySkin(d.dataset.skin));
   v.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => { const k = b.parentElement.dataset.k; S()[k] = b.dataset.v; changed(k); });
@@ -2249,7 +2244,6 @@ async function rescan() {
   if (D.lastQueue && D.lastQueue.q && D.lastQueue.q.length) { st.queue = D.lastQueue.q; st.idx = Math.min(D.lastQueue.i, st.queue.length - 1); updateNowPlaying(); }
   // a janela tinha travado e foi reaberta sozinha: continua a música do ponto onde estava
   U.reviveInfo && U.reviveInfo().then(r => { if (r && st.idx >= 0 && cur()) { resumeAt = (D.lastQueue && D.lastQueue.t) || 0; playAt(st.idx); toast('O app tinha travado e foi reaberto. Continuando de onde parou'); } }).catch(() => {});
-  setTimeout(() => updCheck(false), 8000);
   if (S().notifications && Notification.permission === 'default') Notification.requestPermission();
   rescan();
   setTimeout(huntSync, 4000);
@@ -2259,52 +2253,8 @@ async function rescan() {
 document.addEventListener('visibilitychange', () => { if (document.hidden) setTimeout(() => { if (document.hidden) U.trim(); }, 5000); });
 setInterval(() => U.trim(), 10 * 60e3);
 
-/* ---------------- atualização automática ----------------
-   O app olha no GitHub se saiu build novo. Se saiu, mostra um aviso com o que mudou e um botão:
-   baixa, fecha, instala por cima e abre de novo sozinho. */
-let APP_BUILD = 0, UPD = null, updDl = null;
+let APP_BUILD = 0;
 U.appBuild && U.appBuild().then(b => { APP_BUILD = b; const e = $('#buildNo'); if (e) e.textContent = b || 'de teste'; }).catch(() => {});
-async function updCheck(manual) {
-  if (!U.updCheck) return;
-  if (!manual && S().updAuto === false) return;
-  const r = await U.updCheck().catch(() => null);
-  if (!r) return manual && toast('Não deu pra procurar atualização agora');
-  APP_BUILD = r.mine || APP_BUILD; UPD = r.available || null;
-  paintUpdState(r);
-  if (UPD) updBanner();
-  else if (manual) toast(r.err ? 'Sem conexão com o GitHub agora' : `Você já está na versão mais nova (build ${r.mine || '?'})`);
-}
-setInterval(() => updCheck(false), 6 * 3600e3);
-function paintUpdState(r) {
-  const e = $('#updState'); if (!e) return;
-  const b = $('#buildNo'); if (b) b.textContent = APP_BUILD || 'de teste';
-  if (updDl != null) { e.innerHTML = `Baixando… ${updDl}%`; return; }
-  e.innerHTML = UPD ? `<span style="margin-right:10px">Build ${APP_BUILD} · <b style="color:var(--accent)">build ${UPD.build} disponível</b></span><button class="btn fill" id="updGo">Atualizar agora</button>`
-    : `<span style="margin-right:10px">Build ${APP_BUILD || 'de teste'}${r && r.latest ? ' · é a mais nova' : ''}</span><button class="btn" id="updChk">Procurar agora</button>`;
-  if ($('#updGo')) $('#updGo').onclick = updInstall;
-  if ($('#updChk')) $('#updChk').onclick = () => { $('#updState').innerHTML = '<span class="spinner"></span>'; updCheck(true); };
-}
-function updBanner() {
-  if (!UPD || $('#updBar')) return;
-  const notes = (UPD.notes || '').split('\n').map(l => l.trim()).filter(l => l && !/^(co-authored|claude-session|🤖|https?:)/i.test(l)).slice(0, 8);
-  const d = document.createElement('div'); d.id = 'updBar';
-  d.innerHTML = `<div class="ubIco">${ico('dl')}</div><div class="ubTxt"><b>Atualização disponível · build ${UPD.build}</b>${notes.length ? `<ul>${notes.map(n => `<li>${esc(n.replace(/^[-*•]\s*/, ''))}</li>`).join('')}</ul>` : '<span>Melhorias e correções</span>'}<div class="ubProg"><i id="ubFill"></i></div></div>
-    <div class="ubActs"><button class="btn fill" id="ubGo">Atualizar agora</button><button class="btn" id="ubLater">Depois</button></div>`;
-  document.body.appendChild(d);
-  $('#ubGo').onclick = updInstall; $('#ubLater').onclick = () => d.remove();
-}
-async function updInstall() {
-  if (updDl != null) return;
-  updDl = 0; paintUpdState(); const go = $('#ubGo'); if (go) { go.disabled = true; go.textContent = 'Baixando…'; }
-  const r = await U.updInstall();
-  if (r && r.err) { updDl = null; paintUpdState(); if (go) { go.disabled = false; go.textContent = 'Tentar de novo'; } toast('Não deu pra atualizar: ' + r.err); }
-}
-U.onUpd && U.onUpd(d => {
-  updDl = d.pct; const f = $('#ubFill'); if (f) f.style.width = d.pct + '%';
-  const go = $('#ubGo'); if (go) go.textContent = d.installing ? 'Instalando…' : `Baixando ${d.pct}%`;
-  paintUpdState();
-  if (d.installing) toast('Instalando a atualização. O app fecha e abre de novo sozinho');
-});
 
 /* clicar no ícone/nome do app abre "Criado por" */
 function showAbout() {

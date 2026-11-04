@@ -763,19 +763,6 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 .row .acts .btn.mini svg{width:15px;height:15px}
 #simL .acts{min-width:110px;justify-content:flex-end}
 
-/* aviso de atualização */
-#updBar{position:fixed;right:22px;bottom:110px;z-index:900;display:flex;gap:14px;align-items:flex-start;max-width:440px;padding:16px 18px;border-radius:18px;
-  background:color-mix(in srgb,var(--accent) 16%,#141416);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);box-shadow:0 18px 50px rgba(0,0,0,.55);animation:ubIn .35s ease}
-html.light #updBar{background:color-mix(in srgb,var(--accent) 10%,#fff)}
-#updBar .ubIco{width:40px;height:40px;border-radius:12px;background:var(--accent);display:grid;place-items:center;flex:none}
-#updBar .ubIco svg{width:22px;height:22px;fill:#fff}
-#updBar .ubTxt{flex:1;min-width:0;font-size:13px}
-#updBar .ubTxt b{display:block;font-size:14px;margin-bottom:4px}
-#updBar ul{margin:4px 0 0;padding-left:16px;color:var(--dim);max-height:120px;overflow:auto}
-#updBar .ubProg{height:4px;border-radius:4px;background:rgba(127,127,127,.25);margin-top:10px;overflow:hidden}
-#updBar .ubProg i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
-#updBar .ubActs{display:flex;flex-direction:column;gap:8px}
-@keyframes ubIn{from{transform:translateY(20px);opacity:0}}
 
 /* ---------- playlists personalizadas ---------- */
 .plHero{position:relative;display:flex;align-items:flex-end;gap:26px;padding:28px;margin:-6px 0 18px;border-radius:calc(var(--r) + 10px);overflow:hidden;isolation:isolate;min-height:250px}

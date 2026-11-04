@@ -130,7 +130,6 @@ fun App(ui: PlayerUi, perms: List<String>) {
             containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onBackground,
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))) {
-                    UpdateBanner()
                     if (!ytExpanded) YtPlayerBar(false) { ytExpanded = it; if (it) ui.controller?.pause() }
                     // sem permissão de notificação o Android não mostra a música tocando (barra, tela de bloqueio, central de controle)
                     var notifOk by remember { mutableStateOf(androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) }
@@ -1053,8 +1052,6 @@ fun SettingsScreen(ui: PlayerUi, onEq: () -> Unit, onRescan: () -> Unit) {
                 SwitchRow("Baixar pendentes sozinho no Wi-Fi", "Músicas em Pra sincronizar são procuradas de novo a cada 6 horas", aw) { aw = it; Sync.autoWifi = it }
             }
         }
-
-        UpdateSettings()
 
         if (Secret.on) Group("Secreto") {
             NavRow("Navegador privado", Icons.Rounded.TravelExplore) { BrowserActivity.open(ctxS) }

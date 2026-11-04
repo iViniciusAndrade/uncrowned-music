@@ -75,9 +75,6 @@ contextBridge.exposeInMainWorld('U', {
   reviveInfo: () => ipcRenderer.invoke('revive-info'),
   savePlCover: bytes => ipcRenderer.invoke('pl-cover-save', bytes),
   delPlCover: url => ipcRenderer.invoke('pl-cover-del', url),
-  updCheck: force => ipcRenderer.invoke('upd-check', force),
-  updInstall: () => ipcRenderer.invoke('upd-install'),
-  onUpd: cb => ipcRenderer.on('upd', (_, d) => cb(d)),
   appBuild: () => ipcRenderer.invoke('app-build'),
   // libera memória (cache de imagens + coleta de lixo) quando o app vai pro fundo
   trim: () => { try { webFrame.clearCache(); } catch {} try { if (global.gc) global.gc(); } catch {} }

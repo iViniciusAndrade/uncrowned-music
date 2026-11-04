@@ -1397,64 +1397,9 @@ ipcMain.handle('import-resolve', async (e, items, tag) => {
   return out.filter(Boolean);
 });
 
-/* ---------------- atualização automática ----------------
-   Cada push no GitHub gera um build novo (release "pc-N"). O app confere de tempos em tempos,
-   avisa que tem versão nova e, com um clique, baixa e instala sozinho (instalado ou portátil). */
-const REPO = 'iViniciusAndrade/uncrowned-music';
+/* número do build (aparece em Ajustes e no Criado por) */
 function myBuild() { try { return +JSON.parse(fs.readFileSync(path.join(__dirname, 'build.json'), 'utf8')).build || 0; } catch { return 0; } }
-let updInfo = null, updBusy = false;
-async function updCheck() {
-  const j = await getJSON(`https://api.github.com/repos/${REPO}/releases?per_page=30`, { Accept: 'application/vnd.github+json' });
-  const mine = myBuild();
-  let best = null;
-  for (const r of j || []) {
-    const m = /^pc-(\d+)$/.exec(r.tag_name || ''); if (!m || r.draft) continue;
-    const n = +m[1]; const a = n => (r.assets || []).find(x => x.name === n);
-    const setup = a('UncrownedMusic-Setup.exe'), port = a('UncrownedMusic-Portable.exe');
-    if (!setup && !port) continue;
-    if (!best || n > best.build) best = { build: n, notes: String(r.body || '').slice(0, 4000), date: r.published_at, setup: setup && setup.browser_download_url, portable: port && port.browser_download_url, size: (process.env.PORTABLE_EXECUTABLE_FILE ? port : setup || port || {}).size || 0 };
-  }
-  updInfo = best && mine > 0 && best.build > mine ? best : null;
-  return { mine, latest: best ? best.build : 0, available: updInfo };
-}
 ipcMain.handle('app-build', () => myBuild());
-ipcMain.handle('upd-check', () => updCheck().catch(e => ({ mine: myBuild(), err: String(e.message || e) })));
-ipcMain.handle('upd-install', async e => {
-  if (updBusy) return { err: 'já está baixando' };
-  if (process.platform !== 'win32') return { err: 'só funciona no Windows' };
-  if (!updInfo) { try { await updCheck(); } catch {} }
-  const u = updInfo; if (!u) return { err: 'você já está na versão mais nova' };
-  const portable = process.env.PORTABLE_EXECUTABLE_FILE;
-  const url = portable ? (u.portable || u.setup) : (u.setup || u.portable);
-  const send = d => { try { if (!e.sender.isDestroyed()) e.sender.send('upd', d); } catch {} };
-  updBusy = true;
-  try {
-    const dir = path.join(app.getPath('temp'), 'uncrowned-update'); fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, `Uncrowned-build-${u.build}.exe`);
-    const res = await request(url, { headers: { Accept: 'application/octet-stream' } });
-    if (res.statusCode >= 400) { res.resume(); throw new Error('HTTP ' + res.statusCode); }
-    const total = +res.headers['content-length'] || u.size || 0; let got = 0, lastPct = -1;
-    await new Promise((ok, bad) => {
-      const w = fs.createWriteStream(file);
-      res.on('data', c => { got += c.length; const pct = total ? Math.floor(got / total * 100) : 0; if (pct !== lastPct) { lastPct = pct; send({ pct }); } });
-      res.on('error', bad); w.on('error', bad); w.on('finish', ok); res.pipe(w);
-    });
-    const head = Buffer.alloc(2); const fd = fs.openSync(file, 'r'); fs.readSync(fd, head, 0, 2, 0); fs.closeSync(fd);
-    if (head.toString('latin1') !== 'MZ' || fs.statSync(file).size < 5e6) throw new Error('o arquivo baixado veio quebrado');
-    send({ pct: 100, installing: true });
-    // script que espera o app fechar, instala/troca o .exe e abre de novo
-    const pid = process.pid, exe = process.execPath, q = x => `"${x}"`;
-    const lines = ['@echo off', 'chcp 65001 >nul', ':w', `tasklist /FI "PID eq ${pid}" 2>nul | find "${pid}" >nul && (timeout /t 1 /nobreak >nul & goto w)`];
-    if (portable) lines.push(`copy /Y ${q(file)} ${q(portable)} >nul`, `start "" ${q(portable)}`);
-    else lines.push(`${q(file)} /S /D=${path.dirname(exe)}`, `start "" ${q(exe)}`);
-    lines.push(`del ${q(file)} >nul 2>&1`, 'del "%~f0"');
-    const bat = path.join(dir, 'atualizar.cmd'); fs.writeFileSync(bat, lines.join('\r\n'));
-    require('child_process').spawn('cmd.exe', ['/c', bat], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-    clearTimeout(saveTimer); try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {}
-    setTimeout(() => app.quit(), 600);
-    return { ok: true };
-  } catch (er) { updBusy = false; return { err: String(er.message || er) }; }
-});
 
 /* temas: troca o ícone da janela/barra de tarefas junto */
 const SKINS = ['edgy', 'fadinha', 'otaku', 'oldmoney', 'alternativo', 'punk', 'pulseirinhas', 'ninja', 'deserto', 'ouro', 'cela', 'rock', 'pavor', 'apagao', 'julie', 'nino', 'divino'];

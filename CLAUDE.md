@@ -5,9 +5,9 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 ## Build e entrega
 - O APK sai pelo GitHub Actions (`.github/workflows/build.yml`) a cada push na `main`. Cada build vira uma release `build-N` com o `.apk`. O EXE do PC sai pelo `desktop.yml` (push em `desktop/**`) como release `pc-N`.
 - `versionCode` = `GITHUB_RUN_NUMBER` (o build N). No PC o número vai em `desktop/build.json`. A mensagem do commit vira o texto da release, que aparece no aviso de atualização dos apps: escreva commits com linhas curtas em português dizendo o que mudou pro usuário.
-- Atualização automática: `Updater.kt` (Android, olha `releases` do GitHub, baixa o APK e abre o instalador via FileProvider) e `upd-check`/`upd-install` no `desktop/main.js` (baixa o Setup/Portable e troca por um .cmd).
+- Atualização automática: foi feita no build 101 e TIRADA a pedido do dono (04/11/2026). Os apps não procuram nem instalam versão nova sozinhos; ele baixa da página de Releases. Não colocar de volta sem ele pedir.
 - Pra baixar o asset use a API REST (`gh api ... -H "Accept: application/octet-stream"`). O GraphQL do `gh` não funciona nesse ambiente.
-- Assinatura: chave própria fixa nos segredos do repositório (`KEYSTORE_B64` + `KEYSTORE_PASS`, criada em 02/11/2026; o dono guarda o .jks). Sem ela cada build sai com chave debug aleatória e o Android não instala por cima. O repositório é público: nunca coloque chave ou segredo no código.
+- Assinatura: existe uma chave fixa criada em 02/11/2026 (o dono tem o .jks), mas ele ainda não colocou os segredos `KEYSTORE_B64`/`KEYSTORE_PASS` no GitHub; até lá cada build sai com chave debug aleatória e o Android não instala por cima. O repositório é público: nunca coloque chave ou segredo no código.
 - O build gera só `arm64-v8a` (a IA local traz biblioteca nativa). R8 ligado; as regras ficam em `app/proguard-rules.pro`.
 - Os commits terminam com as linhas de atribuição do Claude.
 
@@ -30,7 +30,7 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - build-97: navegador privado nas opções secretas.
 - build-98: revisão de bugs (fila do SoundCloud, caches entre threads, vazamentos, trava de tela do player web).
 - build-99: navegador com abas, página inicial/conjunto, sites no escuro, downloads e bloqueador bruto; descrição do navegador removida de Ajustes.
-- build-101 / PC: YouTube motor principal no celular, playlists personalizáveis (PC e celular), Descobertas da Semana v3, atualização automática (PC e celular), PC: player do YouTube toca com 1 clique e não trava mais depois de dias aberto (página do YouTube renovada a cada 30 trocas/3 h/quando pesa ou trava, vigia de janela travada, gravação do store assíncrona).
+- build-101 / PC: YouTube motor principal no celular, playlists personalizáveis (PC e celular), Descobertas da Semana v3, PC: player do YouTube toca com 1 clique e não trava mais depois de dias aberto (página do YouTube renovada a cada 30 trocas/3 h/quando pesa ou trava, vigia de janela travada, gravação do store assíncrona).
 
 ## Pendências pedidas
 - Navegador simples dentro da aba Descobrir, com página inicial personalizável (não precisa ser privado nem escondido).

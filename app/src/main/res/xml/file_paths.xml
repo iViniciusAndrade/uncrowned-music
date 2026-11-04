@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <!-- APK da atualização baixado pelo próprio app -->
-    <cache-path name="updates" path="updates/" />
-</paths>
