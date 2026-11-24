@@ -7,7 +7,7 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - `versionCode` = `GITHUB_RUN_NUMBER` (o build N). No PC o número vai em `desktop/build.json`. A mensagem do commit vira o texto da release, que aparece no aviso de atualização dos apps: escreva commits com linhas curtas em português dizendo o que mudou pro usuário.
 - Atualização automática: foi feita no build 101 e TIRADA a pedido do dono (04/11/2026). Os apps não procuram nem instalam versão nova sozinhos; ele baixa da página de Releases. Não colocar de volta sem ele pedir.
 - Pra baixar o asset use a API REST (`gh api ... -H "Accept: application/octet-stream"`). O GraphQL do `gh` não funciona nesse ambiente.
-- Assinatura: existe uma chave fixa criada em 02/11/2026 (o dono tem o .jks), mas ele ainda não colocou os segredos `KEYSTORE_B64`/`KEYSTORE_PASS` no GitHub; até lá cada build sai com chave debug aleatória e o Android não instala por cima. O repositório é público: nunca coloque chave ou segredo no código.
+- Assinatura: chave debug aleatória a cada build (o Android não instala por cima: precisa desinstalar antes). Em 24/11/2026 o dono decidiu NÃO usar chave fixa (descartou a que foi criada em 02/11). Não sugerir de novo. O repositório é público: nunca coloque chave ou segredo no código.
 - O build gera só `arm64-v8a` (a IA local traz biblioteca nativa). R8 ligado; as regras ficam em `app/proguard-rules.pro`.
 - Os commits terminam com as linhas de atribuição do Claude.
 
