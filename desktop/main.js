@@ -8,6 +8,47 @@ const { URL } = require('url');
 
 let win = null;
 let PORT = 0;
+
+/* ---------------- blindagem contra o app fechar sozinho ----------------
+   Causa mais comum: o processo de vídeo da placa (GPU) trava ao abrir vídeo do YouTube; depois de algumas
+   quedas seguidas o Chromium desiste e fecha o app inteiro ("GPU process isn't usable. Goodbye.").
+   1) vídeo do YouTube decodificado pelo processador, não pela placa (não derruba a GPU)
+   2) sem limite de reinícios da GPU (ela volta sozinha em vez de fechar o app)
+   3) se a GPU cair mesmo assim, o app reabre na hora no modo seguro (sem aceleração de placa) e continua a música
+   4) tudo que der errado fica anotado em uncrowned.log na pasta do app */
+const LOG = () => path.join(app.getPath('userData'), 'uncrowned.log');
+function log(...a) {
+  try {
+    const f = LOG();
+    try { if (fs.statSync(f).size > 2e6) fs.renameSync(f, f + '.old'); } catch {}
+    fs.appendFileSync(f, new Date().toISOString() + ' ' + a.map(x => x instanceof Error ? (x.stack || x.message) : typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ') + '\n');
+  } catch {}
+}
+const GPU_FILE = () => path.join(app.getPath('userData'), 'gpu.json');
+let gpu = { soft: false, crashes: [] };
+try { gpu = { ...gpu, ...JSON.parse(fs.readFileSync(GPU_FILE(), 'utf8')) }; } catch {}
+const saveGpu = () => { try { fs.writeFileSync(GPU_FILE(), JSON.stringify(gpu)); } catch {} };
+app.commandLine.appendSwitch('disable-accelerated-video-decode');
+app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
+if (gpu.soft) { app.disableHardwareAcceleration(); log('modo seguro: sem aceleração de placa'); }
+try { require('electron').crashReporter.start({ uploadToServer: false, compress: true }); } catch {}
+process.on('uncaughtException', e => log('erro (main):', e));
+process.on('unhandledRejection', e => log('promessa sem tratamento (main):', e));
+app.on('child-process-gone', (_, d) => {
+  log('processo caiu:', d);
+  if (d.type !== 'GPU' || d.reason === 'clean-exit') return;
+  const now = Date.now();
+  gpu.crashes = (gpu.crashes || []).filter(t => now - t < 10 * 60e3).concat(now);
+  if (!gpu.soft && gpu.crashes.length >= 2) {
+    // placa caindo direto: reabre já sem aceleração de placa e volta a tocar do ponto onde estava
+    gpu.soft = true; gpu.crashes = []; saveGpu();
+    log('GPU caiu 2x em 10 min: reabrindo no modo seguro');
+    try { store.revive = { at: Date.now(), why: 'gpu' }; clearTimeout(saveTimer); fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {}
+    app.relaunch(); app.exit(0);
+    return;
+  }
+  saveGpu();
+});
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
 const AUDIO_EXT = new Set(['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.oga', '.opus', '.wav', '.wma', '.alac', '.aiff', '.webm']);
 // pastas que não são música (WhatsApp, gravações, Telegram...)
@@ -541,7 +582,7 @@ function createWindow() {
   };
   win.webContents.on('unresponsive', () => { clearTimeout(hangT); hangT = setTimeout(() => revive('travou'), 25000); });
   win.webContents.on('responsive', () => { clearTimeout(hangT); hangT = null; });
-  win.webContents.on('render-process-gone', (_, d) => { if (d && d.reason !== 'clean-exit') { store.revive = { at: Date.now(), why: d.reason }; saveStore(); setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.reload(); } catch {} }, 1000); } });
+  win.webContents.on('render-process-gone', (_, d) => { log('janela caiu:', d); if (d && d.reason !== 'clean-exit') { store.revive = { at: Date.now(), why: d.reason }; saveStore(); setTimeout(() => { try { if (win && !win.isDestroyed()) win.webContents.reload(); } catch {} }, 1000); } });
 }
 /* player do YouTube (webview): avisa a janela quando ele trava ou fica pesado demais, pra ela recriar */
 function ytHealth(kind) { try { if (win && !win.isDestroyed()) win.webContents.send('yt-health', kind); } catch {} }
@@ -601,6 +642,7 @@ app.on('web-contents-created', (_, wc) => {
   if (wc.getType() === 'webview') {
     let t = null;
     wc.on('unresponsive', () => { clearTimeout(t); t = setTimeout(() => ytHealth('hung'), 12000); });
+    wc.on('render-process-gone', (_, d) => log('player do YouTube caiu:', d, wc.getURL()));
     wc.on('responsive', () => clearTimeout(t));
     wc.setUserAgent(UA);
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -1529,4 +1571,8 @@ app.whenReady().then(async () => {
   applyWinSkin(skinNow());
   setTimeout(warmUp, 1500);
 });
+ipcMain.handle('log', (_, m) => { log('tela:', String(m).slice(0, 2000)); return true; });
+ipcMain.handle('gpu-mode', (_, soft) => { if (typeof soft === 'boolean') { gpu.soft = soft; gpu.crashes = []; saveGpu(); } return { soft: !!gpu.soft, log: LOG() }; });
+ipcMain.handle('relaunch', () => { try { clearTimeout(saveTimer); fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.relaunch(); app.exit(0); });
+ipcMain.handle('open-log', () => { try { if (!fs.existsSync(LOG())) fs.writeFileSync(LOG(), ''); } catch {} shell.showItemInFolder(LOG()); return true; });
 app.on('window-all-closed', () => { clearTimeout(saveTimer); try { fs.writeFileSync(storeFile(), JSON.stringify(store)); } catch {} app.quit(); });

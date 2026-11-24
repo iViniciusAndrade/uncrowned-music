@@ -40,6 +40,8 @@ App de música pessoal do Vinicius (Android em `app/`, Kotlin + Compose + Media3
 - build-99: navegador com abas, página inicial/conjunto, sites no escuro, downloads e bloqueador bruto; descrição do navegador removida de Ajustes.
 - build-101 / PC: YouTube motor principal no celular, playlists personalizáveis (PC e celular), Descobertas da Semana v3, PC: player do YouTube toca com 1 clique e não trava mais depois de dias aberto (página do YouTube renovada a cada 30 trocas/3 h/quando pesa ou trava, vigia de janela travada, gravação do store assíncrona).
 
+- PC (24/11/2026): app fechava sozinho ao abrir música do YouTube (provável queda da GPU decodificando vídeo → Chromium fecha tudo). Blindagem no topo do `main.js`: `disable-accelerated-video-decode`, `disable-gpu-process-crash-limit`, modo seguro automático (`gpu.json`: 2 quedas da GPU em 10 min → reabre sem aceleração e continua a música), log em `%APPDATA%/Uncrowned Music/uncrowned.log` (Ajustes → Estabilidade → Abrir pasta). Se voltar a fechar, pedir esse arquivo.
+
 ## Pendências pedidas
 - Navegador simples dentro da aba Descobrir, com página inicial personalizável (não precisa ser privado nem escondido).
 - Opção de excluir músicas locais do celular (menu "…" da música, usando `MediaStore.createDeleteRequest` com confirmação do Android).

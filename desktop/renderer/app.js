@@ -312,7 +312,16 @@ function ytWebview(url) {
     inner.dataset.kind = 'yt'; sc.w = null; vm.player = null;
     yt.wv = $('#ytw'); yt.ready = false; yt.born = Date.now(); yt.switches = 0; yt.heavy = false; yt.busy = 0;
     yt.wv.addEventListener('dom-ready', () => { yt.ready = true; try { yt.wv.insertCSS(YT_CSS); yt.wv.setAudioMuted(false); } catch {} ytExec("window.dispatchEvent(new Event('resize'))"); });
-    yt.wv.addEventListener('render-process-gone', () => { if (st.kind === 'yt' && cur() && cur().src === 'yt') { const t = cur(), at = st.time; ytDrop(); playYT(t, at); } });
+    // o player caiu: reabre e continua; se cair de novo na mesma música em menos de 1 min, pula pra próxima (nada de ficar em loop)
+    yt.wv.addEventListener('render-process-gone', e => {
+      U.log && U.log('player do YouTube caiu: ' + (e && e.reason));
+      if (!(st.kind === 'yt' && cur() && cur().src === 'yt')) return;
+      const t = cur(), at = st.time, now = Date.now();
+      yt.crashes = (yt.crashes || []).filter(c => c.id === t.id && now - c.at < 60000).concat({ id: t.id, at: now });
+      ytDrop();
+      if (yt.crashes.length >= 2) { toast('Esse vídeo derrubou o player duas vezes. Indo pra próxima…'); setTimeout(next, 600); }
+      else setTimeout(() => playYT(t, at), 800);
+    });
     $('#embed').classList.remove('hidden'); layoutEmbed();
     return true;
   }
@@ -1372,8 +1381,16 @@ views.settings = () => {
   <div class="gtitle">Online</div><div class="group">
     ${opt('Token do Vimeo', `<input class="txt" id="vmTok" placeholder="opcional" value="${esc(s.vimeoToken)}">`, 'Grátis em developer.vimeo.com → Create app → Generate token')}
   </div>
+  <div class="gtitle">Estabilidade</div><div class="group">
+    ${opt('Modo seguro de vídeo', `<div class="sw" id="gpuSoft"></div>`, 'Desliga a aceleração da placa de vídeo. O app liga sozinho se a placa travar com vídeo do YouTube. Precisa reabrir o app.')}
+    ${opt('Registro de erros', `<button class="btn" id="openLog">Abrir pasta</button>`, 'Se o app der problema, o que aconteceu fica anotado no arquivo uncrowned.log')}
+  </div>
   <div class="gfoot">A busca procura nas suas músicas offline, YouTube, SoundCloud, Vimeo, Audius e Internet Archive — nessa ordem.</div>
   <div class="gfoot" style="text-align:center;margin-top:30px">Uncrowned Music para PC · build <span id="buildNo">…</span></div>`;
+  if (U.gpuMode) U.gpuMode().then(g => { const c = $('#gpuSoft'); if (!c) return; c.classList.toggle('on', !!g.soft);
+    c.onclick = async () => { const on = !c.classList.contains('on'); c.classList.toggle('on', on); await U.gpuMode(on); toast(on ? 'Modo seguro ligado. Reabrindo o app…' : 'Modo seguro desligado. Reabrindo o app…'); setTimeout(() => U.relaunch(), 900); }; });
+  if ($('#openLog')) $('#openLog').onclick = () => U.openLog();
+  if ($('#buildNo')) $('#buildNo').textContent = APP_BUILD || 'de teste';
   const v = $('#view');
   v.querySelectorAll('[data-skin]').forEach(d => d.onclick = () => applySkin(d.dataset.skin));
   v.querySelectorAll('.seg[data-k] button').forEach(b => b.onclick = () => { const k = b.parentElement.dataset.k; S()[k] = b.dataset.v; changed(k); });
@@ -2253,6 +2270,8 @@ async function rescan() {
 document.addEventListener('visibilitychange', () => { if (document.hidden) setTimeout(() => { if (document.hidden) U.trim(); }, 5000); });
 setInterval(() => U.trim(), 10 * 60e3);
 
+window.addEventListener('error', e => { try { U.log && U.log('erro: ' + (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')); } catch {} });
+window.addEventListener('unhandledrejection', e => { try { U.log && U.log('promessa: ' + ((e.reason && (e.reason.stack || e.reason.message)) || e.reason)); } catch {} });
 let APP_BUILD = 0;
 U.appBuild && U.appBuild().then(b => { APP_BUILD = b; const e = $('#buildNo'); if (e) e.textContent = b || 'de teste'; }).catch(() => {});
 

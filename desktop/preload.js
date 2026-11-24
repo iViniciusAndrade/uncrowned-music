@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld('U', {
   savePlCover: bytes => ipcRenderer.invoke('pl-cover-save', bytes),
   delPlCover: url => ipcRenderer.invoke('pl-cover-del', url),
   appBuild: () => ipcRenderer.invoke('app-build'),
+  log: m => ipcRenderer.invoke('log', m),
+  gpuMode: soft => ipcRenderer.invoke('gpu-mode', soft),
+  relaunch: () => ipcRenderer.invoke('relaunch'),
+  openLog: () => ipcRenderer.invoke('open-log'),
   // libera memória (cache de imagens + coleta de lixo) quando o app vai pro fundo
   trim: () => { try { webFrame.clearCache(); } catch {} try { if (global.gc) global.gc(); } catch {} }
 });
