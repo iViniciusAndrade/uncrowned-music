@@ -12,10 +12,10 @@ let PORT = 0;
 /* ---------------- blindagem contra o app fechar sozinho ----------------
    Causa mais comum: o processo de vídeo da placa (GPU) trava ao abrir vídeo do YouTube; depois de algumas
    quedas seguidas o Chromium desiste e fecha o app inteiro ("GPU process isn't usable. Goodbye.").
-   1) vídeo do YouTube decodificado pelo processador, não pela placa (não derruba a GPU)
-   2) sem limite de reinícios da GPU (ela volta sozinha em vez de fechar o app)
-   3) se a GPU cair mesmo assim, o app reabre na hora no modo seguro (sem aceleração de placa) e continua a música
-   4) tudo que der errado fica anotado em uncrowned.log na pasta do app */
+   (a queda de verdade era o bloqueador de anúncios: ver setupAdblock)
+   1) sem limite de reinícios da GPU (ela volta sozinha em vez de fechar o app)
+   2) se a GPU cair, o app reabre na hora no modo seguro (sem aceleração de placa) e continua a música
+   3) tudo que der errado fica anotado em uncrowned.log na pasta do app */
 const LOG = () => path.join(app.getPath('userData'), 'uncrowned.log');
 function log(...a) {
   try {
@@ -28,7 +28,6 @@ const GPU_FILE = () => path.join(app.getPath('userData'), 'gpu.json');
 let gpu = { soft: false, crashes: [] };
 try { gpu = { ...gpu, ...JSON.parse(fs.readFileSync(GPU_FILE(), 'utf8')) }; } catch {}
 const saveGpu = () => { try { fs.writeFileSync(GPU_FILE(), JSON.stringify(gpu)); } catch {} };
-app.commandLine.appendSwitch('disable-accelerated-video-decode');
 app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
 if (gpu.soft) { app.disableHardwareAcceleration(); log('modo seguro: sem aceleração de placa'); }
 try { require('electron').crashReporter.start({ uploadToServer: false, compress: true }); } catch {}
@@ -606,6 +605,16 @@ async function setupAdblock(on) {
       // a lista se renova sozinha: se a cópia salva tiver mais de 1 dia, baixa a versão nova
       try { if (Date.now() - fs.statSync(cache).mtimeMs > 24 * 3600e3) fs.unlinkSync(cache); } catch {}
       blocker = await ElectronBlocker.fromPrebuiltAdsOnly(fetch, { path: cache, read: fs.promises.readFile, write: fs.promises.writeFile });
+      /* CORREÇÃO DO APP FECHANDO SOZINHO (24/11/2026, achado no relatório de queda):
+         alguns filtros não bloqueiam o anúncio, trocam por um "substituto" (redirect pra um endereço data:).
+         O Electron derruba o app inteiro quando recebe esse redirect (queda em URLLoaderClientProxy::OnReceiveRedirect),
+         e isso acontecia ao abrir música do YouTube. Agora qualquer redirect que não seja http(s) vira bloqueio simples. */
+      const orig = blocker.onBeforeRequest;
+      blocker.onBeforeRequest = (details, cb) => {
+        let done = false;
+        const reply = r => { if (done) return; done = true; if (r && r.redirectURL && !/^https?:\/\//i.test(r.redirectURL)) cb({ cancel: true }); else cb(r || {}); };
+        try { orig(details, reply); } catch (e) { log('adblock:', e); reply({}); }
+      };
     }
     if (on && blocker && !blockerOn) { blocker.enableBlockingInSession(ses); blockerOn = true; }
     if (!on && blocker && blockerOn) { blocker.disableBlockingInSession(ses); blockerOn = false; }
